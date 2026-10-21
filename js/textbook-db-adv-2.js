@@ -169,6 +169,13 @@
         ['ZSet', '按 score 排序，跳表实现', '排行榜、延迟队列']
       ] } },
       { p: '选型看访问方式：整体读写用 String；按字段读改用 Hash；要顺序和两端进出用 List；要去重和交并集用 Set；要按分数排序用 ZSet。底层编码会随元素数量变化，小数据用紧凑结构省内存，大了才转成哈希表或跳表。' },
+      { p: '下面的例子用 Jedis 写，依赖坐标是 <code>redis.clients:jedis</code>。Spring Boot 的 <code>spring-boot-starter-data-redis</code> 默认带的是 Lettuce，想用 Jedis 要么单独引这个坐标，要么先排除 <code>lettuce-core</code> 再引，别让两个客户端同时在 classpath 上抢自动配置。' },
+      { lang: 'xml', code: '<dependency>\n  <groupId>redis.clients</groupId>\n  <artifactId>jedis</artifactId>\n  <!-- 版本以 Spring Boot BOM 为准，不要手写；BOM 没覆盖到就按官方文档给的值填，本机未实测 -->\n</dependency>', title: 'pom.xml（片段）' },
+      { note: '<b>先记住一条硬事实：Jedis 实例不是线程安全的。</b>一个 Jedis 对象背后是一条连接、一次只能跑一个命令；多个线程共享同一个实例，会互相读走对方的响应，表现为返回值错乱、<code>JedisConnectionException</code>、<code>Unexpected end of stream</code>。所以绝对不能把 <code>new Jedis(host, port)</code> 写成单例字段，也不能注入成 Spring 单例 Bean 的成员变量。' },
+      { p: '正确姿势是用连接池 <code>JedisPool</code>：池本身线程安全、全应用一个；每次用时借一个 Jedis，用完归还，池负责复用连接、校验并重建失效连接。' },
+      { lang: 'java', code: 'JedisPoolConfig cfg = new JedisPoolConfig();\ncfg.setMaxTotal(64);        // 池里最多 64 条连接\ncfg.setMaxIdle(16);\ncfg.setMinIdle(4);\n\n// 整个应用一个池；池线程安全，池里借出的 Jedis 不安全\nJedisPool pool = new JedisPool(cfg, "localhost", 6379, 2000, null);\n\ntry (Jedis jedis = pool.getResource()) {   // 用完自动归还，异常也会还\n    jedis.setex("user:1:name", 1800, "Alice");\n    System.out.println(jedis.get("user:1:name"));\n}', title: 'JedisPoolDemo.java' },
+      { p: '想省掉“借与还”这件事，就换 Lettuce——它是 Spring Boot 的默认客户端，基于 Netty，<b>线程安全、可共享一条连接</b>：一个 <code>RedisConnectionFactory</code> 全应用复用即可，同步、异步、响应式都走同一个底层。代价是排障时容易把“共享连接上的命令排队”误判成 Redis 慢，一条慢命令会挡住同一条连接上后面的命令。' },
+      { p: '下面这段五类型示例为了看清命令本身，直接 <code>new</code> 了一个 Jedis；它只适合单线程脚本或本地试验，生产代码一律换成从池里借的写法。' },
       { lang: 'java', code: 'Jedis jedis = new Jedis("localhost", 6379);\n\njedis.set("user:1:name", "Alice");            // String\njedis.hset("user:1", "age", "20");            // Hash\njedis.rpush("queue:mail", "m1", "m2");        // List\njedis.sadd("article:9:likes", "u1", "u2");    // Set\njedis.zadd("rank:score", 95, "u1");           // ZSet\n\nSystem.out.println(jedis.get("user:1:name"));\nSystem.out.println(jedis.hgetAll("user:1"));\nSystem.out.println(jedis.lrange("queue:mail", 0, -1));\nSystem.out.println(jedis.zrevrange("rank:score", 0, 2));', title: 'FiveTypes.java' },
       { out: 'Alice\n{age=20}\n[m1, m2]\n[u1, u2]\n[u1]' },
 

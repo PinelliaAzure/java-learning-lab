@@ -199,10 +199,12 @@
       { p: '最常见的错误是把解析令牌的过滤器放到授权之后：授权执行时上下文还是空的，所有请求都按未认证处理，表现为“令牌明明带了却一直 401”。另一种是过滤器没注册成 Bean，或者既加了 <code>@Component</code> 又手动 <code>addFilter</code>，于是执行两遍。' },
 
       { h: '2.3 最小可运行配置' },
-      { p: 'Spring Security 6 之后推荐 Lambda DSL，<code>authorizeRequests</code> 已换成 <code>authorizeHttpRequests</code>。' },
-      { lang: 'java', code: '@Configuration\n@EnableWebSecurity\npublic class SecurityConfig {\n\n    @Bean\n    SecurityFilterChain chain(HttpSecurity http) throws Exception {\n        http.csrf(csrf -> csrf.disable())\n            .authorizeHttpRequests(auth -> auth\n                .requestMatchers("/login", "/public/**").permitAll()\n                .requestMatchers("/admin/**").hasRole("ADMIN")\n                .anyRequest().authenticated())\n            .exceptionHandling(ex -> ex.authenticationEntryPoint(\n                    (req, res, e) -> res.sendError(401)));\n        return http.build();\n    }\n\n    @Bean\n    PasswordEncoder passwordEncoder() {\n        return new BCryptPasswordEncoder();\n    }\n}', title: 'SecurityConfig.java' },
-      { out: 'GET /public/hello           → 200\nGET /admin/users           → 401（未登录）\nGET /admin/users + 管理员   → 200\nGET /admin/users + 普通用户 → 403' },
+      { p: 'Spring Security 6 起推荐 Lambda DSL，<code>authorizeRequests</code> 已换成 <code>authorizeHttpRequests</code>；新项目按 Spring Boot 4.0.x（Spring Security 7）起步，直接写成下面这一套。' },
+      { lang: 'java', code: '@Configuration\n@EnableWebSecurity\npublic class SecurityConfig {\n\n    @Bean\n    SecurityFilterChain chain(HttpSecurity http, JwtService jwtService) throws Exception {\n        http.csrf(csrf -> csrf.disable())\n            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))\n            .authorizeHttpRequests(auth -> auth\n                .requestMatchers("/auth/login", "/public/**").permitAll()\n                .requestMatchers("/admin/**").hasRole("ADMIN")\n                .anyRequest().authenticated())\n            .addFilterBefore(new JwtAuthFilter(jwtService),\n                    UsernamePasswordAuthenticationFilter.class)\n            .exceptionHandling(ex -> ex.authenticationEntryPoint(\n                    (req, res, e) -> res.sendError(401)));\n        return http.build();\n    }\n\n    @Bean\n    PasswordEncoder passwordEncoder() {\n        return new BCryptPasswordEncoder();\n    }\n}', title: 'SecurityConfig.java' },
+      { out: 'POST /auth/login（用户名密码） → 200 + 令牌\nGET /public/hello           → 200\nGET /admin/users           → 401（未登录）\nGET /admin/users + 管理员   → 200\nGET /admin/users + 普通用户 → 403' },
       { p: '关闭 CSRF 是因为前后端分离用 token、不用 Cookie 会话；<code>permitAll</code> 放行登录；<code>anyRequest</code> 是兜底，规则从上到下匹配，第一条命中就生效。entry point 指定未登录返回 401；不配时默认入口点可能返回 403，容易和后面“401 与 403”那一节混淆。' },
+      { p: '三行装配各管一件事，缺哪一行症状都不同：<code>addFilterBefore</code> 决定 <code>JwtAuthFilter</code> 插在链的哪个位置，写在授权过滤器之后就只能看到空上下文；<code>sessionCreationPolicy(STATELESS)</code> 关掉会话创建，不写这一行，容器照样给每个请求发 <code>JSESSIONID</code>，所谓无状态只剩半套；<code>csrf</code> 关闭只对不靠 Cookie 携带的凭证成立，判断标准见后面「CSRF」那一节。' },
+
       { p: '<code>hasRole("ADMIN")</code> 会自动加 <code>ROLE_</code> 前缀，实际比对 <code>ROLE_ADMIN</code>；<code>hasAuthority</code> 不加，混用是常见 403 原因。' },
 
       { h: '2.4 认证：用户名密码怎么变成登录态' },
@@ -232,7 +234,7 @@
 
       { h: '2.6 授权：路径规则与方法级注解' },
       { table: { head: ['写法', '含义', '典型路径'], rows: [
-        ['permitAll()', '任何人都能访问', '/login、/public/**'],
+        ['permitAll()', '任何人都能访问', '/auth/login、/public/**'],
         ['authenticated()', '登录即可', '/profile'],
         ['hasRole("ADMIN")', '需要 ROLE_ADMIN', '/admin/**'],
         ['hasAnyRole("A","B")', '任一角色即可', '/report/**'],
@@ -260,13 +262,17 @@
       { p: 'JWT 分三段：header.payload.signature。前两段只是 Base64URL 编码，不是加密，任何人都能解开，所以不要放密码和手机号。' },
       { lang: 'java', code: '@Service\npublic class JwtService {\n\n    private final SecretKey key = Keys.hmacShaKeyFor(\n            "change-me-please-change-me-32bytes!".getBytes(StandardCharsets.UTF_8));\n\n    public String create(String username, String role) {\n        return Jwts.builder()\n                .subject(username)\n                .claim("role", role)\n                .expiration(new Date(System.currentTimeMillis() + 3600_000))\n                .signWith(key)\n                .compact();\n    }\n\n    public String parse(String token) {\n        return Jwts.parser().verifyWith(key).build()\n                .parseSignedClaims(token).getPayload().getSubject();\n    }\n}', title: 'JwtService.java' },
       { out: 'create("alice", "USER") → eyJhbGciOi...（三段）\nparse(合法 token)        → alice\nparse(被篡改的 token)    → 抛 JwtException' },
-      { p: '过滤器解析 token、组装 <code>Authentication</code> 放进 <code>SecurityContext</code>。token 无效或过期时不要抛全局异常，直接放行，让 <code>AuthorizationFilter</code> 返回 401，语义才准确。' },
+      { p: '<code>JwtAuthFilter</code> 继承 <code>OncePerRequestFilter</code>，一份实现只做三件事：从 <code>Authorization</code> 头里取出 <code>Bearer</code> 后面的那串字符、调用上面这个 <code>parse</code>、把结果包成 <code>UsernamePasswordAuthenticationToken</code> 塞进 <code>SecurityContextHolder</code>。头里没有令牌、验签失败、已经过期这三种情况都直接放行，不抛全局异常，让 <code>AuthorizationFilter</code> 按“未认证”处理，401 的出口才只剩一个。' },
+      { p: '过滤器写完不等于接线完成：它必须出现在某条 <code>SecurityFilterChain</code> 的 <code>addFilterBefore</code> 里，Spring 才知道它存在。最省事的写法是 <code>new JwtAuthFilter(jwtService)</code> 直接传进链，这个对象不进容器，也就不会有第二份注册；若更愿意让它成为 <code>@Component</code> 或 <code>@Bean</code>，就要接受它同时被注册到最外层 Servlet 链的事实——同一份逻辑被执行两遍，解析和被拉多的查询都翻倍，排查时还容易误判成过滤器写错了，这时要用 <code>FilterRegistrationBean</code> 把容器那一份 <code>setEnabled(false)</code> 关掉。' },
+
       { p: '把会话和 JWT 放在一起比，看的不是谁更安全，而是四种代价：状态存在哪、能不能立刻撤销、跨域好不好办、每次请求要传多少字节。' },
       { p: 'JWT 的“无状态”来自服务端不存东西：验签通过就相信内容。代价是无法主动失效——签发出去的令牌在过期前一直有效，改密码、封号、强制下线都管不住它。缓解手段是短有效期配 refresh token，再加上一个很小的黑名单；签名密钥要 32 字节以上，放在环境变量或密钥管理系统里，不要写进代码。' },
       { p: '要撤销就得上黑名单：把令牌的唯一编号存进 Redis，过期时间设成令牌剩余寿命，注销时写入，每次请求查一下。这样能踢人了，但每次请求多一次远程查询，本质上又变回有状态，只是状态更小。' },
       { p: '载荷里放什么也有讲究：只放用户标识、过期时间、角色这类“变了也能接受短暂不一致”的信息。余额、手机号、权限明细会过期；而且前两段只是编码不是加密，任何人都能解开看。' },
       { p: '另一个细节是时钟偏移：多台机器时间差几秒，就可能出现“刚签发就提示过期”。签发的过期时间留几十秒余量，验签时允许一点偏差，能省掉很多莫名其妙的 401。' },
       { p: '配成无状态后，服务端不再创建会话，每个请求都必须自带凭证并重新认证。好处是扩容简单、跨域省事；代价是注销和踢人要靠额外机制，不能像会话那样删掉就完事。' },
+
+      { p: '会话策略显式写成 <code>STATELESS</code> 之后，响应里不再出现 <code>Set-Cookie: JSESSIONID</code>，<code>SecurityContext</code> 只活一个请求。副作用是所有依赖会话的东西都会静默变空：靠会话记住“登录前想去哪一页”的默认实现存不进去，要保留登录后跳回原页，就得自己用查询参数或前端路由传递；手动调 <code>getSession()</code> 会另建一个空会话，那又回到有状态，等于白配。' },
 
       { h: '2.8 SecurityContext：当前用户到底存在哪' },
       { p: '<code>SecurityContext</code> 就是“这次请求的当前用户”。它默认存在 <code>SecurityContextHolder</code> 里，底层是一个 ThreadLocal：一个请求一个线程，所以 Controller 里随手就能取到，不必层层传参。' },
@@ -278,6 +284,8 @@
       { p: 'CSRF 的前提是浏览器会自动带 Cookie。用户登录了某个站点，又打开一个恶意页面，页面里藏一个自动提交的表单指向那个站点；浏览器照规矩把 Cookie 附上，服务端看到的是一个“完全合法”的请求。' },
       { p: '所以防御思路不是识别请求来源，来源本身可以伪造；而是要求请求里带一个攻击者拿不到的随机值，或者要求在自定义请求头里带值——跨站表单没法设置自定义请求头，攻击就断了。' },
       { p: '前后端分离常关掉 CSRF，是因为凭证放在 Authorization 头里，浏览器不会自动附带，攻击前提不成立。但如果同时把令牌存进 Cookie 又关掉 CSRF，就等于把门锁拆了还把钥匙插在门上。' },
+      { p: '<code>csrf(csrf -> csrf.disable())</code> 关掉的是那个一次性令牌校验，能不能关只看一条：凭证是不是靠浏览器自动携带。纯 JWT 无状态接口把令牌放在 <code>Authorization</code> 头里，跨站表单设不了自定义请求头，攻击前提不成立，所以这一行和数据面的 <code>STATELESS</code> 是配套的；只要接口还从 Cookie 读凭证，这一行就不能关。' },
+
       { p: 'Cookie 的三个属性值得记住：HttpOnly 让脚本读不到，Secure 只在加密连接上发送，SameSite 限制跨站携带。它们不能替代 CSRF 防护，但能明显缩小攻击面。' },
       { p: '排查时也要记得：CSRF 校验失败返回的是 403，不是 401。看到 403 就只怀疑角色，很容易在错误的方向上耗很久。' },
 
@@ -299,7 +307,14 @@
         ['401', '未认证，不知道你是谁', '没带 token、过期、签名错、过滤器没注册', '看请求头、看过滤器有没有执行'],
         ['403', '已认证，但没有权限', '角色不匹配、hasRole 与 hasAuthority 混用、CSRF 拦截', '打印当前 Authentication 的权限']
       ] } },
-      { p: '“带了 token 还 401”通常是 JWT 过滤器没注册，或 <code>Bearer</code> 前缀没去掉；在入口打日志最快。' },
+      { p: '“带了 token 还 401”的第一原因不是密钥不对、也不是过期，而是这个 JWT 过滤器根本没进链：类写完了、也标了 <code>@Component</code>，却没有出现在任何一条 <code>SecurityFilterChain</code> 的 <code>addFilterBefore</code> 里，安全框架对它一无所知，请求照样一路走到授权，上下文是空的，于是被判未认证。第二常见的原因是 <code>Bearer</code> 前缀没剥掉，第三才是密钥和时钟偏移。' },
+      { list: [
+        '<b>第一步，先看它怎么创建的：</b><code>@Component</code> 或 <code>@Bean</code> 只说明它是个 Bean，不代表它在链里；用 <code>new</code> 传进链的则只存在于链里。这一步只回答“对象在哪”，不回答“有没有接上”。',
+        '<b>第二步，再搜 addFilterBefore：</b>配置类里有没有把同一个实例传给 <code>addFilterBefore</code> 或 <code>addFilterAfter</code>；只把过滤器 <code>@Autowired</code> 进来却忘了注册，是最常见的漏接。',
+        '<b>第三步，确认没被别的链覆盖：</b>存在多条 <code>SecurityFilterChain</code> 时先匹配到的那条说了算，另一条里的注册根本不会执行；用 <code>web.ignoring()</code> 摘出去的路径连安全链都不进。',
+        '<b>最后才看上下文：</b>在 <code>doFilterInternal</code> 里打日志，确认 <code>Authorization</code> 头到了、解析成功、<code>SecurityContextHolder</code> 里真有 <code>Authentication</code>；这四步都过了还 401，才轮到密钥、过期和时钟。'
+      ] },
+
       { p: '403 先打印权限：<code>getAuthorities()</code>。期望 <code>ROLE_ADMIN</code>、实际只有 <code>ADMIN</code>，一眼就清楚。CSRF 也会造成 403，用 Cookie 会话时别关。' },
       { p: '先看响应头有没有认证挑战信息。如果响应里带着要求认证的头，说明请求在认证阶段就被拦下了，根本没走到授权；没有这个头却返回 403，才更像权限不足。' },
       { p: '把安全框架的日志级别调到调试，能看到每个过滤器是否执行、命中了哪条规则、最终由谁拒绝。这比在代码里到处打日志快得多，也是排查这类问题的第一手段。' },

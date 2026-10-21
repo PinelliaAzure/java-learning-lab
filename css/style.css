@@ -532,6 +532,14 @@ a { color: inherit; }
   color: var(--muted);
 }
 
+/* flex item 的自动最小尺寸取内容的 min-content，一条长标识符就能把它撑到卡片外 */
+.point-body { min-width: 0; }
+
+.point-body, .point-body h3, .point-body p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .point-body code, .intro code, .tip code {
   font-family: var(--mono);
   font-size: 11.5px;
@@ -2235,6 +2243,15 @@ pre.cb-pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); bor
   border: 1px solid var(--amber-line);
   padding: 1px 5px;
   border-radius: 4px;
+  overflow-wrap: anywhere;   /* 长标识符 / URL 在 430px 下不再把段落撑出视口 */
+  word-break: break-word;
+}
+
+/* 正文里常有不可断的长标识符（类名、方法链、表名、package 路径），窄屏下会把段落乃至整页一起撑宽；
+   只对文字容器生效——代码块靠 white-space:pre 免疫，表格保留自己的横向滚动 */
+.tb-p, .tb-h, .tb-note, .tb-list li, .tb-ol li, .tb-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tb-list, .tb-ol {
@@ -2265,6 +2282,18 @@ pre.cb-pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); bor
   font-size: 12px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+/* 运行结果里的 pre 吃的是 UA 的 white-space:pre（既不断行也不滚动），长行把卡片和整页一起撑破，
+   再被 body{overflow-x:hidden} 硬裁掉；这里让它继承容器排版并按可用宽度折行 */
+.tb-out pre {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .tb-out b {
@@ -2353,8 +2382,9 @@ pre.cb-pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); bor
 [data-theme="light"] .tb-flow { background: rgba(255, 255, 255, 0.55); }
 
 .tb-flow-step {
-  flex: 1 1 120px;
-  min-width: 120px;
+  flex: 1 1 auto;      /* 宽度跟内容走：长标签不再压到相邻步骤、也不再越过卡片右缘 */
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -2371,12 +2401,16 @@ pre.cb-pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); bor
   font-weight: 600;
   color: var(--amber-2);
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tb-flow-step span {
   font-size: 10.5px;
   line-height: 1.55;
   color: var(--muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tb-flow-arrow {
@@ -2741,6 +2775,9 @@ label.btn { cursor: pointer; display: inline-flex; align-items: center; justify-
   .cb { break-inside: avoid; }
   .cb-copy { display: none; }
   .cb pre.cb-pre { overflow-x: visible; white-space: pre-wrap; }
+  /* A4 版心比屏幕窄，运行结果块同样要折行，否则打印会把行尾直接截掉 */
+  .tb-out pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+  .tb-out { break-inside: avoid; }
 }
 
 
@@ -2768,4 +2805,9 @@ label.btn { cursor: pointer; display: inline-flex; align-items: center; justify-
   .cb-title { font-size: 10.5px; }
   .cb-copy { min-width: 48px; padding: 0 6px; }
   pre.cb-pre { padding: 13px 12px; font-size: 12px; }
+  /* 顶栏在 430 下本来就折两行，让搜索框独占一整行，而不是被挤到 92px */
+  .topbar { row-gap: 10px; }
+  .head-right { width: 100%; flex-wrap: wrap; overflow-x: visible; row-gap: 8px; }
+  .search-wrap { flex: 1 1 100%; min-width: 0; }
+  .search-input { flex: 1 1 auto; width: auto; min-width: 0; font-size: 12px; }
 }

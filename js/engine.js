@@ -265,6 +265,7 @@
   window.__cbHtml = codeBlockHtml;
   window.__cbCopy = codeCopyText;
   window.__cbDecorate = decorateCodeBlocks;
+  window.__tbMetaText = tbMetaText;
 
   /* ------------------------------------------------------------------
      主题：light / dark / auto
@@ -555,16 +556,23 @@
   function tbStats(tb) {
     var cjk = 0;
     var hasFlow = false;
+    var code = 0;
+    var table = 0;
     (tb.blocks || []).forEach(function (b) {
       if (b.flow) hasFlow = true;
+      if (b.code) code++;
+      if (b.table) table++;
       var t = tbText(b);
       if (t) cjk += (String(t).replace(/<[^>]+>/g, '').match(/[\u4e00-\u9fa5]/g) || []).length;
     });
-    return { cjk: cjk, minutes: Math.max(5, Math.ceil(cjk / 180)), hasFlow: hasFlow };
+    return { cjk: cjk, minutes: Math.max(5, Math.ceil(cjk / 180)), hasFlow: hasFlow, code: code, table: table };
   }
 
   /* 题量段的识别口径：N 道习题 / N 道练习 */
   var META_QUIZ_RE = /\d+\s*道(?:习题|练习)/;
+  /* 块量段的识别口径：N 段代码 / N 张表(格)——注意「张表格」这种写法要保住尾部「格」 */
+  var META_CODE_RE = /\d+\s*段代码/;
+  var META_TABLE_RE = /\d+\s*张表(格)?/;
 
   /* 按「 · 」切段后清掉空段与连续重复段，避免出现「 · · 」、结尾悬空分隔符或重复短语 */
   function tidyMeta(s) {
@@ -766,6 +774,11 @@
       meta = '本章约 ' + st.cjk + ' 字' + (meta ? ' · ' + meta : '');
     }
     meta = meta.replace(/建议\s*\d+\s*分钟/, '建议 ' + st.minutes + ' 分钟');
+    /* 与「本章约 N 字 / 建议 M 分钟」同源：写死的块量按实际 blocks 重算，没写这两段的不追加 */
+    if (META_CODE_RE.test(meta)) meta = meta.replace(META_CODE_RE, st.code + ' 段代码');
+    if (META_TABLE_RE.test(meta)) {
+      meta = meta.replace(META_TABLE_RE, function (all, ge) { return st.table + ' 张表' + (ge || ''); });
+    }
     var quizCount = (lesson && lesson.quiz) ? lesson.quiz.length : 0;
     if (quizCount) meta = meta.replace(META_QUIZ_RE, quizCount + ' 道习题');
     if (!st.hasFlow) meta = meta.replace(/配套流程图\s*(?:与|和|及)?\s*/, '');

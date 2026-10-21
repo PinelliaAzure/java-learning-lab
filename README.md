@@ -58,7 +58,7 @@
 
 原来的「交互动画」标签页、步骤播放器、可点击图解、HashMap/Stream 小组件已**全部删除**，不再占用页面和注意力。只在讲流程的地方保留**静态流程图**，一眼看完，不需要操作。
 
-当前共 81 张流程图，77 章有图；剩下 7 章（封装、抽象类与接口、枚举 record、包与 JavaBean、变量、运算符、SQL 基础）刻意不画，因为这几章讲的是概念与语法，画成流程图反而误导。例如：
+当前共 88 张流程图，84 章全部有图（零缺口）；最后补上的正是「SQL 基础」那章缺的「一条查询走完的路径」。会画的是概念与语法章里真正需要视觉锚点的那一张，不硬凑。例如：
 
 1. 准备篇：下载 JDK → 安装 → 环境变量 → 验证 → IDE 运行
 2. JDK 篇：源码 → 字节码 → 类加载 → 解释/JIT → 机器码
@@ -144,10 +144,10 @@
 
 - **20** 个模块
 - **84** 个知识点
-- **84** 章教材正文（纯汉字 3816~6487，83 章 ≥4500）
+- **84** 章教材正文（正文纯汉字 3390~6078，83 章 ≥4500）
 - **252** 道单选题（每题都有解析）
 - **31** 道代码练习（输出预测 / 找错 / 填空）
-- **81** 张静态流程图（77 章有图）
+- **88** 张静态流程图（84 章全部有图）
 - **12** 种排序算法的可视化实验室（独立页面 `sorting.html`）
 
 ## 文件结构
@@ -229,7 +229,8 @@ java-learning-lab/
     ├── verify.js                 一致性校验器：node tools/verify.js .（零依赖，退出码 0/1）
     ├── audit-sections.js         章内结构体检：node tools/audit-sections.js [章id…]
     ├── audit-tail.js             章尾两节体检：node tools/audit-tail.js [章id…]
-    └── tag-audit.js              代码块语言标注普查：node tools/tag-audit.js（列非 java 块与疑似错标）
+    ├── tag-audit.js              代码块语言标注普查：node tools/tag-audit.js（列非 java 块与疑似错标）
+    └── run-blocks.js             可选闸门：node tools/run-blocks.js [--chapter 章id] [--strict]（每块独立目录 javac --release 25 真编译、真跑、比对 out）
 ```
 
 ## 关于内容与版权
@@ -242,15 +243,24 @@ java-learning-lab/
 
 ## 已验证
 
-- 20 个模块、84 个知识点、252 道题、84 章教材与 81 张流程图全部通过脚本校验：`node tools/verify.js .` 16 条规则（10 条必测 + 6 条附加）全 PASS、退出码 0；另有 `node tools/audit-tail.js` 84 章逐章体检 PASS 84 / FAIL 0。
-- 无头 Chrome 曾逐页遍历 76 课：每页只有「知识讲解 / 练习验证」两个标签，练习锁定状态正常，0 个 JS 报错。**后续新增的 8 章（模块 19 现代 Java 与 AI 工程）与全部 84 章的章内重排，只做了脚本层校验，浏览器回归待补。**
-- 84 章教材正文纯汉字 3816~6487（只统计正文段落，不含代码块与运行结果；最低 `sql-jdbc`、最高 `hashmap`）。
-- 84 章章内结构：小节 1189 个、其中只有 1 个正文块的「占位小节」仅剩章尾三节（章尾之外的占位小节为 0）；`code` 块 535 个、紧跟 `out` 的 341 个（63.7%）、`flow` 块 81 个无丢失。这一轮做的是章内重排与同主题合并：小节数从 1473 降到 1189，正文汉字只下降 0.2%，没有靠删代码块或砍知识点瘦身。
+- 20 个模块、84 个知识点、252 道题、84 章教材与 88 张流程图全部通过脚本校验：`node tools/verify.js .` 16 条规则（10 条必测 + 6 条附加）全 PASS、退出码 0；另有 `node tools/audit-tail.js` 84 章逐章体检 PASS 84 / FAIL 0。
+- 无头 Chrome 全量回归 **84 章 × 1440 / 430 两个视口**（168 次加载、0 控制台报错）：909 个 .cb 代码块全部带复制按钮且点击出提示；430px 下逐章 documentElement.scrollWidth 全部 ≤ 430（此前 34 章溢出，最坏一处 3005）；.tb-out 运行结果长行改为折行、不再被右缘裁掉（此前 89 个块溢出、命中 32 章）；A4 打印宽度下 0 章溢出；折叠答案 374 块展开无横向滚动；表格 84/84 章包裹；非法 hash 三种形态回首页无异常。
+- 84 章教材正文纯汉字 3390~6078（只统计正文段落、列表、提示与表格文字，不含代码块、运行结果与章尾三节；最低 `sql-jdbc`、最高 `hashmap`）。
+- 84 章章内结构：小节 1197 个、其中只有 1 个正文块的「占位小节」仅剩章尾三节（章尾之外的占位小节为 0）；`code` 块 548 个、紧跟 `out` 的 343 个（62.6%）、`flow` 块 88 个无丢失。这一轮做的是章内重排与同主题合并：小节数从 1473 降到 1197，正文汉字只下降 0.2%，没有靠删代码块或砍知识点瘦身。
 - 84 章章尾两节格式统一：倒数第二节「常见追问」一律为 1 个 3~6 条的问答列表（共 450 条，每条「问：…／答：…」，答案 50~320 汉字）；末节「自测与练习」一律为 1 个 3~9 题的列表（共 413 题），每题用原生 `<details class="tb-ans">` 折叠参考答案。
 - 折叠答案分两种形态，按题目语义选：**要产出一份能直接复制执行的东西**（写方法/类/枚举/record、写 SQL、写 `javac`/`jcmd`/`jmap`/`mvn`/`gradle`/`docker`/`curl` 命令、写 `pom.xml`/`@Bean`/`yml`/`Dockerfile` 片段，含「故意制造编译错误或运行异常来观察」）→ `<pre class="tb-ans-code">` 给代码，后面最多跟一句「要点」讲坑位，**不再写「预期现象」**；纯解释、原理、取舍、画图类 → 保留「预期现象 / 为什么 / 要点」三段式（80~190 汉字，中位数 111）。实测 413 题 = 代码形态 **374 题** + 三段式 **39 题**，代码块 6~91 行（中位 23 行）、374 条全部带「要点」、无一处残留「预期现象」。样式是 `css/style.css` 里的 `.tb-ans > .ans-body pre.tb-ans-code`（恒暗底、等宽、独立横向滚动）。这两条格式已固化成 `tools/verify.js` 的规则 13、14（规则 14 双形态都校验：代码块须闭合、非空白字符 ≥20、内部不得有未转义 `<`；三段式三要素齐全），改坏会直接 FAIL。
 - 三处代码容器（教材 `code` 块 / 折叠答案代码块 / 代码练习）已收敛成同一个 `.cb` 组件：头部三圆点 + 语言标签（Java / 命令 / SQL / XML / 配置 / HTTP / Dockerfile / 文本）+ 常显复制按钮。复制的是纯内容——命令块剥掉 `$ ` 提示符、答案块只复制代码不复制「要点」，点击后按钮显示「已复制」1.4 秒复原。旧的三套类名（`.tb-code*`、`.code-block`/`.copy-btn`、答案块独立样式）已全部拆除，只留 `.cb` 一套；顺带修掉一个旧缺陷：一页多块时，代码练习的复制按钮以前总是复制整课代码。
-- 535 个教材 `code` 块与 374 条答案代码块**全部显式声明语言**，不做内容嗅探（嗅探会把 `abstract class Employee {` 误判成非 Java）：教材 java 456 / sql 25 / props 21 / shell 15 / xml 9 / text 4 / http 3 / docker 2，答案 java 333 / sql 16 / shell 10 / xml 7 / props 5 / docker 2 / http 1，缺标注 0、非法值 0。目录树这类非代码块用 `text`（不套提示符也不高亮），Gradle/ini/yaml 统一归 `props`。已固化为 `tools/verify.js` 规则 15，另有 `node tools/tag-audit.js` 做全量普查（当前疑似错标 0）。
-- 命令行块逐行判定：带 `$ ` 前缀、首词命中命令词表（`java` `javac` `mvn` `gradle` `docker` `curl` `jcmd` `jdeps` `echo` 等）、`VAR=` 赋值、`::` 注释行才按命令渲染并补 `$ ` 提示符；程序输出与 `#`/`//` 注释压暗；**反斜杠续行按「同一条命令的后续行」渲染**（不加第二个提示符、不压暗）。全站 15 个 shell 块共 40 个提示符、8 行续行全部识别，复制出的文本与原代码逐字节一致。已固化为规则 16。
+- 548 个教材 `code` 块与 374 条答案代码块**全部显式声明语言**，不做内容嗅探（嗅探会把 `abstract class Employee {` 误判成非 Java）：教材 java 459 / sql 25 / props 21 / shell 16 / xml 18 / text 4 / http 3 / docker 2，答案 java 333 / sql 16 / shell 10 / xml 7 / props 5 / docker 2 / http 1，缺标注 0、非法值 0。目录树这类非代码块用 `text`（不套提示符也不高亮），Gradle/ini/yaml 统一归 `props`。已固化为 `tools/verify.js` 规则 15，另有 `node tools/tag-audit.js` 做全量普查（当前疑似错标 0）。
+**2026 实用性整改（P1）**：
+- 8 章补齐第三方依赖坐标：com.mysql:mysql-connector-j、jakarta.servlet:jakarta.servlet-api（provided）、spring-retry + @EnableKafka、redis.clients:jedis（含 JedisPool 借还与非线程安全提示）、org.testcontainers:testcontainers-bom、org.springframework.ai:spring-ai-bom、org.mybatis.spring.boot:mybatis-spring-boot-starter、com.tngtech.archunit:archunit-junit5 与 io.rest-assured:rest-assured。版本号一律写「以官方 BOM / 发布说明为准，本机未实测」，不编造精确号。
+- 版本标尺统一：Java 侧全站 Java 25（--release 25、eclipse-temurin:25-jre、maven:3.9-eclipse-temurin-25），21 只作存量口径；Spring 侧「Boot 4.0.x（2025-11-20 GA，Framework 7 / Jakarta EE 11）是新项目目标，3.x 只作存量」；并写明下一个 LTS 是 Java 29（2027-09），26/27/28 都不是 LTS。
+- 接线补齐：JwtAuthFilter 现在真的注册了（addFilterBefore + sessionManagement(STATELESS) + 401 处理 + FilterRegistrationBean 防双跑）；project-console 的 BookStore 改为集合走参数、Main 真调 load()/save()、临时文件原子移动落盘；deploy 的 finalName=app 与 Dockerfile 的 COPY --from=build /src/target/app.jar 三处同名；otel-native 的多阶段构建补上了 build 阶段。
+- 7 章补上静态流程图（变量、运算符、封装、抽象类与接口、枚举 record、包与 JavaBean、SQL 基础），全站 88 张、84 章全部有图。
+- meta 文案改为渲染期重算：字数、建议分钟、题量、是否有流程图之外，「N 段代码 / N 张表(格)」也由引擎按实际块数改写（84 章逐章校验「渲染值 == 实际块数」全一致、同章连渲三次幂等、缺该段的 meta 不会被凭空追加）。
+- 搜索同一课最多占 2 条名额：搜 HashMap 的 8 条命中从「6 条同一小节」变成覆盖 6 个知识点（HashMap×2 + collections-advanced / optional / concurrent-collections / encapsulation / modern-java）。
+- 新增可选闸门 node tools/run-blocks.js：按 index.html 顺序加载数据，每块独立临时目录 javac --release 25 真编、真跑，stdout 与紧跟的 out 逐行比对；全量样本 792、送编 503、通过 426、真错 77（74 条是「引用前文块的类」这类逐段演进风格）、OUT-DIFF 48。默认退出码 0，只有 --strict 才把编译失败与 OUT-DIFF 当失败。
+
+- 命令行块逐行判定：带 `$ ` 前缀、首词命中命令词表（`java` `javac` `mvn` `gradle` `docker` `curl` `jcmd` `jdeps` `echo` 等）、`VAR=` 赋值、`::` 注释行才按命令渲染并补 `$ ` 提示符；程序输出与 `#`/`//` 注释压暗；**反斜杠续行按「同一条命令的后续行」渲染**（不加第二个提示符、不压暗）。全站 16 个 shell 块，提示符与反斜杠续行全部识别，复制出的文本与原代码逐字节一致。已固化为规则 16。
 - 完整走通「勾选 → 答题 → 100 分 → 写入 localStorage → 刷新恢复」。
 - 日间/夜间/跟随系统三种主题均实测，系统深浅色切换与刷新记忆正常。
 - 桌面（1440 宽）与手机（430 宽）布局均已截图检查。

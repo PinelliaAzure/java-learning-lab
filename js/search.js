@@ -6,6 +6,7 @@
     m.lessons.forEach(function (l) { FLAT.push({ m: m, l: l }); });
   });
   var MAX = 8;
+  var PER_LESSON = 2;   /* 同一课最多占几条，剩下的名额让给其它课 */
 
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function strip(s) { var d = document.createElement('div'); d.innerHTML = s; return d.textContent || ''; }
@@ -138,7 +139,18 @@
       if (INDEX[i].text.indexOf(q) >= 0) hits.push(INDEX[i]);
     }
     hits.sort(function (a, b) { return rank(a, q) - rank(b, q) || a.order - b.order; });
-    return hits.slice(0, MAX);
+    /* 同一课挤满 8 条会让搜索结果只剩一课：按已排好的名次重扫，单课超额的跳过，
+       空出的名额顺延给后面名次的其它课（名次口径不变，仍是最多 MAX 条） */
+    var picked = [];
+    var used = {};
+    for (var j = 0; j < hits.length && picked.length < MAX; j++) {
+      var id = hits[j].id;
+      var n = used[id] || 0;
+      if (n >= PER_LESSON) continue;
+      used[id] = n + 1;
+      picked.push(hits[j]);
+    }
+    return picked;
   }
 
   function render() {

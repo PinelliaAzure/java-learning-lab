@@ -21,7 +21,8 @@
         ['JEP 485', 'Stream Gatherers', '24 转正'],
         ['JEP 506', 'Scoped Values', '25 转正'],
         ['JEP 505', '结构化并发', '25 第五次预览'],
-        ['预览特性', '紧凑源文件与实例 main', '25 仍为预览'],
+        ['JEP 512', '紧凑源文件与实例 main', '25 转正（21–24 为预览）'],
+        ['JEP 511', '模块导入声明（import module）', '25 转正（21–24 为预览）'],
         ['JEP 519 / 503', '紧凑对象头转正但默认关闭、移除 32 位 x86 端口', '25 转正（默认关），27 由 JEP 534 设为默认']
       ] } },
       { p: '表里“转正”和“预览”的差别不是文字游戏。预览特性要加 --enable-preview 才能编译和运行，而且下一个版本可能改签名，一旦写进业务代码，升级 JDK 时就会编译失败，甚至行为变化。所以生产代码的原则很朴素：只用转正的，预览特性放在实验分支里观察，等它转正再合并。' },
@@ -30,7 +31,7 @@
       { p: '对业务团队来说，25 最划算的收益其实不是新语法，而是“可以放心用 21 就在的东西”。虚拟线程、模式匹配、SequencedCollection 这些在 21 上已经稳定的能力，到了 25 才真正成为“团队不需要额外解释就能用”的默认项。' },
 
       { p: '还有一件容易被忽略的事：25 之所以让人觉得“变化不大”，是因为最受影响的那部分发生在运行时。虚拟线程在 21 就转正了，到 25 才被广泛默认使用；分代 ZGC 在 23 转正，到 25 才成为很多团队评估后的默认选择；紧凑对象头在 25 转正，直接影响的是堆占用和缓存命中率，而不是任何一行代码。这类改动不会出现在语法教学里，却决定了同样硬件能扛多少请求。' },
-      { p: '另一个观察是模块导入声明这类“写法层面的糖”仍在预览中。它允许用一行 import module java.base 取代一长串 import，出发点是把“教学示例要写十行 import”这个尴尬消掉。看到这类特性时，正确的态度是知道它存在、知道它还没定稿，然后继续用现在的写法，而不是抢先把预览语法铺进团队规范。' },
+      { p: '另一个观察是模块导入声明这类“写法层面的糖”在 25 已经随 JEP 511 转正（21–24 是预览，需要 --enable-preview）。它允许用一行 import module java.base 取代一长串 import，出发点是把“教学示例要写十行 import”这个尴尬消掉。看到这类特性时，正确的态度是先确认团队实际用的 JDK 版本：25 起可以直接写进正式代码，21–24 则只能放在实验分支里观察，而不是在旧版本上把预览语法铺进团队规范。' },
       { h: '1.3 模式匹配：从 instanceof 链到穷尽分派' },
       { p: '21 转正的两条 JEP 是一对。record 模式（440）让对象可以被解构，switch 模式匹配（441）让 switch 按类型与结构分派，配合 sealed 接口还能拿到穷尽性检查。它们合起来替换的，正是那种“先 instanceof 判断、再强转、再取值”的老写法。下面这段代码把三层结构一次写完。' },
       { lang: 'java', code: 'sealed interface Shape permits Circle, Rect, Triangle {}\nrecord Circle(double r) implements Shape {}\nrecord Rect(double w, double h) implements Shape {}\nrecord Triangle(double base, double h) implements Shape {}\n\nstatic double area(Shape s) {\n    return switch (s) {\n        case Circle c                 -> Math.PI * c.r() * c.r();\n        case Rect r when r.w() == r.h() -> r.w() * r.h();   // guard 守卫\n        case Rect r                   -> r.w() * r.h();\n        case Triangle t               -> t.base() * t.h() / 2;\n    };   // sealed 类型下无 default 也能编译\n}' },
@@ -70,11 +71,11 @@
       { note: '<b>提示：</b>使用 FFM 需要在启动参数里加 --enable-native-access=ALL-UNNAMED（或写明具体模块），否则运行时打印受限警告；按当前的收紧趋势，未来版本可能直接拒绝未声明的调用。' },
       { p: '迁移判断要克制。只有当确实需要调用本地库时才值得上 FFM：加解密硬件库、图像编解码、工业设备 SDK、以及部分科学计算库。绝大多数被归因为“JNI 慢”的性能问题，实际热点在 SQL 往返、JSON 序列化和锁竞争上，先把这三处查清楚，比换调用方式收益大一个量级。' },
 
-      { h: '1.7 实例 main 与紧凑源文件（预览）' },
-      { p: '这一条在 25 上仍然是预览：允许一个 .java 文件不写类、不写 public static void main，直接写顶级方法甚至顶级语句，用 java Hello.java 就能跑。它的目标不是替代工程结构，而是让“教第一个程序”和“写一次性小脚本”不必先解释类、包、修饰符这一整套东西。' },
-      { lang: 'java', code: '// 文件 Hello.java（25 预览，需 --enable-preview）\nvoid main() {\n    String name = args().findFirst().orElse(\"world\");\n    System.out.println(\"Hi, \" + name);\n}\n\nint add(int a, int b) {\n    return a + b;\n}' },
-      { out: '$ java --enable-preview Hello.java\nHi, world\n$ java --enable-preview Hello.java 张三\nHi, 张三' },
-      { p: '预览身份意味着两点现实约束：必须加 --enable-preview，且下一个版本可能改语法。所以它适合教学演示、代码评审里的小例子、以及一次性脚本原型；不适合进生产代码库。团队里如果确实有“用 Java 写运维脚本”的需求，可以先拿它做原型，但正式交付仍建议用标准的单文件源码启动方式——带 class 的单文件源码启动从 11 起就支持，稳定且不需要预览开关。' },
+      { h: '1.7 实例 main 与紧凑源文件（25 转正）' },
+      { p: '这一条在 JDK 25 已经随 JEP 512 转正（21–24 是预览，需要 --enable-preview）：允许一个 .java 文件不写类、不写 public static void main，直接写顶级方法甚至顶级语句，用 java Hello.java 就能跑。它的目标不是替代工程结构，而是让“教第一个程序”和“写一次性小脚本”不必先解释类、包、修饰符这一整套东西。' },
+      { lang: 'java', code: '// 文件 Hello.java（JDK 25 起为标准特性；21–24 需 --enable-preview）\nvoid main(String[] args) {\n    String name = args.length > 0 ? args[0] : \"world\";\n    System.out.println(\"Hi, \" + name);\n}\n\nint add(int a, int b) {\n    return a + b;\n}' },
+      { out: '$ java Hello.java\nHi, world\n$ java Hello.java 张三\nHi, 张三' },
+      { p: 'JDK 25 起这是标准特性，可以直接用于正式交付：不必加 --enable-preview，语法也不会再随版本改。需要留意的是版本下限——21–24 上它仍是预览，必须加 --enable-preview 才能编译运行，团队里只要还有人在旧版本上跑，同一份源码就不能直接共享。所以它的定位依然是教学演示、代码评审里的小例子和一次性脚本；真正的服务代码仍建议走带 class 的标准单文件源码启动方式，那套写法从 11 起就支持，兼容面更宽。' },
       { p: '这条特性真正想解决的问题，是 Java 在“第一个程序”的体验上长期输给 Python 和 JavaScript：过去要先解释 public class 与文件名必须一致这类约定，才能打印第一行字。它在生产代码里的价值几乎为零——有包结构与构建工具的项目不会因为省掉一个 class 关键字而变好；团队真要用 Java 写运维脚本，也该用 11 起就稳定的单文件源码启动。评价一个语言特性时把“工程”与“生态”两个视角分开，技术讨论才不容易跑偏。' },
 
       { h: '1.8 8/11/17/21 的支持状态与升级路径' },
@@ -111,7 +112,7 @@
       { h: '1.10 常见追问' },
       { list: [
         '<b>问：既然 25 已经是最新 LTS，能不能跳过 21 直接上？</b><br>答：新项目直接把 25 当默认目标。存量系统的关键不是跳几级，而是别一级一级跳：8 到 11 再到 17 会把同样的弃用与移除叠成两轮破坏，正确做法是选一个目标 LTS 一次跳到位，再按编译错误分类批量修。要不要用 21 过渡，取决于依赖链是否已经支持它。',
-        '<b>问：预览特性能不能先用到生产上？</b><br>答：不建议。预览特性必须加 <code>--enable-preview</code> 才能编译运行，而且下一个版本可能改签名，写进业务代码后升级 JDK 就编译失败、甚至行为变化。结构化并发在 25 仍是第五次预览，紧凑源文件与实例 main 同样还是预览；它们的正确位置是实验分支与教学示例，等 JEP 转正再合并。',
+        '<b>问：预览特性能不能先用到生产上？</b><br>答：不建议。预览特性必须加 <code>--enable-preview</code> 才能编译运行，而且下一个版本可能改签名，写进业务代码后升级 JDK 就编译失败、甚至行为变化。结构化并发在 25 仍是第五次预览，但紧凑源文件与实例 main（JEP 512）和模块导入声明（JEP 511）在 25 已经转正；它们的正确位置是实验分支与教学示例，等 JEP 转正再合并。',
         '<b>问：升级 JDK 时最容易被忽略的一步是什么？</b><br>答：是把 CI 的 toolchain、Docker 基础镜像、本地开发环境同时切到目标版本。只改构建文件里的版本号，就会出现「我这能跑、流水线报错」的经典冲突。切换之后先用 <code>jdeps</code> 扫一遍仍依赖 <code>sun.misc.Unsafe</code> 或内部 API 的库，先换库再改代码。',
         '<b>问：为什么说 25 变化不大，但对运行时的影响很大？</b><br>答：因为最受影响的改动都发生在运行时而不是语法。虚拟线程在 21 就转正，到 25 才被框架默认使用；分代 ZGC 在 23 转正；紧凑对象头在 25 转正，直接影响堆占用与缓存命中率，代码一行都不用改。这类改动不出现在语法教学里，却决定同样硬件能扛多少请求。',
         '<b>问：模式匹配是不是只是把 instanceof 链写短了？</b><br>答：不止。配合 sealed 接口，switch 由编译器检查穷尽性，漏一个子类型是编译错误而不是运行期兜底；<code>when</code> 守卫让同一类型按条件细分；模式变量是强类型的，不会因为写错类型名在运行期抛 <code>ClassCastException</code>。它替代的是访问者模式那条路，新增子类型时所有遗漏会在编译期一起报出来。'
@@ -136,7 +137,7 @@
       { p: '“一个请求一个线程”本来是最好写的并发模型：请求进来开线程，代码从上往下写，异常用 try-catch 接，调试时栈是连续的。它的问题只有一个——线程太贵。平台线程的栈按 MB 预留，操作系统调度一个线程的成本在微秒级，几千个并发连接就把机器压垮。于是行业转向了异步：回调、Future、Reactive，用少量线程和事件循环换吞吐。' },
       { p: '异步的代价是编程模型变了。一段本来三行的业务代码，变成链式调用加异常包装；ThreadLocal 里的上下文在切换线程时丢失；线上出问题看堆栈，只能看到事件循环的一帧，业务调用链要靠 trace 拼回来。十几年下来，团队普遍接受了“用可读性换吞吐”这笔交易，但很少有人真的喜欢它。' },
       { p: '虚拟线程（JEP 444，21 转正）要撤销的正是这笔交易。它把线程的调度单位与操作系统线程解耦：虚拟线程由 JVM 调度到少量载体线程上，遇到阻塞时把栈卸载到堆里，等阻塞结束再挂回某个载体线程继续跑。对代码来说它仍然是一个 Thread，仍然可以 sleep、可以阻塞读、可以 try-catch；对运行时来说，它只是一个几百字节起步的堆对象。' },
-      { p: '为什么到 2026 年才流行？因为 21 是第一个包含虚拟线程的 LTS，而 25 才让它进入“框架默认可用”的阶段。Spring Boot 3.2 起就有一行开关，但大量项目的数据库驱动、连接池、链路追踪库要到 24 之后才把 synchronized 与 ThreadLocal 的老问题处理干净。技术上早就能用，工程上要等整条依赖链都稳。' },
+      { p: '为什么到 2026 年才流行？因为 21 是第一个包含虚拟线程的 LTS，而 25 才让它进入“框架默认可用”的阶段。Spring Boot 3.2 引入了 spring.threads.virtual.enabled 这一行开关，到 Boot 4.0（Framework 7）它仍是标准做法——新项目按“虚拟线程可用”来设计，不再当成实验特性。但大量项目的数据库驱动、连接池、链路追踪库要到 24 之后才把 synchronized 与 ThreadLocal 的老问题处理干净。技术上早就能用，工程上要等整条依赖链都稳。' },
       { p: '还有一个现实因素：24 的 JEP 491 让 synchronized 不再钉住载体线程。在 21 到 23 之间，只要代码里有一层同步块包着 IO，虚拟线程的吞吐就会被载体线程数锁死，而这个现象极难从监控上看出来。很多团队在 21 上试过一次、发现“没什么提升”就放弃了，原因往往就在这里。' },
 
       { h: '2.2 成本结构：栈、调度与内存' },
@@ -187,7 +188,7 @@
 
       { p: '另一个经常被问到的问题是：结构化并发和虚拟线程要不要一起上。答案是顺序很重要。先用虚拟线程把线程成本降下来，观察吞吐与延迟的实际变化；确认瓶颈已经转移到下游之后，再引入结构化并发去治理任务的生命周期。如果两件事一起改，出问题时无法判断收益来自哪一边。' },
       { h: '2.6 Spring Boot 里怎么开' },
-      { p: 'Spring Boot 3.2 起提供了一行开关：spring.threads.virtual.enabled=true。打开之后，Tomcat 的请求处理会用虚拟线程，异步任务执行器也会切到虚拟线程。这个开关很省事，但它只改了容器层，不改你代码里的线程池与连接池，所以开完之后必须自己检查三件事。' },
+      { p: 'Spring Boot 3.2 引入了一行开关：spring.threads.virtual.enabled=true，Boot 4.0 仍是标准做法（属性名与语义都没变）。打开之后，Tomcat 的请求处理会用虚拟线程，异步任务执行器也会切到虚拟线程。这个开关很省事，但它只改了容器层，不改你代码里的线程池与连接池，所以开完之后必须自己检查三件事。' },
       { flow: ['请求进入 Tomcat', '分配一个虚拟线程', '调用下游时挂起', '栈卸载，载体线程去跑别的', '响应返回后恢复', '线程对象回收'] },
       { lang: 'props', code: '# application.properties\nspring.threads.virtual.enabled=true\n\n# 需要自定义执行器时显式声明\n# @Bean(destroyMethod = \"close\")\n# ExecutorService taskExecutor() {\n#     return Executors.newVirtualThreadPerTaskExecutor();\n# }' },
       { out: 'Tomcat started on port 8080 (http) with virtual threads\n// 日志里的 http-nio-8080-exec-* 会被虚拟线程替代' },
@@ -305,7 +306,7 @@
         ['测试切片调整', '重跑 @WebMvcTest / @DataJpaTest，修正自动配置导入', '测试静默跳过或装配失败'],
         ['默认日志与追踪', 'Observation API 接管，去掉自写埋点', '指标名变化导致看板断链']
       ] } },
-      { p: '自定义 starter 的排查顺序建议是这样：先确认 spring.factories 是否还生效（Boot 4 仍支持，但更推荐新的注册方式），再确认条件注解的类是否还在原来的包下，最后确认自动配置类有没有被模块拆分后的依赖顺序影响。三步走完，多数起不来的问题都能定位。' },
+      { p: '自定义 starter 的排查顺序建议是这样：先确认自动配置的注册方式对不对——META-INF/spring.factories 里的 EnableAutoConfiguration 键从 Spring Boot 3.0 起就已经移除，Boot 4 更不会读它，现在只认 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports，每行写一个 @AutoConfiguration 类的全限定名，照旧写 spring.factories 不会报错、只会静默不生效；再确认条件注解的类是否还在原来的包下，最后确认自动配置类有没有被模块拆分后的依赖顺序影响。三步走完，多数起不来的问题都能定位。' },
       { p: '属性改名这一项要特别注意灰度期。把旧属性名写成兼容代码看着省事，但会让“配置到底生效了没有”变得不可判断。更稳的做法是：升级后立刻在启动日志里核对关键配置的实际生效值（例如连接池大小、超时、序列化选项），而不是相信配置文件里写了就等于生效了。' },
       { p: '可观测性方面，Boot 4 进一步统一到 Observation API。旧的 Micrometer 直接埋点仍然可用，但推荐路径是让框架自动为你生成指标与追踪。迁移时最容易出问题的是指标名与标签变了，导致既有看板断链，所以升级后要拿一份关键指标清单对一遍，确认名字与维度没有意外变化。' },
 
@@ -391,6 +392,12 @@
       { lang: 'java', code: '@Testcontainers\n@SpringBootTest\nclass OrderRepositoryIT {\n\n    @Container\n    @ServiceConnection\n    static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>(\"postgres:17-alpine\");\n\n    @Autowired OrderRepository repository;\n\n    @Test\n    void savesAndFindsOrder() {\n        repository.save(new Order(null, new BigDecimal(\"199.00\"), \"PAID\"));\n        assertThat(repository.findAll()).hasSize(1);\n    }\n}' },
       { out: 'org.testcontainers.postgresql.PostgreSQLContainer : Creating container for image: postgres:17-alpine\nHikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@3f1c0d\nOrderRepositoryIT > savesAndFindsOrder() PASSED' },
       { note: '<b>版本差异：</b>上面日志里的类名取决于 Testcontainers 版本：1.x 的模块包是 <code>org.testcontainers.containers</code>，2.x 起按模块重组（PostgreSQL 落到 <code>org.testcontainers.postgresql</code>）。正文代码故意只用简单类名 <code>PostgreSQLContainer</code>，import 以你所锁定的版本为准，不要直接抄搜索结果里的旧文章。' },
+      { p: '坐标是最容易漏的一环：只写测试代码不加依赖，编译期就会报找不到 <code>@Testcontainers</code>。最小集合是三个坐标——<code>org.testcontainers:junit-jupiter</code> 提供 JUnit 5 扩展（<code>@Testcontainers</code> 与 <code>@Container</code>），<code>org.testcontainers:mysql</code> 提供 <code>MySQLContainer</code>，Spring Boot 项目还要 <code>org.springframework.boot:spring-boot-testcontainers</code> 才有 <code>@ServiceConnection</code>。版本全部交给 BOM：<code>org.testcontainers:testcontainers-bom</code> 在 <code>dependencyManagement</code> 里锁 Testcontainers 一族，Spring 那个由 Boot 的 BOM 管，因此依赖条目都不写 version。Gradle 的等价写法是 testImplementation platform("org.testcontainers:testcontainers-bom") 再加模块依赖。' },
+      { lang: 'xml', code: '<dependencyManagement>\n  <dependencies>\n    <!-- 版本以官方 BOM 为准：testcontainers.version 取官方 BOM 页面公布的最近一版\n         本机未实测，所以只留属性占位，不写死精确号 -->\n    <dependency>\n      <groupId>org.testcontainers</groupId>\n      <artifactId>testcontainers-bom</artifactId>\n      <version>${testcontainers.version}</version>\n      <type>pom</type>\n      <scope>import</scope>\n    </dependency>\n  </dependencies>\n</dependencyManagement>\n\n<dependencies>\n  <!-- JUnit 5 集成：@Testcontainers / @Container -->\n  <dependency>\n    <groupId>org.testcontainers</groupId>\n    <artifactId>junit-jupiter</artifactId>\n    <scope>test</scope>\n  </dependency>\n  <!-- MySQL 模块：MySQLContainer（1.x / 2.x 的 artifactId 都是 mysql） -->\n  <dependency>\n    <groupId>org.testcontainers</groupId>\n    <artifactId>mysql</artifactId>\n    <scope>test</scope>\n  </dependency>\n  <!-- 只给 Spring 项目：@ServiceConnection 在这个模块里，版本由 Boot 的 BOM 管 -->\n  <dependency>\n    <groupId>org.springframework.boot</groupId>\n    <artifactId>spring-boot-testcontainers</artifactId>\n    <scope>test</scope>\n  </dependency>\n</dependencies>' },
+      { out: '[INFO] +- org.testcontainers:junit-jupiter:jar:（BOM 决定）:test\n[INFO] +- org.testcontainers:mysql:jar:（BOM 决定）:test\n[INFO] +- org.testcontainers:testcontainers:jar:（BOM 决定）:test\n[INFO] +- org.springframework.boot:spring-boot-testcontainers:jar:（Boot BOM 决定）:test\n// 四个依赖都没写 version：Testcontainers 三个由 testcontainers-bom 统一决定' },
+      { p: '骨架要能直接跑：一个类、一个静态容器、一个用容器连接串的测试方法，这套组合不含任何项目代码，复制到新仓库就能验证依赖坐标与 Docker 是否就绪。注意 import 的包名——1.x 在 <code>org.testcontainers.containers</code>，2.x 按模块重组到 <code>org.testcontainers.mysql</code>，照抄前先确认锁的是哪个大版本。' },
+      { lang: 'java', code: '// 最小可用骨架：不需要 Spring，纯 JUnit 5\n// 1.x 包名：import org.testcontainers.containers.MySQLContainer;\n// 2.x 包名：import org.testcontainers.mysql.MySQLContainer;\nimport org.junit.jupiter.api.Test;\nimport org.testcontainers.containers.MySQLContainer;\nimport org.testcontainers.junit.jupiter.Container;\nimport org.testcontainers.junit.jupiter.Testcontainers;\n\n@Testcontainers                     // 扩展负责启动与停止容器\nclass MySqlSmokeTest {\n\n    @Container                      // 标记为受管容器\n    static final MySQLContainer<?> DB =\n            new MySQLContainer<>("mysql:8.4");   // 标签固定，不用 latest\n\n    @Test\n    void connects() throws Exception {\n        try (var conn = DB.createConnection("")) {\n            var rs = conn.createStatement().executeQuery("SELECT VERSION()");\n            rs.next();\n            System.out.println("server = " + rs.getString(1));\n        }\n    }\n}' },
+      { out: 'server = 8.4\n// 类第一次用到容器时启动，整类共用一个；JVM 退出时 Ryuk 兜底回收' },
       { p: '注意 static 修饰符。容器声明为静态字段时，JUnit 会在整个测试类之间共享同一个容器实例，只启动一次；去掉 static 则每个测试方法启动一次，几十个方法就是几分钟。这是最常见的性能事故来源，也是新手最容易忽略的一行。' },
       { p: '连接信息不需要手工拼。传统写法要在 @DynamicPropertySource 里把容器地址映射成 spring.datasource.url，@ServiceConnection 把这一步省掉了。它认识 JDBC、Redis、Kafka、RabbitMQ、MongoDB 等多种容器，识别不到时才需要回退到手写属性。' },
       { lang: 'java', code: '// 需要自定义时，仍可手写映射（老项目常见写法）\n@DynamicPropertySource\nstatic void props(DynamicPropertyRegistry registry) {\n    registry.add(\"spring.datasource.url\", pg::getJdbcUrl);\n    registry.add(\"spring.datasource.username\", pg::getUsername);\n    registry.add(\"spring.datasource.password\", pg::getPassword);\n}' },
@@ -420,9 +427,10 @@
       { p: '关于镜像的选择，还有一条经验：用官方镜像加轻量标签（例如 postgres:17-alpine），别用社区维护的“一体化镜像”。后者看起来方便，实际版本更新慢、参数不透明，出问题时很难判断是镜像的问题还是代码的问题。测试环境与生产用同一来源的镜像，结论才有意义。' },
       { h: '4.4 Flyway 与 Liquibase 的迁移脚本测试' },
       { p: '数据库迁移脚本是这类测试里价值最高的部分。它们通常在生产上只执行一次，却决定了整个 schema 的形态，一旦出错就是不可逆的事故。用真库跑一遍迁移，能在合并前发现语法错误、顺序依赖、以及回滚不可用的问题。' },
-      { p: 'Flyway 的约定很简单：脚本放在 classpath:db/migration 下，文件名形如 V1__init.sql、V2__add_index.sql，版本号决定执行顺序。Boot 在数据源就绪后自动执行，容器测试里不需要额外代码，只要脚本存在就会跑。测试要断言的是执行结果——表结构、约束、索引是否存在。' },
-      { lang: 'sql', code: '-- src/test/resources/db/migration/V3__add_order_status.sql\nALTER TABLE orders ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT \'NEW\';\nCREATE INDEX idx_orders_status_created ON orders (status, created_at DESC);\n\n-- 校验：迁移后索引真的存在\n-- SELECT indexname FROM pg_indexes WHERE tablename = \'orders\';' },
+      { p: 'Flyway 的约定很简单：脚本放在 classpath:db/migration 下，也就是 src/main/resources/db/migration，文件名形如 V1__init.sql、V2__add_index.sql，版本号决定执行顺序。生产与测试读的是同一批文件——容器测试不另建 src/test/resources/db/migration 副本，否则容器里跑通的可能是上线时根本不执行的那一份。Boot 在数据源就绪后自动执行，容器测试里不需要额外代码，只要脚本存在就会跑。测试要断言的是执行结果——表结构、约束、索引是否存在。' },
+      { lang: 'sql', code: '-- src/main/resources/db/migration/V3__add_order_status.sql\nALTER TABLE orders ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT \'NEW\';\nCREATE INDEX idx_orders_status_created ON orders (status, created_at DESC);\n\n-- 校验：迁移后索引真的存在\n-- SELECT indexname FROM pg_indexes WHERE tablename = \'orders\';' },
       { out: 'idx_orders_status_created\norders_pkey\n// 若脚本语法错误：FlywayException: Migration V3 failed ... syntax error at or near "DEFAULT"' },
+      { p: '这一轮补的是 V3__add_order_status.sql：V1 建表、V2 加索引，V3 给已有的 orders 补 status 列。补脚本要按“库里已有数据”来写——先加可空列、回填、再 SET NOT NULL，把一条 ALTER 拆成三步走，否则在有几百万行的表上要么直接失败、要么长时间持锁。写完后在同一个目录上跑两条路径（空库迁移到最新版、从 V2 的结构迁移到最新版），断言 flyway_schema_history 里出现版本 3 且列与索引都在，这条断言测的是 schema 的真实状态，不是“脚本文件存在”。' },
       { p: '一个非常值得加的测试是“从空库迁移到最新版”和“从上一个版本迁移到最新版”两条路径。前者验证脚本的完整性，后者验证增量脚本在已有数据上不会失败——后者才是生产真实场景，也是问题最集中的地方。很多脚本在空库上跑得通，在有几百万行数据的表上会因为加非空列而锁表或超时。' },
       { p: 'Liquibase 的思路不同：它用 changelog（XML/YAML/SQL）描述变更集，靠 changelog 的 id 与校验和判断是否执行过。它的优势是数据库无关与回滚描述，代价是配置更啰嗦。无论用哪个，测试的重点都一样——脚本能否在真库上跑通、跑完之后结构与预期是否一致。' },
       { note: '<b>提示：</b>不要用 hibernate.ddl-auto=create-drop 来“替代”迁移脚本。它生成的 schema 与迁移脚本产出的 schema 往往不一致，导致测试通过而线上结构不同。生产与测试必须用同一套迁移脚本。' },
