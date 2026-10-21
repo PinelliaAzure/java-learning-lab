@@ -120,9 +120,23 @@ function auditChapter(id, tb) {
       if (item.slice(d).indexOf('<details') >= 0 && item.slice(d + 1).indexOf('<details') >= 0) errs.push('第 ' + (q + 1) + ' 题出现嵌套 details');
       var body = item.slice(d);
       body = body.replace(/^<details class="tb-ans"><summary>参考答案<\/summary>/, '').replace(/<\/details>[\s\S]*$/, '');
-      var bc = cjk(stripTags(body));
-      if (bc < 60) errs.push('第 ' + (q + 1) + ' 题答案仅 ' + bc + ' 汉字（要求 ≥60）');
-      if (bc > 400) errs.push('第 ' + (q + 1) + ' 题答案 ' + bc + ' 汉字（要求 ≤400）');
+      var PRE = '<pre class="tb-ans-code">';
+      if (body.indexOf(PRE) >= 0) {
+        var ca = body.indexOf(PRE) + PRE.length;
+        var cb = body.indexOf('</pre>', ca);
+        if (cb < 0) errs.push('第 ' + (q + 1) + ' 题的代码块未闭合');
+        else {
+          var inner = body.slice(ca, cb);
+          if (inner.replace(/\s/g, '').length < 20) errs.push('第 ' + (q + 1) + ' 题的代码块内容过短');
+          if (inner.indexOf('<') >= 0) errs.push('第 ' + (q + 1) + ' 题的代码块含未转义的 <（应写 &lt;）');
+        }
+        if (body.indexOf('<b>预期现象</b>') >= 0) errs.push('第 ' + (q + 1) + ' 题是代码题，答案不该再有「预期现象」');
+      } else {
+        if (body.indexOf('<b>预期现象</b>') < 0) errs.push('第 ' + (q + 1) + ' 题缺「预期现象」（非代码题必须三段式）');
+        var bc = cjk(stripTags(body));
+        if (bc < 60) errs.push('第 ' + (q + 1) + ' 题答案仅 ' + bc + ' 汉字（要求 ≥60）');
+        if (bc > 400) errs.push('第 ' + (q + 1) + ' 题答案 ' + bc + ' 汉字（要求 ≤400）');
+      }
       var stem = item.slice(0, d).replace(/<[^>]+>/g, '');
       if (cjk(stem) < 8) errs.push('第 ' + (q + 1) + ' 题题面过短（' + cjk(stem) + ' 汉字）');
       if (/TODO|待补|略$|答案：略/.test(body)) errs.push('第 ' + (q + 1) + ' 题答案含占位词');

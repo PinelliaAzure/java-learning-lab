@@ -2737,3 +2737,23 @@ label.btn { cursor: pointer; display: inline-flex; align-items: center; justify-
   .tb-ans > .ans-body { display: block; }
 }
 
+
+/* ---------- 自测与练习：代码题的答案块（轻量、可横向滚动、不参与语法高亮） ---------- */
+.tb-ans > .ans-body pre.tb-ans-code {
+  margin: 3px 0 9px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: #06080e;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.8;
+  color: #cdd3e0;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.tb-ans > .ans-body pre.tb-ans-code:last-child { margin-bottom: 0; }
+.tb-ans > .ans-body pre.tb-ans-code::-webkit-scrollbar { height: 6px; }
+.tb-ans > .ans-body pre.tb-ans-code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 99px; }

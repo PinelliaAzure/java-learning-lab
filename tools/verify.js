@@ -590,10 +590,11 @@ rule(13, '附加：章尾倒数第二节「常见追问」为 1 flow（可选）
 });
 
 /* ---------- 附加规则 14：章尾末节「自测与练习」答案折叠完整 ---------- */
-rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可选 1 p 前置 + 1 note 后置），每题折叠三要素齐全', function (r) {
+rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可选 1 p 前置 + 1 note 后置）；每题折叠答案要么三段式、要么是代码块（代码题不写「预期现象」）', function (r) {
   const ids = chapterIds();
   const bad = [];
-  let withOl = 0; let total = 0; let okQ = 0;
+  const PRE_OPEN = '<pre class="tb-ans-code">';
+  let withOl = 0; let total = 0; let okQ = 0; let proseQ = 0; let codeQ = 0;
   ids.forEach(function (id) {
     const secs = tailSections(TEXTBOOK[id]);
     if (!secs.length) { bad.push(id + '：没有任何 h 小节'); return; }
@@ -628,16 +629,31 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
       const cut = body.indexOf('</div></details>');
       if (cut >= 0) body = body.slice(0, cut);
       if (/<p[ >]/.test(body)) bad.push(id + '：自测第 ' + n + ' 题答案内含 <p>（answer 里只放行内标签）');
-      if (body.indexOf('<b>预期现象</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>预期现象</b>：');
-      if (body.indexOf('<b>为什么</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>为什么</b>：');
-      if (body.indexOf('<b>要点</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>要点</b>：');
-      const c = cjkCount(noTags(body));
-      if (c < 80) bad.push(id + '：自测第 ' + n + ' 题答案正文仅 ' + c + ' 汉字，要求 80–400');
-      if (c > 400) bad.push(id + '：自测第 ' + n + ' 题答案正文 ' + c + ' 汉字，要求 80–400');
+      if (body.indexOf(PRE_OPEN) >= 0) {
+        codeQ++;
+        const ca = body.indexOf(PRE_OPEN) + PRE_OPEN.length;
+        const cb = body.indexOf('</pre>', ca);
+        if (cb < 0) bad.push(id + '：自测第 ' + n + ' 题的代码块未闭合');
+        else {
+          const inner = body.slice(ca, cb);
+          if (inner.replace(/\s/g, '').length < 20) bad.push(id + '：自测第 ' + n + ' 题的代码块内容过短');
+          if (inner.indexOf('<') >= 0) bad.push(id + '：自测第 ' + n + ' 题的代码块含未转义的 <（应写 &lt;）');
+        }
+        if (body.indexOf('<b>预期现象</b>') >= 0) bad.push(id + '：自测第 ' + n + ' 题是代码题，答案里不该再有「预期现象」');
+      } else {
+        proseQ++;
+        if (body.indexOf('<b>预期现象</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>预期现象</b>：（非代码题必须三段式）');
+        if (body.indexOf('<b>为什么</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>为什么</b>：');
+        if (body.indexOf('<b>要点</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>要点</b>：');
+        const c = cjkCount(noTags(body));
+        if (c < 80) bad.push(id + '：自测第 ' + n + ' 题答案正文仅 ' + c + ' 汉字，要求 80–400');
+        if (c > 400) bad.push(id + '：自测第 ' + n + ' 题答案正文 ' + c + ' 汉字，要求 80–400');
+      }
       if (bad.length === mark) okQ++;
     });
   });
-  r.facts.push(ids.length + ' 章 / ' + withOl + ' 个自测 ol / ' + total + ' 题，折叠答案三要素齐全 ' + okQ + ' 题');
+  r.facts.push(ids.length + ' 章 / ' + withOl + ' 个自测 ol / ' + total + ' 题，折叠答案合规 ' + okQ + ' 题');
+  r.facts.push('答案形态：三段式 ' + proseQ + ' 题 / 代码块 ' + codeQ + ' 题');
   bad.slice(0, 40).forEach(function (s) { r.issues.push(s); });
   if (bad.length > 40) r.issues.push('……另有 ' + (bad.length - 40) + ' 条同类问题省略');
 });
