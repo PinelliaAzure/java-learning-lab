@@ -298,7 +298,8 @@
      ------------------------------------------------------------------ */
   function hashId() {
     var m = location.hash.match(/^#\/(.+)$/);
-    return m ? decodeURIComponent(m[1]) : null;
+    if (!m) return null;
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
   }
 
   function route() {
@@ -403,9 +404,47 @@
   /* ------------------------------------------------------------------
      课程页
      ------------------------------------------------------------------ */
+  /* 教材统计：只数正文（h/p/note/list/ol/table）里的汉字，代码与流程图不计入阅读量 */
+  function tbOf(lesson) {
+    return (window.JAVA_TEXTBOOK && window.JAVA_TEXTBOOK[lesson.id]) || null;
+  }
+
+  function tbText(b) {
+    if (b.h) return b.h;
+    if (b.p) return b.p;
+    if (b.note) return b.note;
+    if (b.list) return b.list.join(' ');
+    if (b.ol) return b.ol.join(' ');
+    if (b.table) return b.table.head.join(' ') + ' ' + b.table.rows.map(function (r) { return r.join(' '); }).join(' ');
+    return '';
+  }
+
+  function tbStats(tb) {
+    var cjk = 0;
+    var hasFlow = false;
+    (tb.blocks || []).forEach(function (b) {
+      if (b.flow) hasFlow = true;
+      var t = tbText(b);
+      if (t) cjk += (String(t).replace(/<[^>]+>/g, '').match(/[\u4e00-\u9fa5]/g) || []).length;
+    });
+    return { cjk: cjk, minutes: Math.max(5, Math.ceil(cjk / 180)), hasFlow: hasFlow };
+  }
+
+  /* 按「 · 」切段后清掉空段，避免出现「 · · 」或结尾悬空分隔符 */
+  function tidyMeta(s) {
+    var parts = String(s).split('·');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].replace(/\s+/g, ' ').trim();
+      if (p) out.push(p);
+    }
+    return out.join(' · ');
+  }
+
   function metaHtml(lesson) {
     var s = statusOf(lesson.id);
-    var meta = '<span class="meta-chip">预计 ' + lesson.minutes + ' 分钟</span>' +
+    var tb = tbOf(lesson);
+    var meta = '<span class="meta-chip">预计 ' + (tb ? tbStats(tb).minutes : (lesson.minutes || 5)) + ' 分钟</span>' +
       '<span class="meta-chip level">' + esc(lesson.level || '入门') + '</span>' +
       '<span class="meta-chip">' + lesson.points.length + ' 个要点</span>' +
       '<span class="meta-chip">' + lesson.quiz.length + ' 道习题</span>';
@@ -492,26 +531,77 @@
 
     if (state.tab === 'learn') renderLearn(panel);
     else renderQuiz(panel);
+
+    applyTbJump();
   }
+
+  /* ------------------------------------------------------------------
+     搜索跳转：定位到教材命中的那一块
+     ------------------------------------------------------------------ */
+  var JUMP_HL = 'tb-jump-hit';
+
+  function flashBlock(el) {
+    el.classList.add(JUMP_HL);
+    var oldOutline = el.style.outline;
+    var oldBg = el.style.backgroundColor;
+    el.style.outline = '2px solid currentColor';
+    el.style.outlineOffset = '4px';
+    el.style.backgroundColor = 'rgba(255, 193, 7, .18)';
+    el.style.transition = 'background-color .4s ease';
+    setTimeout(function () {
+      el.classList.remove(JUMP_HL);
+      el.style.outline = oldOutline;
+      el.style.outlineOffset = '';
+      el.style.backgroundColor = oldBg;
+      el.style.transition = '';
+    }, 1500);
+  }
+
+  /* 消费 window.__tbJump = { lessonId, bi }：命中当前课才处理，处理后清空意图 */
+  function applyTbJump() {
+    var j = window.__tbJump;
+    if (!j || !state.current || j.lessonId !== state.current.id) return false;
+
+    if (state.tab !== 'learn') {           /* 命中块在讲解页，先切回讲解页，意图留着交给重渲染后的本函数消费 */
+      state.tab = 'learn';
+      state.quiz = null;
+      renderStepper();
+      renderPanel();
+      return true;
+    }
+    window.__tbJump = null;                /* 只在真正滚动前后清空，避免切页途中把意图丢掉 */
+    if (typeof j.bi !== 'number' || j.bi < 0) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return true;
+    }
+    var panel = $('#panel');
+    var el = panel ? panel.querySelector('[data-bi="' + j.bi + '"]') : null;
+    if (!el) return true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    flashBlock(el);
+    return true;
+  }
+  window.__tbJumpApply = applyTbJump;
 
   /* ------------------------------------------------------------------
      知识讲解
      ------------------------------------------------------------------ */
   function renderTbBlocks(blocks) {
-    return (blocks || []).map(function (b) {
-      if (b.h) return '<h3 class="tb-h">' + b.h + '</h3>';
-      if (b.p) return '<p class="tb-p">' + b.p + '</p>';
-      if (b.list) return '<ul class="tb-list">' + b.list.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>';
-      if (b.ol) return '<ol class="tb-ol">' + b.ol.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol>';
+    return (blocks || []).map(function (b, bi) {
+      var at = ' data-bi="' + bi + '"';
+      if (b.h) return '<h3 class="tb-h"' + at + '>' + b.h + '</h3>';
+      if (b.p) return '<p class="tb-p"' + at + '>' + b.p + '</p>';
+      if (b.list) return '<ul class="tb-list"' + at + '>' + b.list.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>';
+      if (b.ol) return '<ol class="tb-ol"' + at + '>' + b.ol.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol>';
       if (b.code) {
         var lines = String(b.code).split('\n').map(function (l) { return highlightLine(l); }).join('\n');
-        return '<div class="tb-code"><div class="tb-code-head"><span class="dot"></span>' + esc(b.title || '示例代码') +
+        return '<div class="tb-code"' + at + '><div class="tb-code-head"><span class="dot"></span>' + esc(b.title || '示例代码') +
           '</div><pre><code>' + lines + '</code></pre></div>';
       }
-      if (b.out) return '<div class="tb-out"><b>运行结果</b><pre>' + esc(b.out) + '</pre></div>';
-      if (b.note) return '<div class="tb-note">' + b.note + '</div>';
+      if (b.out) return '<div class="tb-out"' + at + '><b>运行结果</b><pre>' + esc(b.out) + '</pre></div>';
+      if (b.note) return '<div class="tb-note"' + at + '>' + b.note + '</div>';
       if (b.flow) {
-        return '<div class="tb-flow">' + b.flow.map(function (step, i) {
+        return '<div class="tb-flow"' + at + '>' + b.flow.map(function (step, i) {
           var t = typeof step === 'string' ? step : step.t;
           var d = typeof step === 'string' ? '' : (step.d || '');
           return '<div class="tb-flow-step"><b>' + t + '</b>' + (d ? '<span>' + d + '</span>' : '') + '</div>' +
@@ -523,19 +613,24 @@
         var rows = b.table.rows.map(function (r) {
           return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
         }).join('');
-        return '<div class="tb-table"><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        return '<div class="tb-table"' + at + '><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
       }
       return '';
     }).join('');
   }
 
-  function tbMetaText(tb) {
-    var cjk = (JSON.stringify(tb.blocks || []).match(/[\u4e00-\u9fa5]/g) || []).length;
+  function tbMetaText(tb, lesson) {
+    var st = tbStats(tb);
     var meta = tb.meta || '';
     if (/本章约\s*\d+\s*字/.test(meta)) {
-      return meta.replace(/本章约\s*\d+\s*字/, '本章约 ' + cjk + ' 字');
+      meta = meta.replace(/本章约\s*\d+\s*字/, '本章约 ' + st.cjk + ' 字');
+    } else {
+      meta = '本章约 ' + st.cjk + ' 字' + (meta ? ' · ' + meta : '');
     }
-    return '本章约 ' + cjk + ' 字' + (meta ? ' · ' + meta : '');
+    meta = meta.replace(/建议\s*\d+\s*分钟/, '建议 ' + st.minutes + ' 分钟');
+    if (lesson && lesson.quiz) meta = meta.replace(/\d+\s*道(?:习题|练习)/, lesson.quiz.length + ' 道习题');
+    if (!st.hasFlow) meta = meta.replace(/配套流程图\s*(?:与|和|及)?\s*/, '');
+    return tidyMeta(meta);
   }
 
   function renderLearn(panel) {
@@ -556,38 +651,17 @@
         guideHead += '<div class="guide-goals"><h3>学完这一课，你应该能</h3><ul>' +
           guide.goals.map(function (g) { return '<li>' + g + '</li>'; }).join('') + '</ul></div>';
       }
-      if (guide.flow && !tb) {
-        guideHead += '<div class="guide-flow">' + guide.flow + '</div>';
-      }
-    }
-
-    var guideSections = '';
-    if (guide && !tb) {
-      (guide.sections || []).forEach(function (sec) {
-        guideSections += '<h3>' + sec.h + '</h3><p>' + sec.p + '</p>';
-      });
     }
 
     var pointsHtml = guide
       ? '<details class="points-details"><summary>要点速记（复习时展开）</summary><div class="points">' + points + '</div></details>'
       : '<div class="points-title">核心要点</div><div class="points">' + points + '</div>';
 
-    var walkHtml = '';
-    if (!tb && deep && deep.walk && deep.walk.length) {
-      walkHtml = '<div class="walk"><h3>逐步拆解</h3>' +
-        deep.walk.map(function (w) {
-          return '<div class="walk-item"><code class="walk-code">' + esc(w[0]) + '</code><span class="walk-note">' + w[1] + '</span></div>';
-        }).join('') + '</div>';
-    }
-
-    var bodyHtml;
+    var bodyHtml = '';
     if (tb) {
       bodyHtml = guideHead +
-        '<div class="textbook"><div class="tb-meta">' + tbMetaText(tb) + '</div>' + renderTbBlocks(tb.blocks) + '</div>' +
+        '<div class="textbook"><div class="tb-meta">' + tbMetaText(tb, lesson) + '</div>' + renderTbBlocks(tb.blocks) + '</div>' +
         pointsHtml;
-    } else {
-      bodyHtml = guideHead + guideSections + pointsHtml +
-        codeBlock(lesson.code, lesson.codeTitle || 'Example.java') + walkHtml;
     }
 
     var pitfallsHtml = '';
@@ -603,7 +677,6 @@
 
     panel.innerHTML = '<div class="panel"><div class="panel-pad">' +
       '<p class="intro">' + lesson.intro + '</p>' +
-      (deep && deep.why && !tb ? '<div class="deep-why"><b>为什么学这一课</b><p>' + deep.why + '</p></div>' : '') +
       bodyHtml +
       pitfallsHtml +
       (deep && deep.summary && deep.summary.length

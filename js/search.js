@@ -1,4 +1,4 @@
-/* 顶栏搜索：课程名 / 模块 / 知识点 / 代码关键词 */
+/* 顶栏搜索：课程名 / 模块 / 要点 / 教材正文 / 示例代码 */
 (function () {
   'use strict';
   var FLAT = [];
@@ -9,6 +9,7 @@
 
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function strip(s) { var d = document.createElement('div'); d.innerHTML = s; return d.textContent || ''; }
+  function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
   function hl(text, q) {
     var e = esc(text);
     if (!q) return e;
@@ -16,16 +17,52 @@
     try { return e.replace(new RegExp('(' + r + ')', 'ig'), '<mark>$1</mark>'); } catch (err) { return e; }
   }
 
-  /* 索引：标题 + 模块 + 导语 + 知识点正文 + 示例代码 */
-  var INDEX = FLAT.map(function (x) {
-    var body = (x.l.points || []).map(function (p) { return p.t + ' ' + strip(p.d); }).join(' ');
-    var plain = ((x.l.intro || '') + ' ' + body + ' ' + (x.l.code || '')).replace(/\s+/g, ' ').trim();
-    return {
-      x: x,
-      plain: plain,
-      text: (x.l.title + ' ' + x.m.title + ' ' + plain).toLowerCase()
-    };
-  });
+  /* 教材 block → 可搜索文本；代码是纯文本，不走 innerHTML，避免 List<T> 被当成标签吃掉 */
+  function tbBlockText(b) {
+    if (b.code) return norm(b.code);
+    if (b.h) return norm(strip(b.h));
+    if (b.p) return norm(strip(b.p));
+    if (b.note) return norm(strip(b.note));
+    if (b.list) return norm(strip(b.list.join(' ')));
+    if (b.ol) return norm(strip(b.ol.join(' ')));
+    return '';
+  }
+
+  /* 索引：课程本身一条（bi = -1）+ 教材每个 block 一条；同步一次建成 */
+  var INDEX = (function build() {
+    var T = window.JAVA_TEXTBOOK || {};
+    var out = [];
+    FLAT.forEach(function (x) {
+      var l = x.l;
+      var mod = x.m.no + ' ' + x.m.title;
+      var titleLower = String(l.title).toLowerCase();
+      var body = (l.points || []).map(function (p) { return p.t + ' ' + strip(p.d); }).join(' ');
+      var plain = norm((l.intro || '') + ' ' + body + ' ' + (l.code || ''));
+      out.push({
+        id: l.id, bi: -1, type: '要点',
+        title: l.title, mod: mod, plain: plain,
+        text: (l.title + ' ' + x.m.title + ' ' + plain).toLowerCase(),
+        titleLower: titleLower, order: out.length
+      });
+
+      var tb = T[l.id];
+      if (!tb || !tb.blocks) return;
+      var section = '';
+      tb.blocks.forEach(function (b, bi) {
+        if (b.h) section = norm(strip(b.h));
+        var t = tbBlockText(b);
+        if (!t) return;
+        var label = section || '正文';
+        out.push({
+          id: l.id, bi: bi, type: '教材 · ' + label,
+          title: l.title, mod: mod, plain: t,
+          text: (l.title + ' ' + x.m.title + ' ' + label + ' ' + t).toLowerCase(),
+          titleLower: titleLower, order: out.length
+        });
+      });
+    });
+    return out;
+  })();
 
   /* 摘要只截取命中位置附近，避免出现「标题相关但摘要看不出为什么命中」 */
   function snippet(it, q) {
@@ -44,7 +81,7 @@
   wrap.className = 'search-wrap';
   wrap.innerHTML =
     '<svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>' +
-    '<input class="search-input" id="search-q" type="search" placeholder="搜索课程 / 知识点" autocomplete="off" spellcheck="false" aria-label="搜索课程">' +
+    '<input class="search-input" id="search-q" type="search" placeholder="搜索课程 / 教材 / 代码" autocomplete="off" spellcheck="false" aria-label="搜索课程">' +
     '<kbd class="search-kbd">/</kbd>' +
     '<div class="search-panel" id="search-panel" hidden></div>';
   var head = document.querySelector('.head-right');
@@ -56,10 +93,24 @@
 
   function hide() { panel.hidden = true; }
 
-  function go(id) {
+  function currentId() {
+    var m = location.hash.match(/^#\/(.+)$/);
+    if (!m) return null;
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  }
+
+  /* 先落跳转意图（engine.js 消费），再改 hash；已在本课则就地滚动 */
+  function go(id, bi) {
+    window.__tbJump = { lessonId: id, bi: bi };
     hide();
     input.value = '';
     input.blur();
+    if (currentId() === id) {
+      if (window.__tbJumpApply && window.__tbJumpApply()) return;
+      window.__tbJump = null;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     location.hash = '#/' + id;
   }
 
@@ -73,34 +124,48 @@
     items[i].scrollIntoView({ block: 'nearest' });
   }
 
+  function rank(it, q) {
+    if (it.titleLower.indexOf(q) >= 0) return 0;
+    if (it.bi < 0) return 1;
+    return 2;
+  }
+
+  function search(raw) {
+    var q = norm(raw).toLowerCase();
+    if (!q) return [];
+    var hits = [];
+    for (var i = 0; i < INDEX.length; i++) {
+      if (INDEX[i].text.indexOf(q) >= 0) hits.push(INDEX[i]);
+    }
+    hits.sort(function (a, b) { return rank(a, q) - rank(b, q) || a.order - b.order; });
+    return hits.slice(0, MAX);
+  }
+
   function render() {
     var raw = input.value.trim();
     if (!raw) { hide(); return; }
-    var q = raw.toLowerCase();
-    var hits = INDEX.filter(function (it) { return it.text.indexOf(q) >= 0; })
-      .map(function (it) { return { it: it, title: it.x.l.title.toLowerCase().indexOf(q) >= 0 ? 0 : 1 }; })
-      .sort(function (a, b) { return a.title - b.title; })
-      .slice(0, MAX)
-      .map(function (h) { return h.it; });
-
+    var hits = search(raw);
     if (!hits.length) {
-      panel.innerHTML = '<p class="search-hint">没有匹配「' + esc(raw) + '」的课程，换个关键词试试。</p>';
+      panel.innerHTML = '<p class="search-hint">没有匹配「' + esc(raw) + '」的内容，换个关键词试试。</p>';
       panel.hidden = false;
       return;
     }
     panel.innerHTML = hits.map(function (it) {
-      var x = it.x;
-      return '<button type="button" class="search-hit" data-go="' + x.l.id + '">' +
-        '<b>' + hl(x.l.title, raw) + '</b>' +
-        '<small>' + esc(x.m.no + ' ' + x.m.title) + '</small>' +
-        '<span>' + hl(snippet(it, q), raw) + '</span></button>';
+      return '<button type="button" class="search-hit" data-go="' + esc(it.id) + '" data-bi="' + it.bi + '">' +
+        '<b>' + hl(it.title, raw) + '</b>' +
+        '<small>' + esc(it.mod + ' · ' + it.type) + '</small>' +
+        '<span>' + hl(snippet(it, raw.toLowerCase()), raw) + '</span></button>';
     }).join('');
     panel.hidden = false;
   }
 
+  function pick(b) {
+    go(b.getAttribute('data-go'), parseInt(b.getAttribute('data-bi'), 10));
+  }
+
   panel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-go]');
-    if (b) go(b.getAttribute('data-go'));
+    if (b) pick(b);
   });
 
   input.addEventListener('input', render);
@@ -109,7 +174,7 @@
     if (e.key === 'Escape') { hide(); input.blur(); }
     else if (e.key === 'Enter') {
       var b = panel.querySelector('.search-hit.active') || panel.querySelector('.search-hit');
-      if (b) go(b.getAttribute('data-go'));
+      if (b) pick(b);
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!panel.hidden) move(e.key === 'ArrowDown' ? 1 : -1);
@@ -129,4 +194,7 @@
     input.select();
   });
   window.addEventListener('hashchange', hide);
+
+  /* 校验钩子：索引与查询逻辑对外只读暴露，便于断言脚本核对覆盖率 */
+  window.__searchDebug = { index: INDEX, search: search, setQuery: function (q) { input.value = q; render(); }, panel: function () { return panel.innerHTML; } };
 })();

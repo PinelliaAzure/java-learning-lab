@@ -66,12 +66,6 @@ System.out.println(upper + " " + level);`, [
         ], '更短但更强的 Java', '箭头 switch 不会穿透，也不需要 break。'),
     guide: {
       goals: ['用 var、文本块、switch 表达式简化代码', '理解 record 和 sealed 的适用场景', '在 instanceof 中直接绑定变量'],
-      flow: '新特性不是炫技：<b>能减少样板、能表达约束</b>的地方才用。团队项目先确认 JDK 版本。',
-      sections: [
-        { h: 'var 的边界', p: 'var 只能用于局部变量和 for 循环变量，必须有初始值。它不是 Object，也不能重新赋成别的类型；用得好减少重复，用不好让类型变得不可读。' },
-        { h: 'switch 表达式解决了什么', p: '传统 switch 是语句，容易忘 break；表达式必须返回值，编译器检查穷尽性，箭头语法天然不穿透，代码更接近“查表”。' },
-        { h: 'sealed 的意义', p: 'sealed interface Shape permits Circle, Rect 明确限定实现者，配合 switch 模式匹配，编译器能检查你是否处理了所有子类型。' }
-      ],
       pitfalls: [
         '把 var 用在字段或方法参数上，编译报错。',
         '文本块结尾的三个引号位置影响缩进和换行。',
@@ -143,12 +137,6 @@ System.out.println(map.firstKey());`, [
         ], 'TreeMap 自动排序', 'HashMap 不保证顺序，TreeMap 保证按 key 排序。'),
     guide: {
       goals: ['用 TreeMap 做排序和范围查询', '用 EnumMap 替代枚举 key 的 HashMap', '用 Properties 读取配置文件'],
-      flow: '选容器先问三件事：<b>要不要顺序？key 是什么类型？要不要线程安全？</b>',
-      sections: [
-        { h: 'TreeMap 的范围查询', p: 'subMap(from, to) 返回左闭右开区间，headMap 取小于某 key 的部分，tailMap 取大于等于的部分。做排行榜、时间区间统计很方便。' },
-        { h: 'EnumMap 为什么快', p: '枚举的 ordinal 是连续整数，EnumMap 直接用数组下标存取，没有哈希冲突，遍历也按声明顺序。' },
-        { h: 'Properties 的编码坑', p: 'load(InputStream) 默认按 ISO-8859-1 解码，中文会乱码；JDK 9+ 可用 load(Reader) 指定 UTF-8，或使用 UTF-8 编码的配置文件。' }
-      ],
       pitfalls: [
         'TreeMap 的 key 不可比较，运行时 ClassCastException。',
         'List.of 里放 null，直接 NPE。',
@@ -224,12 +212,6 @@ System.out.println(res.body());`, [
         ], '一次 HTTP 请求', '网络会失败：超时、404、500、连接拒绝都要处理。'),
     guide: {
       goals: ['用 HttpClient 发起 GET/POST 请求', '判断状态码并处理超时', '用 Jackson 在 JSON 与对象之间转换'],
-      flow: '调用链路：<b>建客户端 → 建请求 → send → 判状态码 → 解析 body → 处理异常</b>。',
-      sections: [
-        { h: '为什么必须设超时', p: '默认没有连接超时，对方不响应时线程会一直卡住。连接超时管“连不上”，请求超时管“连上了但迟迟不返回”，两个都要设。' },
-        { h: 'JSON 与 Java 对象的映射', p: 'Jackson 按字段名匹配，getter/setter 或 record 组件都能用；字段名不一致用 @JsonProperty 指定。日期、枚举、泛型集合需要额外配置。' },
-        { h: '异常怎么处理', p: '网络异常（IOException）和业务错误（4xx/5xx）要分开：前者重试或降级，后者读错误信息给用户。不要把所有异常都 catch 成“系统繁忙”。' }
-      ],
       pitfalls: [
         '不判断状态码，直接把 404 的错误页当 JSON 解析。',
         'HttpClient 每次请求都 new 一个，连接池无法复用。',

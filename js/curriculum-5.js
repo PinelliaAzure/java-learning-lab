@@ -79,12 +79,6 @@ java Hello
         '能用命令行编译并运行一个 Java 程序',
         '在 IDE 中新建项目并解释每个目录的作用'
       ],
-      flow: '本课路线：<b>装 JDK → 配环境 → 命令行验证 → IDE 建项目 → 运行 main</b>。任何一步失败，先回到上一步确认。',
-      sections: [
-        { h: '为什么需要 JDK，而不是只装一个编辑器', p: 'IDE 只负责“写”，真正把 .java 变成 .class 的是 JDK 里的 javac，执行 .class 的是 JDK 里的 java 命令。没有 JDK，IDE 也跑不起来。' },
-        { h: '环境变量到底在做什么', p: 'PATH 是系统查找命令的目录列表。把 JDK 的 bin 目录放进去，你在任何文件夹输入 java 都能找到它；JAVA_HOME 则是给其他工具（Maven、Tomcat、IDEA）一个统一的“JDK 在哪”的坐标。' },
-        { h: 'IDE 项目里的 src 是什么', p: 'src 是源码根目录，包名对应子文件夹。IDE 编译后会生成 out 或 target 目录放 .class，这些是构建产物，不需要手动管理，也不应该提交到 Git。' }
-      ],
       pitfalls: [
         '只装了 JRE：能运行别人的程序，但没有 javac，无法编译自己的代码。',
         '改了环境变量却没重开终端：旧终端读的还是旧 PATH。',
@@ -160,12 +154,6 @@ System.out.println(name + "，" + age + " 岁");`, [
         '用 Scanner 读取字符串、整数和小数',
         '用 printf 控制小数位数与对齐',
         '解释 nextInt 之后 nextLine 读到空行的原因'
-      ],
-      flow: '输入三件套：<b>创建 Scanner → 选对 nextXxx → 处理换行/关闭</b>。读错类型会抛 InputMismatchException。',
-      sections: [
-        { h: 'System.in 到底是什么', p: 'System.in 是字节输入流，直接读只能拿到字节。Scanner 把它包装成“按类型解析”的工具，所以能一次读出一个 int 或一行字符串。' },
-        { h: '为什么 nextInt 后 nextLine 会读到空行', p: '你输入“18↵”，nextInt 只取走 18，回车还留在缓冲区；nextLine 一看到回车就认为“这一行结束了”，于是返回空字符串。多调用一次 nextLine() 就能把它清掉。' },
-        { h: 'printf 的格式占位符', p: '%s 接字符串，%d 接整数，%.2f 保留两位小数，%n 是跨平台换行。占位符和参数顺序、类型必须一一对应，否则运行时报错或输出错乱。' }
       ],
       pitfalls: [
         '用 nextLine 读数字再 parseInt：遇到空行或空格会抛 NumberFormatException。',
@@ -251,12 +239,6 @@ static int add(int x, int y) {
         '解释为什么 swap(int, int) 交换不了外部变量',
         '用重载和可变参数写出更通用的工具方法'
       ],
-      flow: '调用方法时 JVM 会为它压入一个<b>栈帧</b>，里面放形参和局部变量；方法返回时栈帧弹出，返回值交回调用处。',
-      sections: [
-        { h: '形参和实参不是同一个变量', p: '调用 add(a, b) 时，JVM 把 a、b 的值复制给 x、y。之后方法里怎么改 x、y，都不会影响外面的 a、b。这就是“值传递”。' },
-        { h: '对象参数为什么看起来像引用传递', p: '传对象时复制的是引用地址，形参和实参指向同一个堆对象，所以改字段会互相可见；但如果在方法里写 x = new X()，只是让形参指向新对象，外部变量不受影响。' },
-        { h: '重载看的是“参数列表”', p: 'add(int,int) 和 add(int,int,int) 是两个不同方法，编译器根据实参个数和类型选择。只改返回值类型不算重载，会编译报错。' }
-      ],
       pitfalls: [
         '在方法里写 int temp = a; a = b; b = temp; 以为能交换外部变量——只是交换了副本。',
         '重载时写 add(int) 和 add(long)，调用 add(1) 会优先选 int 版本。',
@@ -340,12 +322,6 @@ public class Book {
         '说清四种访问修饰符的可见范围',
         '写出符合 JavaBean 规范的实体类'
       ],
-      flow: '一个类的“完整名字”是<b>包名 + 类名</b>；权限决定“谁能看见它”，包决定“它住在哪”。',
-      sections: [
-        { h: '为什么不能把所有类都丢进默认包', p: '默认包（没有 package）里的类不能被其他包 import，项目一大就无法复用；而且类名冲突时没有命名空间隔离。' },
-        { h: 'private 字段 + public 方法的好处', p: '字段私有后，外部只能通过 getter/setter 访问，你可以在 setter 里加校验（价格不能为负）、打日志、做懒加载，而不破坏调用方。' },
-        { h: '框架为什么偏爱 JavaBean', p: 'Spring 依赖无参构造器创建对象，再用 setter 注入；Jackson 依赖 getXxx 把对象转 JSON。命名不规范，框架就“看不见”你的属性。' }
-      ],
       pitfalls: [
         '把类放在默认包，其他包 import 不到。',
         '以为 import com.example.* 会导入子包：通配符只匹配当前包。',
@@ -423,12 +399,6 @@ System.out.println(sum);`, [
         '用 Objects 安全地比较可能为 null 的对象',
         '用 BigDecimal 正确计算金额并控制小数位'
       ],
-      flow: '工具类的价值：<b>把容易写错的通用逻辑标准化</b>。先查 JDK 有没有现成方法，再自己写。',
-      sections: [
-        { h: '为什么数组直接打印是乱码', p: '数组的 toString 继承自 Object，输出的是“类型@哈希”。Arrays.toString 会逐个元素拼接，二维数组要用 deepToString。' },
-        { h: 'double 的 0.1 + 0.2 为什么不是 0.3', p: 'double 用二进制分数表示小数，0.1 是无限循环小数，只能截断存储。两个近似值相加，误差就暴露出来了。金额、利率必须用 BigDecimal。' },
-        { h: 'BigDecimal 的 equals 和 compareTo', p: 'equals 连精度（scale）一起比，1.0 与 1.00 返回 false；compareTo 只比数值大小，返回 0 表示相等。业务判断相等请用 compareTo。' }
-      ],
       pitfalls: [
         '用 new BigDecimal(0.1)（double 构造）——误差被原样带进来。',
         'BigDecimal 用 == 比较：比较的是引用地址。',
@@ -505,12 +475,6 @@ LIMIT 2;`, [
         '写出带 WHERE、ORDER BY、LIMIT 的查询',
         '完成 INSERT / UPDATE / DELETE 并避免全表误操作',
         '理解主键、索引和简单 JOIN 的作用'
-      ],
-      flow: 'SQL 的执行顺序不是书写顺序：<b>FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT</b>。先过滤，再排序，最后截断。',
-      sections: [
-        { h: '为什么 UPDATE 不写 WHERE 很危险', p: 'UPDATE 会作用于所有满足条件的行；没有 WHERE 就等于“全部行”。线上的误操作往往就是少写了一个条件，执行前先用同样的 WHERE 写 SELECT 确认范围。' },
-        { h: 'JOIN 在做什么', p: '两张表按关联字段（如 book.author_id = author.id）匹配，把匹配上的行拼成一行。LEFT JOIN 会保留左表全部行，右表没有匹配就补 NULL。' },
-        { h: '索引不是越多越好', p: '索引像书的目录，查得快，但每次插入/更新都要维护目录。主键自带索引，常用于 WHERE/JOIN 的字段适合建索引，低选择性的字段（性别）不值得。' }
       ],
       pitfalls: [
         'DELETE 忘了 WHERE，整表数据被清空（先备份、先 SELECT）。',
@@ -604,12 +568,6 @@ public class BookService {
         '用集合和 Stream 完成增删查改',
         '把数据保存到文件并在启动时恢复'
       ],
-      flow: '开发顺序：<b>定义 Book → 写 Service 的增删查 → 写 Main 菜单 → 加文件保存 → 补异常和校验</b>。每完成一步都运行一次。',
-      sections: [
-        { h: '为什么不让 Main 直接操作 List', p: '如果菜单代码里到处 books.add/remove，业务规则会散落各处，改一个规则要翻遍整个文件。把规则收进 Service，Main 只负责“问”和“显示”。' },
-        { h: '文件持久化最简单的做法', p: '把每本书写成一行“id|书名|作者|价格|是否借出”，读的时候 split 还原。注意关闭流、处理空行和格式错误；数据量再大再换数据库。' },
-        { h: '怎样才算“做完”', p: '能连续完成：新增两本书 → 查询 → 借出一本 → 再次借出被拒绝 → 归还 → 删除 → 退出重开数据仍在。全部走通，这个项目就合格了。' }
-      ],
       pitfalls: [
         '把 Scanner 和业务逻辑混在一个巨型 main 方法里，后期无法维护。',
         '在 for-each 遍历 List 时 remove，抛 ConcurrentModificationException。',
@@ -698,12 +656,6 @@ public class BookController {
         '用 start.spring.io 创建并启动一个 Spring Boot 项目',
         '写出 GET/POST/DELETE 三个 REST 接口',
         '用 curl 或 Postman 验证接口返回 JSON'
-      ],
-      flow: '最小可运行链路：<b>启动类 → Controller → 内存 Service → 浏览器访问</b>。先不接数据库，把 HTTP 跑通再加持久层。',
-      sections: [
-        { h: '为什么返回对象就变成了 JSON', p: '@RestController 会把返回值交给 HttpMessageConverter，Jackson 把对象字段转成 JSON 写进响应体；方法返回 String 时则直接写字符串。' },
-        { h: '@PathVariable 和 @RequestBody 的区别', p: '路径里的 /books/1 用 @PathVariable 取 id；POST 请求体里的整段 JSON 用 @RequestBody 转成 Book 对象。用错会得到 null 或 400。' },
-        { h: '本地怎么验证', p: '启动后默认 8080 端口：curl localhost:8080/api/books/1。没有前端也能测；返回 404 先查路径和端口，返回 500 看控制台堆栈。' }
       ],
       pitfalls: [
         'Controller 里直接 new Service，绕过 Spring 容器，依赖注入失效。',
