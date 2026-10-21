@@ -175,7 +175,6 @@
       { p: 'StringBuilder 和包装类看起来毫不相干，但它们回答了同一个问题：<b>当语言的基本设计不够用时，JDK 用什么办法补上</b>。String 不可变，于是有了可变的 StringBuilder；集合和泛型只能装对象，于是有了把基本类型包起来的包装类。' },
       { p: '这两个补丁都很好用，也都埋着坑。循环里用加号拼接字符串，代码能跑，数据量一大就慢得离谱；<code>Integer</code> 用 <code>==</code> 比较，127 通过、128 失败，很多人第一次遇到会以为是编译器出了 bug。这一章把这两个坑的成因讲清楚，让你以后不是“记住别这么写”，而是“知道为什么不能这么写”。' },
       { p: '阅读时建议打开 jshell 或 IDE，把每段代码亲手敲一遍。StringBuilder 的容量变化、Integer 的缓存边界，都是非常适合用实验验证的知识点，看一眼输出比读十行解释印象更深。' },
-
       { h: '2.2 加号拼接在底层变成了什么' },
       { p: '源码里的 <code>a + b</code> 不会直接对应一条“字符串相加”的字节码。JDK 8 及以前，javac 会把它改写成 <code>new StringBuilder().append(a).append(b).toString()</code>；JDK 9 起改成了 <code>invokedynamic</code> 指令，由运行时的 StringConcatFactory 生成拼接逻辑，可能使用更高效的字节数组复制策略。' },
       { p: '这个改写只发生在“一次表达式”里。也就是说，<code>"x" + a + b</code> 会合成一个 StringBuilder，效率不错；但如果你把拼接写在循环里，每次循环都是一次新的表达式，就会创建新的 StringBuilder、新的 String。编译器不会把整个循环优化成一个 StringBuilder，这是理解性能问题的关键。' },
@@ -184,7 +183,6 @@
       { out: 'order-7\nfalse\norder-7' },
       { p: 'a 和 b 内容相同，但它们是运行时分别拼接出来的两个对象，所以 a == b 是 false。最后一段用 StringBuilder 得到同样的内容。这个例子说明：加号不是不能用，而是要知道它每次都在创建对象。单次拼接完全没问题，循环里就要换成可变的容器。' },
       { p: '日志是字符串拼接的高频场景，但成熟日志框架都提供了占位符写法，例如用 <code>log.info("order {} paid {}", id, amount)</code>，只有真的输出日志时才做格式化。如果写成 <code>log.info("order " + id + " paid " + amount)</code>，即使日志级别关掉，拼接也已经发生。理解这一点，比单纯记住“循环里别用加号”更有价值。同理，异常信息和断言消息也应优先用参数化写法，把“要不要生成字符串”的决定交给框架。' },
-
       { h: '2.3 内部结构与容量' },
       { p: 'StringBuilder 继承自 <code>AbstractStringBuilder</code>，内部维护一个可扩容的字符数组（JDK 8 是 char[]，JDK 9 起为配合紧凑字符串改为 byte[] 加 coder）和一个 <code>count</code> 表示已使用的长度。数组的长度叫容量（capacity），count 叫长度（length），两者不是一回事。' },
       { p: 'append 时先检查剩余空间够不够，够就直接把新内容写到 count 位置并增加 count；不够就扩容。默认策略是“新容量 = 旧容量 × 2 + 2”，然后用 <code>Arrays.copyOf</code> 把旧数据复制到新数组。扩容是昂贵的操作，因为它要重新分配内存并复制全部已有内容，所以要尽量避免频繁扩容。' },
@@ -192,15 +190,13 @@
       { p: '这也解释了为什么 StringBuilder 的方法都返回 <code>this</code>：<code>sb.append(a).append(b)</code> 这样的链式调用，每一步操作的都是同一个对象，不会产生中间对象。链式写法不仅短，而且语义上明确表达了“在同一个缓冲区上连续追加”。' },
       { note: '<b>容量不等于长度：</b>容量是数组大小，长度是实际字符数。一个容量 34、长度 5 的 StringBuilder，打印出来只有 5 个字符。' },
       { p: '如果运行过程中发现扩容次数太多，可以在开始前调用 <code>ensureCapacity(n)</code> 一次性把容量撑到至少 n，避免多次复制；拼接完成后如果要把缓冲区长期保留，可以调用 <code>trimToSize()</code> 把容量收缩到实际长度附近，减少内存占用。这两个方法都不改变内容，只影响底层数组。' },
-
       { p: 'StringBuilder 有三个常用构造器：无参构造器容量为 16；<code>StringBuilder(int capacity)</code> 指定初始容量；<code>StringBuilder(String str)</code> 的容量是字符串长度加 16。如果你已经知道最终大概要多长，直接用带容量的构造器，可以省掉多次扩容复制。' },
       { p: '比如要拼接一个约 1000 字符的 SQL，写 <code>new StringBuilder(1024)</code> 就比默认的 16 更合适。这不是过度优化，而是一个成本几乎为零的好习惯。反过来，如果预估得过大，会浪费一点内存，但在绝大多数场景下这点浪费可以忽略。' },
       { p: 'JDK 9 引入紧凑字符串后，String 内部用 byte[] 加一个 coder 标志：纯 Latin-1 字符每个只占一个字节，含中文等字符时才用 UTF-16 每字符两字节。StringBuilder 也受益于这套设计，英文为主的拼接内存占用明显下降。这是实现细节，不影响你写代码，但能解释为什么同样字符数的字符串，内存占用可能差一倍。' },
       { code: 'public class CapacityDemo {\n    public static void main(String[] args) {\n        StringBuilder sb = new StringBuilder();\n        System.out.println(sb.capacity());\n\n        sb.append("0123456789abcdef");\n        System.out.println(sb.length() + " " + sb.capacity());\n\n        sb.append("x");\n        System.out.println(sb.length() + " " + sb.capacity());\n\n        StringBuilder sized = new StringBuilder(100);\n        System.out.println(sized.capacity());\n    }\n}', title: 'CapacityDemo.java' },
       { out: '16\n16 16\n17 34\n100' },
       { p: '默认容量 16；追加 16 个字符后刚好填满，容量仍是 16；再追加一个字符就需要 17 个位置，触发扩容，新容量是 16 × 2 + 2 = 34。最后一个构造器直接指定了 100，没有发生扩容。把这四个数字记住，比背“两倍加二”这句话更直观。' },
-
-      { h: '2.4 常用 API 与三种字符串类型的选择' },
+      { h: '2.4 常用 API 与循环拼接示例' },
       { p: 'StringBuilder 的方法可以按“增、删、改、查、转”来记。增加用 append 和 insert；删除用 delete、deleteCharAt；修改用 replace、setCharAt、setLength、reverse；查询用 length、capacity、charAt、indexOf；转换用 substring 和 toString。' },
       { table: { head: ['操作', '方法', '说明'], rows: [
         ['追加', '<code>append(x)</code>', '接受基本类型、字符串、对象、字符数组等，返回 this'],
@@ -216,7 +212,11 @@
       { p: '第一段在 "Java" 后追加 "-21"，再在开头插入 "["、末尾追加 "]"，得到 [Java-21]；reverse 后变成 ]12-avaJ[；再反转回来、删掉首尾的括号，得到 Java-21。最后两行是本节的要点：toString 之后再 append，已经取出的 s 不会变，说明 toString 返回的是一份独立快照。' },
       { p: '需要特别注意 <code>setLength</code>：把长度改小会直接截断内容；改大会用 <code>\\u0000</code> 填充，打印出来可能是一串看不见的控制字符。它常被用来清空缓冲区（<code>sb.setLength(0)</code>），比新建一个对象更省，但清空后容量保持不变。' },
       { p: '理解 StringBuilder 的容量还有一个实际好处：能解释为什么 <code>sb.length()</code> 与 <code>sb.toString().length()</code> 总是相等，而 <code>sb.capacity()</code> 通常更大。面试里让你手写一个简单的字符串拼接工具，能把容量预分配和分隔符处理写对，就已经及格了。' },
-
+      { p: '下面这段代码把 0 到 4 用逗号连接起来，并打印长度。它演示了链式 append 的写法，也演示了“最后一个逗号”这个常见小问题：拼接结束后如果多了一个分隔符，通常要用 <code>setLength(length - 1)</code> 或 <code>deleteCharAt</code> 去掉，或者改成“先判断是不是第一个元素”的写法。' },
+      { code: 'public class LoopJoin {\n    public static void main(String[] args) {\n        StringBuilder sb = new StringBuilder();\n        for (int i = 0; i < 5; i++) {\n            if (i > 0) sb.append(",");\n            sb.append(i);\n        }\n        System.out.println(sb);\n        System.out.println(sb.length());\n\n        sb.setLength(0);\n        for (int i = 0; i < 5; i++) {\n            sb.append(i).append(",");\n        }\n        sb.setLength(sb.length() - 1);\n        System.out.println(sb);\n    }\n}', title: 'LoopJoin.java' },
+      { out: '0,1,2,3,4\n9\n0,1,2,3,4' },
+      { p: '第一种写法在每次追加前判断要不要加分隔符，逻辑最直观；第二种写法先无脑追加、最后删掉末尾多余的逗号，代码更短，但要保证循环至少执行一次，否则 <code>setLength(-1)</code> 会抛异常。两种都可以，关键是不要写出“最后多一个逗号”的脏数据。' },
+      { note: '<b>性能提示：</b>如果循环次数已知且拼接内容较长，先 <code>new StringBuilder(预计长度)</code>，可以避免多次扩容复制。' },
       { p: '这三个类经常被放在一起比较。String 不可变，适合做常量、key、参数传递；StringBuilder 可变、非线程安全，适合单线程内大量拼接；StringBuffer 可变、方法加 synchronized，适合多线程共享同一个缓冲区。' },
       { table: { head: ['类型', '可变性', '线程安全', '典型场景'], rows: [
         ['String', '不可变', '天然安全', '常量、Map 的 key、方法参数'],
@@ -225,15 +225,7 @@
       ] } },
       { p: '实际项目里 StringBuffer 的出现频率很低。原因是“多个线程共享同一个可变缓冲区”本身就是一种很少见的设计，如果真的需要，更常见的做法是每个线程各自构建、最后再合并，或者用锁把整个构建过程保护起来，而不是依赖每个 append 上的同步。所以面试里可以说清楚区别，但写代码时优先 StringBuilder。' },
       { p: '还有一类场景两个都不需要用：把一组已有元素用分隔符连起来，用 <code>String.join</code> 或 Stream 的 <code>Collectors.joining</code> 更清晰；格式化固定模板，用 <code>String.format</code> 或文本块更易读。工具的选择应该服务于可读性，而不是一律上 StringBuilder。' },
-
-      { h: '2.5 一个完整的循环拼接例子' },
-      { p: '下面这段代码把 0 到 4 用逗号连接起来，并打印长度。它演示了链式 append 的写法，也演示了“最后一个逗号”这个常见小问题：拼接结束后如果多了一个分隔符，通常要用 <code>setLength(length - 1)</code> 或 <code>deleteCharAt</code> 去掉，或者改成“先判断是不是第一个元素”的写法。' },
-      { code: 'public class LoopJoin {\n    public static void main(String[] args) {\n        StringBuilder sb = new StringBuilder();\n        for (int i = 0; i < 5; i++) {\n            if (i > 0) sb.append(",");\n            sb.append(i);\n        }\n        System.out.println(sb);\n        System.out.println(sb.length());\n\n        sb.setLength(0);\n        for (int i = 0; i < 5; i++) {\n            sb.append(i).append(",");\n        }\n        sb.setLength(sb.length() - 1);\n        System.out.println(sb);\n    }\n}', title: 'LoopJoin.java' },
-      { out: '0,1,2,3,4\n9\n0,1,2,3,4' },
-      { p: '第一种写法在每次追加前判断要不要加分隔符，逻辑最直观；第二种写法先无脑追加、最后删掉末尾多余的逗号，代码更短，但要保证循环至少执行一次，否则 <code>setLength(-1)</code> 会抛异常。两种都可以，关键是不要写出“最后多一个逗号”的脏数据。' },
-      { note: '<b>性能提示：</b>如果循环次数已知且拼接内容较长，先 <code>new StringBuilder(预计长度)</code>，可以避免多次扩容复制。' },
-
-      { h: '2.6 包装类是什么' },
+      { h: '2.5 包装类是什么' },
       { p: 'Java 有八个基本类型：byte、short、int、long、float、double、char、boolean。它们不是对象，不能为 null，也不能放进泛型集合。为了让它们享受对象的待遇，JDK 为每个基本类型提供了一个包装类：Byte、Short、Integer、Long、Float、Double、Character、Boolean。' },
       { p: '包装类都是 final 的、不可变的，除了 Character 和 Boolean，其余六个都继承自 <code>Number</code>，因此都有 <code>intValue</code>、<code>longValue</code>、<code>doubleValue</code> 这类转换方法。不可变意味着一旦创建，里面的值就不会变，这使它们可以安全地作为 HashMap 的 key、可以在线程间共享。' },
       { table: { head: ['基本类型', '包装类', '缓存范围', '默认值（字段）'], rows: [
@@ -247,16 +239,14 @@
       ] } },
       { p: '创建包装类对象有两种写法：<code>Integer.valueOf(10)</code> 和 <code>new Integer(10)</code>。后者在 JDK 9 起被标记为废弃，因为它每次都新建对象，绕过了缓存。永远优先用 valueOf 或自动装箱，不要用 new 包装类。类似的废弃构造器在 Double、Long 等类上也存在。' },
       { p: '注意最后一列：包装类字段的默认值是 null，而基本类型字段的默认值是 0 或 false。这个差别是很多空指针异常的源头——一个没赋值的 Integer 字段，看起来“是 0”，实际上是 null。' },
-
-      { h: '2.7 自动装箱与自动拆箱' },
+      { h: '2.6 自动装箱与自动拆箱' },
       { p: 'JDK 5 引入了自动装箱（autoboxing）和自动拆箱（unboxing）：把基本类型赋给包装类变量时，编译器自动插入 <code>Integer.valueOf(x)</code>；把包装类赋给基本类型时，自动插入 <code>x.intValue()</code>。代码看起来像直接赋值，字节码里其实是方法调用。' },
       { p: '这层语法糖很方便，但有三类代价。第一，装箱会创建对象（缓存范围内除外），在循环里可能产生大量临时对象；第二，拆箱时如果包装类是 null，会抛 NullPointerException；第三，方法重载时，装箱版本和基本类型版本可能同时存在，编译器会选择“最具体”的版本，结果可能与你的直觉不同。' },
       { code: 'public class BoxingDemo {\n    static void take(int x) {\n        System.out.println("int: " + x);\n    }\n\n    static void take(Integer x) {\n        System.out.println("Integer: " + x);\n    }\n\n    public static void main(String[] args) {\n        Integer a = 10;\n        int b = a;\n        take(10);\n        take(Integer.valueOf(10));\n        System.out.println(a + b);\n    }\n}', title: 'BoxingDemo.java' },
       { out: 'int: 10\nInteger: 10\n20' },
       { p: '字面量 10 是 int，所以优先匹配 take(int)；显式包成 Integer 才匹配另一个重载。最后一行 a + b 会先把 a 拆箱再相加。这段代码没有错误，但它提醒你：装箱拆箱不是“透明的”，它会影响重载决议，也会在你不注意的地方创建对象。' },
       { p: '一个常见的性能陷阱是循环里的累加：<code>Long sum = 0L; for (...) sum += i;</code> 每次 += 都会拆箱、相加、再装箱，产生大量 Long 对象。改成 <code>long sum = 0L</code> 就没有这个问题。类似地，集合里存 Integer 是必须的，但在集合外部做计算时，尽量用基本类型。' },
-
-      { h: '2.8 Integer 缓存：127 与 128 的分界线' },
+      { h: '2.7 Integer 缓存：127 与 128 的分界线' },
       { p: '这是包装类最著名的坑。Integer 内部有一个静态缓存数组，默认保存 -128 到 127 的对象。调用 <code>Integer.valueOf(n)</code> 时，如果 n 在这个范围内，直接返回缓存中的对象；超出范围才 new 一个新的。所以两个值为 127 的 Integer 可能指向同一个对象，而两个 128 一定不是。' },
       { p: '缓存上界可以用 JVM 参数 <code>-XX:AutoBoxCacheMax=</code> 调整，所以“127”不是语言规范写死的，而是实现默认值。这意味着依赖缓存边界的代码在不同 JVM 配置下行为可能不同，更不能把 == 的结果当成业务逻辑。' },
       { code: 'public class CacheDemo {\n    public static void main(String[] args) {\n        Integer a = 127, b = 127;\n        Integer c = 128, d = 128;\n        System.out.println(a == b);\n        System.out.println(c == d);\n        System.out.println(c.equals(d));\n\n        Integer e = Integer.valueOf(100);\n        Integer f = Integer.valueOf(100);\n        System.out.println(e == f);\n    }\n}', title: 'CacheDemo.java' },
@@ -264,8 +254,7 @@
       { p: '127 在缓存范围内，a 和 b 是同一个对象；128 超出范围，valueOf 每次新建，c 和 d 地址不同；equals 比较数值，所以是 true。最后一段再次验证：valueOf 在缓存范围内复用对象，因此 e == f 为 true。' },
       { p: '结论只有一句话：<b>包装类的值比较一律用 equals，或者先拆箱再比</b>。这不是风格问题，而是正确性问题。如果确实想比较引用，说明你在做身份判断，那时才用 ==，并且要清楚自己在做什么。' },
       { note: '<b>面试常问：</b>为什么 <code>Integer a = 127; Integer b = 127; a == b</code> 是 true，而 128 是 false？答案就是 IntegerCache 的默认范围。' },
-
-      { h: '2.9 null 陷阱与 equals 的类型判断' },
+      { h: '2.8 null 陷阱与 equals 的类型判断' },
       { p: '包装类可以是 null，这是它和基本类型最大的区别，也是它最大的风险。只要发生拆箱，而对象是 null，就会抛 NullPointerException。触发拆箱的场景比你想的多：赋值给基本类型、参与算术运算、参与比较、传给基本类型参数、放进 switch、三元表达式混用。' },
       { p: '更隐蔽的是“看起来不像拆箱”的写法。<code>Integer count = null; if (count == 1)</code> 会 NPE，因为 == 两边一个是包装类一个是基本类型，编译器要先拆箱；<code>int total = flag ? count : 0</code> 也会 NPE，因为三元表达式的结果类型被提升为 int。' },
       { p: '还有一个常被忽略的点：包装类作为 switch 的表达式时，JVM 会先拆箱。因此 <code>Integer code = null; switch (code)</code> 在进入任何 case 之前就抛 NPE，而不是走 default。凡是 switch 的参数可能为 null，都要先判空或改用 if-else。' },
@@ -273,18 +262,16 @@
       { out: '拆箱失败：count 是 null\n比较也会拆箱' },
       { p: '两段代码都捕获到了 NPE。第一段是显式赋值给 int，第二段是 == 比较。避免的方法是在拆箱前判空：<code>if (count != null && count == 0)</code>，或者用 <code>Objects.equals(count, 0)</code>，后者对 null 安全。如果业务上 null 应该等价于 0，就在数据入口处统一转换，不要把这个判断散落在各处。' },
       { note: '<b>设计建议：</b>实体类的数量、金额等字段尽量用包装类表达“未知”，但一旦进入计算逻辑，先归一化成基本类型，避免 null 在表达式里传播。' },
-
+      { p: '还有一条实用建议：在团队里约定“对外字段用包装类、对内计算用基本类型”，并在入口做一次非空校验，比在几十个调用点判空更可靠。约定加上校验，才能真正消灭空指针，而不是靠记忆。' },
       { p: '包装类的 equals 先判断参数类型是否相同，再比较值。所以 <code>Integer(1).equals(Long(1))</code> 是 false，<code>Integer(1).equals(Short(1))</code> 也是 false。这一点和数值比较的直觉不同，写通用代码时要特别注意。' },
       { p: '如果要做跨类型的数值比较，可以统一转成 long 或 double 再比，或者用 <code>BigDecimal</code>（金额场景）。不要指望 equals 帮你做类型转换，它只做“同类型同值”的判断。' },
       { p: '<code>Integer</code> 与 <code>Long</code> 的 equals 因为类型不同直接返回 false，即使数值都是 1；先统一转成 long 再比较，结果才是 true。两个值为 1000 的 Integer 虽然地址不同，equals 比较数值仍然返回 true，compareTo 也返回 0。把这三个结果放在一起，就把“地址、类型、数值”三层比较讲清楚了。' },
-
-      { h: '2.10 集合与泛型里的包装类' },
+      { h: '2.9 集合与泛型里的包装类' },
       { p: '泛型不能使用基本类型，所以 <code>List&lt;int&gt;</code> 编译不过，必须写 <code>List&lt;Integer&gt;</code>。往集合里 add 一个 int 会自动装箱，取出来赋给 int 会自动拆箱。这套机制让集合用起来很自然，但也带来两个问题：元素是对象，内存开销比基本类型数组大；取出时如果元素是 null，拆箱会 NPE。' },
       { p: '还有一个经典陷阱：<code>List&lt;Integer&gt; list</code> 的 <code>remove</code> 有两个重载，<code>remove(int index)</code> 按下标删，<code>remove(Object o)</code> 按值删。写 <code>list.remove(1)</code> 删的是下标 1 的元素，不是值为 1 的元素；要按值删必须写 <code>list.remove(Integer.valueOf(1))</code>。' },
       { p: '如果数据量很大且都是基本类型，可以考虑第三方的基本类型集合库，或者干脆用数组。但在业务代码里，可读性和开发效率通常比这点内存更重要，不必过早优化。' },
       { p: '从 <code>List&lt;Integer&gt;</code> 求和时，直接 for 循环拆箱相加即可；用 Stream 则写 <code>list.stream().mapToInt(Integer::intValue).sum()</code>，先转成 IntStream 再做数值计算，避免中间装箱。如果列表里可能有 null，先 filter 掉或改用 <code>mapToInt(x -&gt; x == null ? 0 : x)</code>，否则拆箱会抛 NPE。' },
-
-      { h: '2.11 字符串与数值互转、溢出边界' },
+      { h: '2.10 字符串与数值互转、溢出边界' },
       { p: '包装类最日常的用途是类型转换。字符串转数字用 <code>parseInt</code>、<code>parseLong</code>、<code>parseDouble</code>；数字转字符串用 <code>String.valueOf</code>、<code>Integer.toString</code> 或直接拼接。还有一类是进制转换：<code>toHexString</code>、<code>toBinaryString</code>、<code>toOctalString</code>，以及带进制参数的 <code>toString(n, radix)</code>。' },
       { list: [
         '字符串转 int：<code>Integer.parseInt("42")</code>，返回 int，解析失败抛 NumberFormatException；',
@@ -297,13 +284,11 @@
       { code: 'public class ParseDemo {\n    public static void main(String[] args) {\n        int a = Integer.parseInt("42");\n        Integer b = Integer.valueOf("42");\n        System.out.println(a + b);\n\n        System.out.println(Integer.toHexString(255));\n        System.out.println(Integer.toString(255, 2));\n\n        try {\n            Integer.parseInt("12a");\n        } catch (NumberFormatException e) {\n            System.out.println("不是合法数字");\n        }\n    }\n}', title: 'ParseDemo.java' },
       { out: '84\nff\n11111111\n不是合法数字' },
       { p: 'parseInt 和 valueOf 都能把字符串转成数字，区别在返回类型和是否复用缓存。解析失败时抛的是 NumberFormatException，它是 IllegalArgumentException 的子类，属于非受检异常，不强制 try-catch，但业务上通常要捕获并给出友好提示。注意 parseInt 不会自动去空格，传 " 42" 一样会失败，需要先 trim 或 strip。' },
-
       { p: '基本类型都有范围，运算结果超出范围会“回绕”，不会抛异常。比如 <code>Integer.MAX_VALUE + 1</code> 等于 <code>Integer.MIN_VALUE</code>。这类问题在计数、时间戳、金额计算里非常危险，因为错误值看起来仍然是一个正常的数字。' },
       { p: '需要检测溢出时，用 <code>Math.addExact</code>、<code>subtractExact</code>、<code>multiplyExact</code>，溢出会抛 ArithmeticException；或者在做加法前判断 <code>a &gt; Integer.MAX_VALUE - b</code>。金额场景直接用 BigDecimal，不要用 long 存“分”以外的单位，除非你非常清楚精度和范围。' },
       { p: '浮点数还有另一类边界：<code>0.0 / 0.0</code> 得到 NaN，NaN 与任何值（包括自己）用 == 比较都是 false；正数除以 0 得到 Infinity。这些值参与业务计算会污染整条链路，输入校验时要挡住。' },
       { p: '字符和数值互转时要注意 char 是无符号的 16 位整数，把一个 char 变量强转成 int 得到的是码元值，而不是字节；把 int 强转成 char 会截断高 16 位。做编码转换要用 <code>Charset</code> 和 <code>getBytes</code>，不要用强制类型转换。' },
-
-      { h: '2.12 常见错误清单' },
+      { h: '2.11 常见错误清单' },
       { list: [
         '在循环里用 <code>+=</code> 拼接字符串，数据量大时性能急剧下降。',
         '用 <code>==</code> 比较两个 Integer，127 通过、128 失败，误以为语言有 bug。',
@@ -315,9 +300,7 @@
       ] },
       { p: '避免这些错误不需要记住所有细节，只需要建立两个意识：第一，字符串不可变，任何“修改”都在创建新对象；第二，包装类是对象，可能为 null，比较要用 equals。把这两条刻进习惯，剩下的都是推导。' },
       { p: '最后强调一次：这些知识点的价值不在于背结论，而在于看到一段代码时能预判它创建了几个对象、在哪里可能抛 NPE、数据量放大后会发生什么。这种预判能力，就是从“会写”到“写得好”的分界线。' },
-      { p: '还有一条实用建议：在团队里约定“对外字段用包装类、对内计算用基本类型”，并在入口做一次非空校验，比在几十个调用点判空更可靠。约定加上校验，才能真正消灭空指针，而不是靠记忆。' },
-
-      { h: '2.13 本章小结' },
+      { h: '2.12 本章小结' },
       { list: [
         '加号拼接在循环里每次都会创建新对象，大量拼接用 StringBuilder。',
         'StringBuilder 内部是可扩容数组，默认容量 16，扩容策略约为两倍加二。',
@@ -326,9 +309,8 @@
         'Integer 默认缓存 -128~127，包装类比较必须用 equals。',
         '拆箱遇到 null 会抛 NPE，判空要放在拆箱之前。'
       ] },
-
       { note: '<b>复习方法：</b>小结不必逐条背诵，抓住两组对比即可——可变与不可变、对象与基本类型。遇到新的字符串或数值 API 时，先用这两组对比判断它属于哪一类，再决定怎么用。' },
-      { h: '2.14 常见追问' },
+      { h: '2.13 常见追问' },
       { list: [
         '<b>StringBuilder 和 String 的 + 哪个快？</b>单次拼接差不多；循环里 StringBuilder 明显快，因为 + 每次都要新建对象并复制。',
         '<b>StringBuilder 线程安全吗？</b>不安全，多线程共享会得到错乱结果；需要同步时用 StringBuffer 或自己加锁。',
@@ -337,15 +319,14 @@
         '<b>包装类和基本类型怎么选？</b>集合、泛型、允许 null 的字段用包装类；计算、循环变量用基本类型。',
         '<b>BigDecimal 能替代 Double 吗？</b>金额、精确小数用 BigDecimal；科学计算、性能敏感场景仍用 double。'
       ] },
-
-      { h: '2.15 自测与练习' },
+      { h: '2.14 自测与练习' },
       { ol: [
         '用 StringBuilder 实现一个方法，把整型数组拼成 "[1, 2, 3]" 的形式，要求只创建一个 StringBuilder。',
         '解释 <code>Integer a = 200; Integer b = 200; a == b</code> 的结果，并写出两种正确的比较方式。',
         '写一段代码，演示包装类为 null 时参与 <code>==</code> 比较会抛 NPE，并给出修复方案。',
         '用 <code>Math.addExact</code> 改写一个可能溢出的累加方法，捕获异常并打印提示。',
         '把一段循环里的字符串 <code>+=</code> 改写成 StringBuilder，估算改造前后创建的字符串对象数量。'
-      ] }
+      ] },
     ]
   };
 
@@ -526,18 +507,13 @@
     blocks: [
       { h: '4.1 为什么学正则，先看清它能做什么' },
       { p: '正则表达式是一套描述“字符串长什么样”的小语言。它最擅长的四件事是：校验（这个手机号格式对不对）、提取（从日志里抠出订单号）、替换（把敏感词打码）、分割（按多个分隔符切开）。只要你的需求符合“某种文本模式”，正则往往能用一两行代替几十行循环判断。' },
+      { p: '任何正则都可以拆成三层。第一层是“匹配什么字符”：普通字符、字符类（<code>[abc]</code>）、预定义类（<code>\\d</code>、<code>\\w</code>）。第二层是“匹配多少个”：量词 <code>*</code>、<code>+</code>、<code>?</code>、<code>{n,m}</code>。第三层是“匹配在哪里”：锚点 <code>^</code>、<code>$</code>、<code>\\b</code>。把这三层分开看，再长的正则也能拆解。' },
+      { p: 'Java 里正则由 <code>java.util.regex</code> 包提供，核心是 <code>Pattern</code> 和 <code>Matcher</code>。Pattern 是编译后的规则，Matcher 是把规则应用到某个字符串上的“匹配器”。String 类的 matches、replaceAll、split 内部也是这套机制，只是帮你省了显式创建对象的步骤。' },
       { p: '但正则不是万能的。它适合处理规则明确的短文本，不适合解析 HTML、JSON、XML 这类嵌套结构，也不适合做复杂的语法分析。用正则解析 HTML，遇到嵌套标签、注释、属性顺序就会崩溃；这类工作应该交给专门的解析器。判断标准很简单：如果你的规则需要“数括号层数”，就别用正则。' },
       { p: '还有一个现实问题：正则的可读性差。三天后回看自己写的 <code>^(?=.*[A-Z])(?=.*\\d).{8,20}$</code>，很可能要想半天。所以工程上建议给复杂正则起名字、写注释、配单元测试，而不是把它散落在业务代码里。本章的目标不是让你背语法，而是让你能读懂常见正则、写出可维护的正则，并在该收手的时候收手。' },
       { p: '写正则之前先问：有没有更简单的办法？判断前缀用 startsWith，判断包含用 contains，按固定分隔符切分用字面 split，这些都比正则快且好懂。只有当规则涉及可变的长度、可选的片段、多个分支时，正则才真正划算。选错工具的成本，往往比写错正则更高。团队里可以约定：超过 30 个字符的正则必须配注释和测试。' },
       { p: '学习正则最有效的方式不是背语法，而是带着任务写：先写一个能跑通的粗糙版本，再用正例和反例逐步收紧。每收紧一次，就记录它挡住了什么、放过了什么。三五个真实任务之后，你会发现自己不再害怕那一串符号，而是能读出它的结构。' },
-
-      { h: '4.2 三层结构：字符、量词、位置' },
-      { p: '任何正则都可以拆成三层。第一层是“匹配什么字符”：普通字符、字符类（<code>[abc]</code>）、预定义类（<code>\\d</code>、<code>\\w</code>）。第二层是“匹配多少个”：量词 <code>*</code>、<code>+</code>、<code>?</code>、<code>{n,m}</code>。第三层是“匹配在哪里”：锚点 <code>^</code>、<code>$</code>、<code>\\b</code>。把这三层分开看，再长的正则也能拆解。' },
-      { p: 'Java 里正则由 <code>java.util.regex</code> 包提供，核心是 <code>Pattern</code> 和 <code>Matcher</code>。Pattern 是编译后的规则，Matcher 是把规则应用到某个字符串上的“匹配器”。String 类的 matches、replaceAll、split 内部也是这套机制，只是帮你省了显式创建对象的步骤。' },
-      { p: '一个关键区别是“全匹配”和“查找”。<code>String.matches</code> 要求整个字符串都匹配，等价于在正则前后加上 <code>^</code> 和 <code>$</code>；<code>Matcher.find</code> 只要求找到一段匹配的子串。很多人写校验时用 matches 没问题，写提取时却忘了用 find，结果怎么都不对。' },
-      { p: 'Pattern.compile 有一定成本，但它编译出的 Pattern 是不可变且线程安全的，可以定义为 static final 反复使用。相反，String.matches 每次调用都会重新编译，在循环或高频接口里是明显的浪费。Matcher 则不是线程安全的，每个线程、每次匹配都应该新建或 reset，不要把它缓存在成员变量里。一条经验：Pattern 缓存，Matcher 现用现建。' },
-
-      { h: '4.3 元字符、锚点与转义' },
+      { h: '4.2 元字符、锚点与转义' },
       { p: '元字符是正则里有特殊含义的字符：<code>.</code> <code>\\</code> <code>[]</code> <code>()</code> <code>{}</code> <code>*</code> <code>+</code> <code>?</code> <code>^</code> <code>$</code> <code>|</code>。想匹配它们本身，必须用反斜杠转义，比如匹配小数点要写 <code>\\.</code>。在 Java 字符串里，反斜杠本身还要再转义一次，所以源码里写成 <code>"\\\\."</code>，这是初学者最容易被绕晕的地方。' },
       { table: { head: ['写法', '含义', '例子'], rows: [
         ['<code>.</code>', '任意一个字符（默认不含换行）', 'a.c 匹配 abc、a1c'],
@@ -554,8 +530,7 @@
       { p: '注意 Java 的 <code>\\d</code> 默认只匹配 ASCII 数字 0-9，不匹配全角数字或阿拉伯-印度数字。如果要做 Unicode 数字匹配，需要加 <code>Pattern.UNICODE_CHARACTER_CLASS</code> 标志。中文匹配通常直接用 <code>[\\u4e00-\\u9fa5]</code> 表示常用汉字区间，但它并不覆盖所有 CJK 扩展字符。' },
       { p: '字符类还有几个细节：方括号里可以用范围，比如 [a-z]；可以并列多个范围，比如 [a-zA-Z0-9_]；开头的 ^ 表示取反；要匹配右方括号本身，把它放在第一位或转义；要匹配连字符，放在末尾或转义。这些规则看起来琐碎，但写“允许的字符集”时天天用到。字符类里的点号、星号都失去特殊含义，不用转义。' },
       { p: '锚点不消耗字符，只描述位置。<code>^</code> 和 <code>$</code> 在默认模式下匹配整个输入的开头和结尾；加上 <code>Pattern.MULTILINE</code> 后，它们匹配每一行的开头和结尾。还有一个 <code>\\A</code> 和 <code>\\z</code>，分别表示输入的最开头和最末尾，不受 MULTILINE 影响，适合做严格的整串校验。' },
-
-      { h: '4.4 量词、贪婪与懒惰' },
+      { h: '4.3 量词、贪婪与懒惰' },
       { p: '量词决定前面的元素重复多少次：<code>*</code> 是 0 次或多次，<code>+</code> 是 1 次或多次，<code>?</code> 是 0 次或 1 次，<code>{n}</code> 恰好 n 次，<code>{n,}</code> 至少 n 次，<code>{n,m}</code> 是 n 到 m 次。量词默认是贪婪的：在还能匹配的前提下，它会尽量多吃字符。' },
       { p: '贪婪会导致“吃过头”。比如用 <code>&lt;.+&gt;</code> 去匹配 <code>&lt;b&gt;加粗&lt;/b&gt;</code>，结果会匹配整个字符串，而不是两个标签。解决办法有两个：把量词改成懒惰的 <code>+?</code>，让它尽量少吃；或者把 <code>.</code> 换成更精确的字符类，比如 <code>[^&gt;]+</code>。后者通常更清晰，也更不容易回溯。' },
       { code: 'import java.util.regex.*;\n\npublic class QuantifierDemo {\n    public static void main(String[] args) {\n        String html = "<b>bold</b>";\n        Matcher greedy = Pattern.compile("<.+>").matcher(html);\n        Matcher lazy = Pattern.compile("<.+?>").matcher(html);\n\n        if (greedy.find()) System.out.println("greedy: " + greedy.group());\n        if (lazy.find()) System.out.println("lazy: " + lazy.group());\n\n        System.out.println("a".matches("a?"));\n        System.out.println("aaa".matches("a{2,3}"));\n        System.out.println("".matches("a*"));\n    }\n}', title: 'QuantifierDemo.java' },
@@ -563,24 +538,21 @@
       { p: '贪婪版吃掉了整段，懒惰版只取第一个标签。最后三行验证量词边界：a? 允许零个或一个，空串也算匹配；a{2,3} 允许 2 到 3 个，aaa 正好 3 个所以是 true；空串对 a* 也是 true，因为星号允许 0 次。<code>"".matches("a+")</code> 才是 false。量词写的是闭区间，{2,3} 的两个边界都包含。' },
       { note: '<b>占有量词：</b>Java 还支持 <code>*+</code>、<code>++</code>、<code>?+</code>，它们会一次性吃掉所有能吃的字符且不回溯，常用于性能优化，但用错会直接导致匹配失败。' },
       { p: '量词还能修饰分组，比如 (ab){2} 表示 ab 出现两次，而不是 a 两次 b 两次。空匹配要特别小心：a* 可以匹配空串，所以在 find 循环里如果正则整体可以为空，可能原地打转；Java 的 Matcher 会自动推进，但逻辑上仍要避免这种设计。写提取规则时，尽量让正则至少消耗一个字符，量词的目标越明确，回溯越少。' },
-
-      { h: '4.5 分组、捕获与反向引用' },
+      { h: '4.4 分组、捕获与反向引用' },
       { p: '圆括号有两个作用：分组和捕获。分组改变量词的作用范围，比如 <code>(ab)+</code> 表示 ab 重复多次；捕获会把括号匹配到的内容存起来，之后可以用 <code>group(1)</code>、<code>group(2)</code> 取出。第 0 组永远是整个匹配，第 1 组开始才是括号。' },
       { code: 'import java.util.regex.*;\n\npublic class GroupDemo {\n    public static void main(String[] args) {\n        String text = "2024-10-20";\n        Pattern p = Pattern.compile("(\\\\d{4})-(\\\\d{2})-(\\\\d{2})");\n        Matcher m = p.matcher(text);\n\n        if (m.matches()) {\n            System.out.println(m.group(0));\n            System.out.println(m.group(1));\n            System.out.println(m.group(2));\n            System.out.println(m.group(3));\n        }\n\n        Matcher named = Pattern.compile("(?<year>\\\\d{4})-(?<month>\\\\d{2})").matcher("2024-10");\n        if (named.find()) {\n            System.out.println(named.group("year"));\n            System.out.println(named.group("month"));\n        }\n    }\n}', title: 'GroupDemo.java' },
       { out: '2024-10-20\n2024\n10\n20\n2024\n10' },
       { p: '这段代码把日期拆成三段。命名分组 <code>(?&lt;year&gt;...)</code> 让代码更可读，取的时候用名字而不是数字，正则一改也不容易错位。非捕获分组 <code>(?:...)</code> 只分组不占编号，适合纯粹为了加量词或做或运算的场景，能减少 group 编号的混乱。' },
       { p: '反向引用 <code>\\1</code> 表示“和第一组匹配到的内容一样”。比如 <code>(\\w)\\1</code> 可以找连续两个相同字符，<code>(a)(b)\\2\\1</code> 匹配 abba。反向引用在 Java 字符串里同样要转义，写成 <code>"(\\\\w)\\\\1"</code>。这个特性在检查重复字符、配对标签时有用，但不要滥用，复杂回溯会变慢。' },
       { p: '捕获组按左括号出现的顺序编号，嵌套时也是先外层后内层。可选组没匹配到时，group(n) 返回 null，而不是空串，直接调用它的方法会 NPE。非捕获组 (?:...) 不占编号，命名组用名字取，能让代码在正则调整后依然稳定。写复杂正则时优先用命名组，groupCount() 可以查看组数。' },
-
-      { h: '4.6 String 自带的三个方法' },
+      { h: '4.5 三个 String 方法与 Pattern、Matcher' },
       { p: '日常使用频率最高的是 String 上的三个方法：<code>matches</code> 做整串校验，<code>replaceAll</code> 做正则替换，<code>split</code> 做正则分割。它们内部都会编译正则，适合一次性调用；如果同一正则要用很多次，先 <code>Pattern.compile</code> 缓存起来更划算。' },
       { code: 'public class StringMethods {\n    public static void main(String[] args) {\n        System.out.println("13812345678".matches("^1[3-9]\\\\d{9}$"));\n        System.out.println("a1b2c3".replaceAll("\\\\d", "#"));\n        System.out.println("a,b;c d".split("[,; ]").length);\n\n        String[] parts = "a,b;c d".split("[,; ]");\n        for (String s : parts) System.out.println(s);\n\n        System.out.println("a.b.c".split("\\\\.").length);\n    }\n}', title: 'StringMethods.java' },
       { out: 'true\na#b#c#\n4\na\nb\nc\nd\n3' },
       { p: '注意 <code>matches</code> 里的 <code>^</code> 和 <code>$</code> 其实是多余的，因为 matches 本身就是全匹配；写上也无害，还能让意图更明显。replaceAll 的第一个参数是正则，所以 <code>\\d</code> 要写成 <code>"\\\\d"</code>；如果想按字面替换，用 <code>replace</code> 而不是 replaceAll，避免特殊字符被解释。' },
+      { p: '一个关键区别是“全匹配”和“查找”。<code>String.matches</code> 要求整个字符串都匹配，等价于在正则前后加上 <code>^</code> 和 <code>$</code>；<code>Matcher.find</code> 只要求找到一段匹配的子串。很多人写校验时用 matches 没问题，写提取时却忘了用 find，结果怎么都不对。' },
       { p: 'split 的参数同样是正则。<code>"a.b.c".split("\\\\.")</code> 得到三段；如果写成 <code>split(".")</code>，点号会匹配任意字符，结果是一个空数组。这是最经典的 split 坑。另外，split 默认会丢弃末尾的空字符串，<code>"a,b,".split(",")</code> 只得到两个元素；需要保留时传负的 limit，比如 <code>split(",", -1)</code>。' },
       { p: 'replaceFirst 只替换第一个匹配，replaceAll 替换全部；String.replace 是字面替换，不解释正则。大小写不敏感用 Pattern.CASE_INSENSITIVE，多行模式用 MULTILINE，让点号匹配换行用 DOTALL。这些标志既可以传给 Pattern.compile，也可以在正则开头用 (?i)、(?m)、(?s) 内联开启，后者适合把规则嵌进配置。' },
-
-      { h: '4.7 Pattern 与 Matcher 的完整流程' },
       { p: '当需要反复匹配、提取多个结果、或者要拿到匹配位置时，就该显式使用 Pattern 和 Matcher。典型流程是：编译 Pattern、用 matcher 绑定输入、循环 find、在每次找到时读取 group 和 start/end。find 会把匹配位置向后推进，所以循环能遍历所有结果。' },
       { flow: ['Pattern.compile 编译规则', 'pattern.matcher(input) 创建匹配器', 'while (matcher.find()) 推进', 'matcher.group(n) 取内容', 'matcher.start/end 取位置', '必要时 reset 复用'] },
       { code: 'import java.util.regex.*;\n\npublic class MatcherDemo {\n    public static void main(String[] args) {\n        Pattern p = Pattern.compile("\\\\b(\\\\w+)@(\\\\w+\\\\.\\\\w+)\\\\b");\n        Matcher m = p.matcher("联系 a@x.com 或 b@y.org 获取");\n\n        while (m.find()) {\n            System.out.println(m.group() + " -> " + m.group(1) + " / " + m.group(2));\n            System.out.println(m.start() + "-" + m.end());\n        }\n\n        m.reset("no email here");\n        System.out.println(m.find());\n    }\n}', title: 'MatcherDemo.java' },
@@ -588,8 +560,8 @@
       { p: '这段代码提取了两个邮箱，并打印了它们在原字符串中的起止下标。注意 group() 等价于 group(0)，是整个匹配；group(1) 是第一个括号。reset 可以换一个输入复用同一个 Matcher，避免重复创建对象。如果只想匹配开头一次，用 <code>lookingAt</code>；想从某个位置开始，用 <code>find(int start)</code>。' },
       { p: 'Matcher 还有 <code>replaceAll</code> 和 <code>appendReplacement</code> 两组替换 API。后者适合“边匹配边拼接”的复杂替换，可以在替换串里引用分组，比如把日期从 yyyy-MM-dd 改成 dd/MM/yyyy：<code>m.appendReplacement(sb, "$3/$2/$1")</code>。替换串里的 <code>$</code> 和反斜杠有特殊含义，必要时用 <code>Matcher.quoteReplacement</code> 转义。' },
       { p: 'Matcher 内部保存了当前匹配位置和分组结果，所以它不是线程安全的，也不能在 find 循环中间随意跳用。需要并发匹配时，每个线程创建自己的 Matcher；需要重复使用时，调用 reset 回到起点。Matcher 的 group 只有在 find 或 matches 成功之后才有意义，提前调用会抛 IllegalStateException。' },
-
-      { h: '4.8 实战：手机号、邮箱与日期' },
+      { p: 'Pattern.compile 有一定成本，但它编译出的 Pattern 是不可变且线程安全的，可以定义为 static final 反复使用。相反，String.matches 每次调用都会重新编译，在循环或高频接口里是明显的浪费。Matcher 则不是线程安全的，每个线程、每次匹配都应该新建或 reset，不要把它缓存在成员变量里。一条经验：Pattern 缓存，Matcher 现用现建。' },
+      { h: '4.6 实战：手机号、邮箱与日期' },
       { p: '手机号校验是正则的入门实战。中国大陆手机号是 11 位，第一位 1，第二位 3 到 9，后面九位数字，写成 <code>^1[3-9]\\d{9}$</code>。这个规则足够挡住明显的脏数据，但它不能判断号码是否真实存在，也不能覆盖所有虚拟号段。校验格式用正则，校验真实性要靠短信验证码。' },
       { code: 'public class ValidateDemo {\n    public static void main(String[] args) {\n        String phone = "^1[3-9]\\\\d{9}$";\n        System.out.println("13812345678".matches(phone));\n        System.out.println("12812345678".matches(phone));\n\n        String email = "^[\\\\w.+-]+@[\\\\w-]+(\\\\.[\\\\w-]+)+$";\n        System.out.println("a.b+c@mail.example.com".matches(email));\n        System.out.println("not-an-email".matches(email));\n\n        String date = "^\\\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\\\d|3[01])$";\n        System.out.println("2024-10-20".matches(date));\n        System.out.println("2024-02-30".matches(date));\n    }\n}', title: 'ValidateDemo.java' },
       { out: 'true\nfalse\ntrue\nfalse\ntrue\ntrue' },
@@ -597,23 +569,21 @@
       { p: '邮箱正则同样不要追求“完全符合 RFC”。RFC 允许的邮箱格式极其复杂，包含引号、注释、IP 域名等，写一个全覆盖的正则既难读又难维护。工程上通常用一个宽松规则挡住明显错误，再通过“发送验证邮件”确认真实性。校验的目的不是消灭所有非法输入，而是用合理成本挡住大多数问题。' },
       { p: '身份证、车牌、URL 的校验思路相同：先用正则约束长度和字符集，再用校验位或解析器做二次验证。身份证最后一位是校验码，需要按加权算法计算，正则只能检查 18 位的形状；车牌涉及省份简称和新能源格式，规则会随政策变化，最好做成可配置。任何“永远不变”的编码规则，都要留出调整的余地。' },
       { p: '还有一类需求是提取而不是判断，比如从日志里取时间、从文本里取金额。这时不要用 matches，而要用 find 配合分组，把关心的部分括起来。提取规则写完后，用几行真实日志跑一遍，确认 null、空串、多个匹配都处理了，再放进生产代码。' },
-
-      { h: '4.9 替换、分割与边界' },
+      { h: '4.7 替换、分割与边界' },
       { p: '替换分两种：<code>replaceAll</code> 支持正则和分组引用，<code>replace</code> 只做字面替换。想把手机号中间四位打码，可以写 <code>phone.replaceAll("(\\\\d{3})\\\\d{4}(\\\\d{4})", "$1****$2")</code>。这里的 <code>$1</code>、<code>$2</code> 引用分组，替换串里的美元符号如果要原样输出，必须写成 <code>\\$</code>。' },
       { p: '分割的边界情况更多。除了前面说的点号要转义、末尾空串默认丢弃，还要注意连续分隔符会产生空串。比如 <code>"a,,b".split(",")</code> 得到三个元素，中间是空字符串；如果业务上要忽略空段，可以过滤，或者用 <code>split(",+")</code> 把连续分隔符合并。没有一种写法适合所有场景，先想清楚空段是有效数据还是噪声。' },
       { code: 'public class ReplaceSplitDemo {\n    public static void main(String[] args) {\n        String phone = "13812345678";\n        System.out.println(phone.replaceAll("(\\\\d{3})\\\\d{4}(\\\\d{4})", "$1****$2"));\n\n        String csv = "a,,b,";\n        System.out.println(csv.split(",").length);\n        System.out.println(csv.split(",", -1).length);\n\n        String text = "cat bat hat";\n        System.out.println(text.replaceAll("\\\\b(\\\\w)at\\\\b", "$1$1"));\n    }\n}', title: 'ReplaceSplitDemo.java' },
       { out: '138****5678\n3\n4\ncc bb hh' },
       { p: '第一行是打码。第二行默认 limit 为 0，会删除末尾所有空字符串，但中间的空串保留，所以 a,,b, 得到 a、空串、b 三段，长度是 3；第三行传 -1 保留末尾空串，得到四段。最后一行把 cat、bat、hat 各替换成重复首字母，得到 cc bb hh。split 的三个规则——limit 为 0 删末尾空串、正数限制段数、负数保留空串——值得亲手跑一遍。' },
       { p: '替换串里的反斜杠和美元符号都有特殊含义：$1 引用分组，反斜杠转义，其他字符原样输出。如果替换内容来自用户输入，必须先 quoteReplacement，否则用户输入一个美元符号就可能抛异常。appendReplacement 适合需要逐段处理的场景，比如把匹配到的每个词加上链接，最后再 appendTail 收尾。' },
-
-      { h: '4.10 灾难性回溯与性能' },
+      { p: '正则的分组编号在替换时同样有效，$1 到 $9 可以直接引用；超过 9 个组时要用花括号包住编号，例如美元符号后跟 10 再包花括号，但花括号在 Java 字符串里不需要额外转义。这个细节很少用到，一旦用到却很容易写错，所以复杂替换建议先用小例子验证编号。' },
+      { h: '4.8 灾难性回溯与性能' },
       { p: '正则引擎默认是回溯式的：遇到分支或量词时，它先尝试一种可能，失败再退回上一个选择点换一种。大多数情况下这很快，但当正则写得不好、输入又很长时，回溯次数会指数级增长，CPU 直接被打满。这就是“灾难性回溯”（catastrophic backtracking），也是正则最危险的地方。' },
       { p: '经典例子是 <code>(a+)+b</code> 去匹配一长串 a 加上一个非 b 字符。嵌套量词让引擎在每一层都尝试所有切分方式，输入长度每增加一点，耗时翻倍。类似的还有 <code>(a|aa)+</code>、<code>(.*)*</code>。防御方法：避免嵌套量词、尽量用具体字符类代替点号、加上锚点缩小范围、限制输入长度、对用户输入的正则做白名单。' },
       { p: 'Java 没有内置的正则超时参数，但可以把输入包成一个带计数器的 CharSequence，在 charAt 被调用太多次时抛异常，从而中断匹配。更简单的工程做法是：不要允许用户自定义正则；对可能很长的文本先截断；把复杂正则放到单独的线程池并设置超时。性能问题往往不是正则本身慢，而是它被用在了不该用的地方。' },
       { p: '调试正则时，先把正则拆成小段分别测试，再组合；用 Pattern 的 pattern() 打印实际规则，确认转义层数；准备正例、反例、边界例三组用例。很多“正则不生效”的问题，其实是多转义或少转义了一层。把正则写进常量并配注释，能让下一个人少花半小时。工具方面，任何支持 Java 正则的测试器都可以，但不要粘贴敏感数据。' },
       { note: '<b>经验法则：</b>能用一个字符类描述的，就不要用嵌套量词；能先做字符串包含判断的，就不要一上来就跑正则。' },
-
-      { h: '4.11 Math 与随机数工具' },
+      { h: '4.9 Math 与随机数工具' },
       { p: '正则之外，这一节补两个常被忽略的工具：Math 和随机数。Math 是静态工具类，提供 abs、max、min、pow、sqrt、round、floor、ceil、random 等方法。它们看起来简单，但边界不少：<code>Math.abs(Integer.MIN_VALUE)</code> 仍然是负数，因为补码表示的正数范围比负数少一个；<code>Math.round(-1.5)</code> 返回 -1，不是 -2，因为它等价于 floor(x + 0.5)。' },
       { table: { head: ['方法', '作用', '注意点'], rows: [
         ['<code>abs(x)</code>', '绝对值', 'MIN_VALUE 取绝对值仍为负'],
@@ -628,9 +598,7 @@
       { code: 'import java.util.concurrent.ThreadLocalRandom;\n\npublic class MathRandomDemo {\n    public static void main(String[] args) {\n        System.out.println(Math.abs(-5));\n        System.out.println(Math.round(-1.5));\n        System.out.println(Math.floor(-1.5));\n        System.out.println(Math.max(3, 7));\n\n        int n = ThreadLocalRandom.current().nextInt(1, 7);\n        System.out.println(n >= 1 && n <= 6);\n\n        System.out.println(java.util.UUID.randomUUID().toString().length());\n    }\n}', title: 'MathRandomDemo.java' },
       { out: '5\n-1\n-2.0\n7\ntrue\n36' },
       { p: 'round(-1.5) 得到 -1，floor(-1.5) 得到 -2.0，这两个结果放在一起最能说明“四舍五入”和“向下取整”的区别。nextInt(1, 7) 生成 1 到 6 的整数，上界不含，所以掷骰子写 7。UUID 是 36 个字符（含四个连字符），它基于随机数生成，适合做标识，但不保证绝对唯一。' },
-      { p: '正则的分组编号在替换时同样有效，$1 到 $9 可以直接引用；超过 9 个组时要用花括号包住编号，例如美元符号后跟 10 再包花括号，但花括号在 Java 字符串里不需要额外转义。这个细节很少用到，一旦用到却很容易写错，所以复杂替换建议先用小例子验证编号。' },
-
-      { h: '4.12 常见错误清单' },
+      { h: '4.10 常见错误清单' },
       { list: [
         '在 Java 字符串里忘记双重转义，<code>"\\d"</code> 编译不过，应该写 <code>"\\\\d"</code>。',
         '用 <code>matches</code> 做子串查找，结果永远 false，因为 matches 要求全匹配。',
@@ -643,8 +611,7 @@
       ] },
       { p: '避开这些错误的关键，是把“正则字符串”和“Java 字符串”分开想：先写出你想要的正则，再考虑它在 Java 源码里需要几层转义。另一个习惯是每写一个正则，至少准备三个测试用例：一个应该匹配、一个不该匹配、一个边界情况。' },
       { p: '还有一种隐形成本：把校验和提取塞进同一个正则。校验通常要求全匹配、规则严格；提取只关心片段、规则宽松。混在一起会让正则又长又难调，出错时也分不清是校验太松还是提取太紧。拆成两个正则、两段代码，维护成本会低很多。正则不是越短越厉害，能被同事读懂才是好正则。Java 没有通用的正则注释语法，所以把解释写在代码注释里。写完把正则和配套用例一起提交，比只提交一行正则更有价值。' },
-
-      { h: '4.13 本章小结' },
+      { h: '4.11 本章小结' },
       { list: [
         '正则由字符、量词、位置三层组成，复杂正则要拆开读。',
         'Java 正则的核心是 Pattern 和 Matcher，String 的三个方法只是便捷封装。',
@@ -655,8 +622,7 @@
         '正则校验格式，语义校验交给日期库或业务代码。',
         '警惕嵌套量词导致的灾难性回溯，限制输入长度。'
       ] },
-
-      { h: '4.14 常见追问' },
+      { h: '4.12 常见追问' },
       { list: [
         '<b>正则能解析 HTML 吗？</b>简单场景可以，嵌套结构不行；用 HTML 解析器更稳。',
         '<b>Pattern 需要缓存吗？</b>同一正则高频使用时应编译一次复用，String.matches 每次都会重新编译。',
@@ -665,15 +631,14 @@
         '<b>split 为什么丢末尾空串？</b>默认 limit 为 0 会删除末尾空串，传 -1 可保留。',
         '<b>Math.random 能用于安全场景吗？</b>不能，用 SecureRandom；Math.random 基于伪随机数，可预测。'
       ] },
-
-      { h: '4.15 自测与练习' },
+      { h: '4.13 自测与练习' },
       { ol: [
         '写一个正则，校验密码至少 8 位，且同时包含字母和数字。',
         '从一段文本中提取所有日期（yyyy-MM-dd），并打印每个日期的起始下标。',
         '把 <code>"2024-10-20"</code> 用 replaceAll 改写成 <code>"20/10/2024"</code>。',
         '解释 <code>"a,b,".split(",")</code> 与 <code>split(",", -1)</code> 的结果差异。',
         '用 ThreadLocalRandom 模拟掷两个骰子 1000 次，统计每个点数出现的次数。'
-      ] }
+      ] },
     ]
   };
 
@@ -681,15 +646,23 @@
   T['arrays-tools'] = { meta: '本章约 5200 字 · 建议 32 分钟 · 配套流程图与 3 道习题', blocks: [
 
     { h: '5.1 为什么学：数组与工具类决定代码的下限' },
+
     { p: '数组是 Java 里最基础的数据容器，也是理解后面集合框架的入口。很多人觉得自己会数组，其实只会写 <code>int[] a = new int[5]</code>，遇到排序、复制、打印、查找就手写循环，既慢又容易错。真正拉开差距的，是知不知道 <code>Arrays</code> 和 <code>Objects</code> 这些标准工具已经把事情做好了，以及它们的边界在哪里。' },
+
     { p: '这一章还有一条暗线：金额计算。只要代码里出现价格、运费、折扣，就绕不开浮点误差和 <code>BigDecimal</code>。面试里问“为什么 0.1 加 0.2 不等于 0.3”，工作里问“这笔订单为什么少了一分钱”，本质是同一个问题。把数组工具和精确计算放在一章，是因为它们都属于“看起来简单、实际全是细节”的基础设施。' },
+
     { p: '学完本章，你应该能解释：为什么数组的长度不能改、为什么打印数组得到一串乱码、为什么 <code>Arrays.asList</code> 返回的列表不能添加元素、为什么二分查找必须先排序、为什么金额不能用 double。这些“为什么”比记住方法名重要得多。' },
 
     { h: '5.2 数组的本质：定长、连续、引用' },
+
     { p: '数组是一个对象，它保存一组同类型元素，并在创建时确定长度，之后永远不变。数组变量本身是一个引用，指向堆上那块连续空间；把数组赋给另一个变量，复制的是引用而不是元素。理解这一点，后面复制、传参、扩容的行为都能推出来。' },
+
     { p: '创建数组常见三种写法：<code>new int[5]</code> 只给长度，元素取默认值；<code>new int[]{1, 2, 3}</code> 给长度和初值；<code>int[] a = {1, 2, 3}</code> 是简化写法，只能用在声明处。声明时中括号建议跟在类型后面，写成 <code>int[] a</code>，而不是 <code>int a[]</code>，前者更清楚地表明“这是 int 数组”这个类型。' },
+
     { p: '没有显式赋值的元素会得到默认值，规则如下表。注意引用类型的默认值是 null，不是空对象，直接使用会抛 <code>NullPointerException</code>。' },
+
     { p: '长度为什么不能改？因为数组在堆上占一块连续内存，创建时就按“元素大小乘长度”分配好了。要变长只能另找一块更大的地方，把元素搬过去，这就是扩容。理解这个内存模型，就不会再问“能不能直接给 length 赋值”这种问题，length 是 final 字段，编译期就禁止修改。' },
+
     { table: { head: ['元素类型', '默认值', '说明'], rows: [
       ['byte / short / int / long', '0', '整数零'],
       ['float / double', '0.0', '正零，注意有 -0.0'],
@@ -697,35 +670,69 @@
       ['boolean', 'false', '只有真假两个值'],
       ['引用类型', 'null', '数组、对象、String 都是 null']
     ] } },
+
     { p: '多维数组本质是“数组的数组”。<code>int[][] a = new int[3][4]</code> 会创建三行、每行四个元素；而 <code>new int[3][]</code> 只创建三行，每行还是 null，需要再逐行创建。也正因为如此，Java 允许不规则数组：第一行长度 2、第二行长度 5 完全合法。' },
+
     { p: '数组还有一个容易被忽略的特性：数组是协变的。<code>Object[] refs = new String[2]</code> 可以编译通过，但往里面放一个 Integer 会在运行时抛 <code>ArrayStoreException</code>。编译期只检查声明类型，真正的元素类型检查发生在运行时。这也是泛型集合更安全的原因：类型错误在编译期就被挡住，而不是等线上才炸。' },
+
     { code: 'import java.util.Arrays;\n\npublic class ArrayBasics {\n    public static void main(String[] args) {\n        int[] scores = new int[3];\n        System.out.println(Arrays.toString(scores));\n\n        String[] names = {"Ann", "Bob"};\n        System.out.println(names.length);\n\n        int[][] grid = new int[2][];\n        grid[0] = new int[]{1, 2, 3};\n        grid[1] = new int[]{4};\n        System.out.println(Arrays.deepToString(grid));\n\n        int[] copy = scores;\n        copy[0] = 99;\n        System.out.println(scores[0]);\n    }\n}', title: 'ArrayBasics.java' },
+
     { out: '[0, 0, 0]\n2\n[[1, 2, 3], [4]]\n99' },
+
     { p: '前三行分别验证默认值、长度字段和不规则二维数组。最后两行是关键：<code>copy</code> 和 <code>scores</code> 指向同一个数组，改 <code>copy[0]</code> 就是改 <code>scores[0]</code>。如果想让两者独立，必须真正复制元素，后面讲 <code>Arrays.copyOf</code> 时会看到区别。' },
 
     { h: '5.3 遍历、长度与越界' },
+
     { p: '数组的长度用 <code>length</code> 字段读取，注意没有括号，写成 <code>a.length</code> 而不是 <code>a.length()</code>；字符串才是 <code>length()</code> 方法。有效下标从 0 到 <code>length - 1</code>，访问这个范围之外会抛 <code>ArrayIndexOutOfBoundsException</code>。' },
+
     { p: '遍历有两种常用写法。普通 for 适合需要下标的场景，比如同时遍历两个数组、按位置修改元素；增强 for 适合只读元素，代码更短，也不会写错下标。增强 for 的循环变量是元素的副本，修改它不会影响数组本身，但通过它调用对象方法修改对象状态是生效的。' },
+
     { p: '差一错误是数组最经典的 bug：循环条件写成 <code>i &lt;= a.length</code> 就会越界。另一个常见错误是空数组：<code>length</code> 为 0 时任何下标都越界，循环前要判断，或者让循环条件自然不成立。' },
+
     { p: '数组长度在运行时才确定，所以下面的写法是合法的：先读一个整数 n，再创建长度为 n 的数组。长度也可以是 0，表示空数组，它仍然是一个对象，可以正常遍历（一次都不执行），也可以取 length。' },
+
     { p: '数组作为参数传递时，传的是引用的副本：方法内让参数指向新数组，不会影响调用方；但通过参数修改元素，会影响调用方看到的数组。返回数组时返回的也是引用，调用方拿到的是同一块内存。需要隔离时用 <code>clone</code> 或 <code>Arrays.copyOf</code> 做防御性复制，别把内部数组直接暴露出去。' },
+
     { p: '遍历本身很简单，容易错的是“边遍历边改结构”。数组长度固定，遍历时不会像集合那样抛并发修改异常，但如果你在循环里把数组变量指向新数组，循环仍然遍历旧数组，改了个寂寞。需要扩容时，先算好新长度，复制完再统一替换引用。' },
 
-    { h: '5.4 Arrays.toString 与 deepToString' },
+    { h: '5.4 打印、填充、复制与比较：Arrays 的常用工具' },
+
     { p: '直接打印数组，得到的是类似 <code>[I@1b6d3586</code> 的东西：方括号加类型编码，后面是哈希值。这不是数组内容，而是 Object 默认的 toString 结果。数组没有重写 toString，所以必须借助工具类。' },
+
     { p: '<code>Arrays.toString(a)</code> 会把一维数组格式化成 <code>[1, 2, 3]</code>；二维数组要用 <code>Arrays.deepToString</code>，否则内层数组仍然打印成哈希值。字符串数组、对象数组同样适用，对象元素会调用自己的 toString，所以自定义类最好重写 toString，否则日志里看不出内容。' },
-    { p: '比较数组内容也不能用 <code>==</code> 或 <code>equals</code>：<code>==</code> 比较引用，<code>equals</code> 对数组没有重写，效果一样。一维数组用 <code>Arrays.equals</code>，多维用 <code>Arrays.deepEquals</code>，它们逐元素比较，长度不同直接返回 false。' },
+
     { note: '<b>日志里的高频事故：</b>把数组直接拼进日志字符串，线上只看到 <code>[Ljava.lang.String;@7f31245a</code>，排查时完全不知道内容。统一用 <code>Arrays.toString</code> 包一层，成本极低。' },
+
     { p: '还有一个细节：<code>Arrays.toString</code> 对 null 元素输出字符串 null，不会抛异常；但如果你自己写循环拼接并调用元素的 toString，就会 NPE。工具类在这些边界上做了保护，这也是推荐用它的原因之一。' },
 
+    { p: '<code>Arrays.fill(a, value)</code> 把整个数组填成同一个值，<code>Arrays.fill(a, from, to, value)</code> 只填区间。引用类型要注意：填进去的是同一个引用，如果这个对象可变，所有位置会一起变，这不是“每个元素一个独立对象”。' },
+
+    { p: '数组的 clone 是浅拷贝：基本类型数组复制值，对象数组只复制引用，新旧数组的元素指向同一批对象。所以克隆一个对象数组后，修改元素对象的属性，两个数组都会看到变化；要深拷贝，得自己逐个创建新对象。这个区别在缓存、快照场景里非常关键，记住浅拷贝与深拷贝的差别，能避免一半的共享状态 bug。' },
+
+    { p: '比较数组内容也不能用 <code>==</code> 或 <code>equals</code>：<code>==</code> 比较引用，<code>equals</code> 对数组没有重写，效果一样。一维数组用 <code>Arrays.equals</code>，多维用 <code>Arrays.deepEquals</code>，它们逐元素比较，长度不同直接返回 false。' },
+
+    { p: '<code>Arrays.equals</code> 逐元素比较，长度不同直接 false。对多维数组它只比较第一层引用，必须用 <code>deepEquals</code>。Java 9 新增的 <code>Arrays.mismatch</code> 返回第一个不同元素的下标，完全相同返回 -1，排查“到底哪里不一样”时非常方便。' },
+
+    { p: '哈希值也要用工具：<code>Arrays.hashCode</code> 与 <code>Arrays.equals</code> 保持一致。自己用 <code>a.hashCode()</code> 得到的是对象标识哈希，内容相同的两个数组哈希不同，放进 HashSet 会出问题。' },
+
+    { p: 'mismatch 的返回值是第一个不同元素的下标；如果所有元素都相同，返回 -1；如果前缀相同但长度不同，返回较短数组的长度。比如 [7, 7] 和 [7, 7, 8] 返回 2，表示从下标 2 开始一边没有元素了。这个约定让“找差异”不需要手写循环，也不会把长度差异和值差异混为一谈。' },
+
     { h: '5.5 排序：sort、Comparator 与稳定性' },
+
     { p: '<code>Arrays.sort</code> 对基本类型使用双轴快速排序，对对象数组使用 TimSort。前者不保证稳定，后者稳定：相等元素的相对顺序不会变。稳定在按多个字段排序时很重要，比如先按价格排、再按销量排，稳定排序能保留前一次的次序。' },
+
     { p: '对象排序有两种方式：类实现 <code>Comparable</code> 接口，或者给 <code>sort</code> 传一个 <code>Comparator</code>。实际开发更常用 Comparator，因为它不侵入类，还能为同一类型定义多套规则。<code>Comparator.comparing</code> 可以用方法引用快速构造比较器，再用 <code>reversed</code> 反转、<code>thenComparing</code> 串联第二关键字。' },
+
     { p: '比较器必须满足契约：自反、反对称、传递。听起来抽象，违反时的典型症状是 <code>IllegalArgumentException: Comparison method violates its general contract</code>，而且往往只在数据量大时出现。写比较器时不要用减法代替比较，整数相减可能溢出；直接用 <code>Integer.compare</code> 或 <code>Comparator.comparingInt</code>。' },
+
     { p: '对象数组里有 null 时，排序会抛 <code>NullPointerException</code>，因为比较器要调用元素的方法。稳妥做法是用 <code>Comparator.nullsFirst</code> 或 <code>nullsLast</code> 包一层，明确 null 排在前还是后；也可以在排序前先过滤掉 null。不要让“默认行为”替你做决定，默认行为往往就是异常。' },
+
     { code: 'import java.util.Arrays;\nimport java.util.Comparator;\n\npublic class SortDemo {\n    public static void main(String[] args) {\n        int[] nums = {5, 2, 9, 1};\n        Arrays.sort(nums);\n        System.out.println(Arrays.toString(nums));\n\n        String[] words = {"bb", "a", "ccc"};\n        Arrays.sort(words, Comparator.comparingInt(String::length)\n                .thenComparing(Comparator.naturalOrder()));\n        System.out.println(Arrays.toString(words));\n\n        Integer[] boxed = {5, 2, 9, 1};\n        Arrays.sort(boxed, Comparator.reverseOrder());\n        System.out.println(Arrays.toString(boxed));\n    }\n}', title: 'SortDemo.java' },
+
     { out: '[1, 2, 5, 9]\n[a, bb, ccc]\n[9, 5, 2, 1]' },
+
     { p: '第一段是基本类型升序。第二段先按长度、再按字典序，得到 a、bb、ccc；如果只按长度，bb 和 a 的先后就取决于稳定性。第三段演示降序：基本类型数组不能直接传 <code>Comparator.reverseOrder</code>，要先装箱成 <code>Integer[]</code>，这也是自动装箱的一个实际影响。' },
+
     { table: { head: ['方法', '作用', '关键注意点'], rows: [
       ['Arrays.sort(a)', '原地升序排序', '基本类型不稳定，对象稳定'],
       ['Arrays.sort(a, from, to)', '只排区间', 'from 含、to 不含'],
@@ -736,56 +743,85 @@
     ] } },
 
     { h: '5.6 扩容：copyOf 与 arraycopy' },
+
     { p: '数组长度固定，所谓“扩容”其实是创建更大的新数组，把旧元素复制过去，再让变量指向新数组。旧数组如果没有其他引用，会被垃圾回收。这个动作在 <code>ArrayList</code> 内部反复发生，理解它就能理解为什么预估容量能提升性能。' },
+
     { p: '<code>Arrays.copyOf(original, newLength)</code> 最常用：新长度大于原长度时，多余位置补默认值；小于原长度时截断。还有 <code>copyOfRange(original, from, to)</code>，复制指定区间，to 可以超过原长度，超出部分同样补默认值。' },
+
     { p: '<code>System.arraycopy(src, srcPos, dest, destPos, length)</code> 更底层，五个参数分别是源数组、源起点、目标数组、目标起点、复制个数。它由 JVM  intrinsic 实现，速度快；源和目标可以是同一个数组，重叠区域也能正确处理，相当于内存搬移。代价是参数多、容易写错，而且类型不匹配时抛 <code>ArrayStoreException</code>。' },
+
     { flow: ['需要更大容量', '创建新数组 new int[old.length * 2]', 'System.arraycopy 复制旧元素', '把变量指向新数组', '旧数组等待垃圾回收'] },
+
     { code: 'import java.util.Arrays;\n\npublic class CopyDemo {\n    public static void main(String[] args) {\n        int[] a = {1, 2, 3};\n        int[] b = Arrays.copyOf(a, 5);\n        System.out.println(Arrays.toString(b));\n\n        int[] c = Arrays.copyOf(a, 2);\n        System.out.println(Arrays.toString(c));\n\n        int[] d = new int[6];\n        System.arraycopy(a, 0, d, 2, 3);\n        System.out.println(Arrays.toString(d));\n    }\n}', title: 'CopyDemo.java' },
+
     { out: '[1, 2, 3, 0, 0]\n[1, 2]\n[0, 0, 1, 2, 3, 0]' },
+
     { p: '第二行展示补默认值，第三行展示截断，第四行把 a 的三个元素放到 d 的下标 2、3、4，其余保持 0。<code>arraycopy</code> 不会自动扩容，目标数组必须已经够大，否则抛 <code>IndexOutOfBoundsException</code>。' },
+
     { p: '顺带说容量：<code>ArrayList</code> 默认初始容量是 10（第一次添加时才分配），扩容约为原来的 1.5 倍。频繁添加大量元素时，预先 <code>new ArrayList<>(10000)</code> 能减少复制次数。这个技巧在处理批量数据时很实用。' },
+
     { p: 'ArrayList 扩容要复制元素，但随机访问是 O(1)，内存连续、缓存友好；LinkedList 增删是 O(1)（前提是已经拿到节点），随机访问却是 O(n)，而且每个节点都有额外对象开销。实际项目里大多数场景 ArrayList 更快，选择容器先看访问模式，不要只盯着“增删”两个字。' },
 
-    { h: '5.7 fill、equals、mismatch 与 hashCode' },
-    { p: '<code>Arrays.fill(a, value)</code> 把整个数组填成同一个值，<code>Arrays.fill(a, from, to, value)</code> 只填区间。引用类型要注意：填进去的是同一个引用，如果这个对象可变，所有位置会一起变，这不是“每个元素一个独立对象”。' },
-    { p: '数组的 clone 是浅拷贝：基本类型数组复制值，对象数组只复制引用，新旧数组的元素指向同一批对象。所以克隆一个对象数组后，修改元素对象的属性，两个数组都会看到变化；要深拷贝，得自己逐个创建新对象。这个区别在缓存、快照场景里非常关键，记住浅拷贝与深拷贝的差别，能避免一半的共享状态 bug。' },
-    { p: '<code>Arrays.equals</code> 逐元素比较，长度不同直接 false。对多维数组它只比较第一层引用，必须用 <code>deepEquals</code>。Java 9 新增的 <code>Arrays.mismatch</code> 返回第一个不同元素的下标，完全相同返回 -1，排查“到底哪里不一样”时非常方便。' },
-    { p: '哈希值也要用工具：<code>Arrays.hashCode</code> 与 <code>Arrays.equals</code> 保持一致。自己用 <code>a.hashCode()</code> 得到的是对象标识哈希，内容相同的两个数组哈希不同，放进 HashSet 会出问题。' },
-    { p: 'mismatch 的返回值是第一个不同元素的下标；如果所有元素都相同，返回 -1；如果前缀相同但长度不同，返回较短数组的长度。比如 [7, 7] 和 [7, 7, 8] 返回 2，表示从下标 2 开始一边没有元素了。这个约定让“找差异”不需要手写循环，也不会把长度差异和值差异混为一谈。' },
+    { h: '5.7 asList 的四个坑' },
 
-    { h: '5.8 asList 的四个坑' },
     { p: '<code>Arrays.asList</code> 把数组包装成 List，写起来很方便，但它返回的是固定长度的视图，不是新的 ArrayList。这是所有坑的根源，理解“视图”两个字，下面的现象都顺理成章。' },
+
     { p: '第一，<code>set</code> 可以调用，会直接修改原数组；<code>add</code>、<code>remove</code> 会抛 <code>UnsupportedOperationException</code>，因为长度不能变。第二，传基本类型数组时，整个数组被当成一个元素，得到 <code>List&lt;int[]&gt;</code>，长度是 1，不是 3。第三，<code>List.of</code> 生成的列表完全不可变，连 set 都不行，而且不接受 null。第四，原数组被修改后，列表内容跟着变，因为底层就是同一个数组。' },
+
     { p: '需要可变列表时，用 <code>new ArrayList&lt;&gt;(Arrays.asList(...))</code> 复制一份。需要只读列表时，<code>List.of</code> 更明确。不要把 asList 的结果长期保存并假设它独立于原数组，这是线上很难查的一类 bug。' },
+
     { p: '视图特性也有用武之地：想把数组内容同步给一个只读列表、又不想复制时，asList 是零拷贝的。但只读场景更推荐 <code>List.of</code>，语义清楚、真正不可变；需要可变就复制成 ArrayList。三种方式各有位置，关键是清楚返回对象到底能不能改。' },
+
     { code: 'import java.util.ArrayList;\nimport java.util.Arrays;\nimport java.util.List;\n\npublic class AsListDemo {\n    public static void main(String[] args) {\n        String[] arr = {"a", "b"};\n        List<String> view = Arrays.asList(arr);\n        view.set(0, "z");\n        System.out.println(arr[0]);\n\n        try {\n            view.add("c");\n        } catch (UnsupportedOperationException e) {\n            System.out.println("add failed");\n        }\n\n        List<String> mutable = new ArrayList<>(Arrays.asList(arr));\n        mutable.add("c");\n        System.out.println(mutable.size());\n\n        int[] nums = {1, 2, 3};\n        System.out.println(Arrays.asList(nums).size());\n    }\n}', title: 'AsListDemo.java' },
+
     { out: 'z\nadd failed\n3\n1' },
+
     { p: '前两行说明 set 会穿透到原数组；第三、四行说明 add 被拒绝；第五行复制后可以正常添加；最后一行是基本类型数组的陷阱，长度为 1。把这四个现象亲手跑一遍，比背结论有效。' },
 
-    { h: '5.9 binarySearch：前提、返回值与插入点' },
+    { h: '5.8 binarySearch：前提、返回值与插入点' },
+
     { p: '<code>Arrays.binarySearch</code> 用二分查找定位元素，速度是 O(log n)，但前提是数组已经按升序排好。对未排序数组调用，返回值没有任何意义，可能找到、可能找不到，而且不会报错，这是最危险的地方。' },
+
     { p: '返回值有两条规则：找到时返回某个匹配下标（有重复元素时不保证是哪一个）；找不到时返回 <code>-(插入点) - 1</code>。插入点是把元素插入后仍保持有序的位置。比如在 [1, 3, 5] 里找 4，插入点是 2，返回 -3；找 0 返回 -1；找 6 返回 -4。' },
+
     { p: '为什么用负数减一，而不是直接返回负的插入点？因为插入点可能是 0，而 0 无法用负数表示。这个设计让“找到”和“没找到”共用一个 int 返回值，调用方用 <code>if (idx &gt;= 0)</code> 就能区分。' },
+
     { code: 'import java.util.Arrays;\n\npublic class SearchDemo {\n    public static void main(String[] args) {\n        int[] a = {1, 3, 5, 7};\n        System.out.println(Arrays.binarySearch(a, 5));\n        System.out.println(Arrays.binarySearch(a, 4));\n        System.out.println(Arrays.binarySearch(a, 0));\n        System.out.println(Arrays.binarySearch(a, 9));\n\n        int pos = Arrays.binarySearch(a, 4);\n        int insert = -pos - 1;\n        System.out.println(insert);\n    }\n}', title: 'SearchDemo.java' },
+
     { out: '2\n-3\n-1\n-5\n2' },
+
     { p: '2 是 5 的下标；4 不存在，插入点是 2，返回 -3；0 的插入点是 0，返回 -1；9 的插入点是 4，返回 -5。最后用公式还原插入点，得到 2。这个公式在“维护有序数组并插入新元素”时经常用到。' },
+
     { p: '对象数组也可以二分，但要传同样的 Comparator。<code>Arrays.binarySearch(a, key, cmp)</code> 的比较规则必须与排序时一致，否则结果不可预测。实际项目里，如果数据频繁变动，用 TreeMap 或 HashSet 往往比“排序数组加二分”更合适。' },
+
     { p: '手写二分时，中点写成 <code>left + (right - left) / 2</code> 防止溢出，循环条件是 <code>left &lt;= right</code>，更新时用 <code>mid + 1</code> 和 <code>mid - 1</code>，否则可能死循环。这些边界是面试高频，但工作里优先用库函数，除非你有明确的性能或定制需求。' },
 
-    { h: '5.10 Objects：空安全的小工具' },
+    { h: '5.9 Objects：空安全的小工具' },
+
     { p: '<code>Objects</code> 是 Java 7 引入的工具类，专门处理 null 和通用对象操作。<code>Objects.equals(a, b)</code> 先判 null 再调用 equals，避免手写 <code>a != null &amp;&amp; a.equals(b)</code>；<code>Objects.hash(f1, f2, ...)</code> 根据多个字段生成哈希，重写 hashCode 时很省事。' },
+
     { p: '<code>Objects.requireNonNull(obj, "message")</code> 在参数为 null 时立刻抛 NPE，并带上自定义消息。它把“错误尽早暴露”落到实处：与其让 null 流到三层调用之后才炸，不如在入口就拒绝。Java 9 还加了 <code>requireNonNullElse</code>，为 null 时返回默认值。' },
+
     { p: '重写 equals 必须同时重写 hashCode，这是契约：两个对象 equals 为 true，hashCode 必须相等。只重写 equals 会让对象在 HashMap、HashSet 里“存进去却找不到”。用 Objects.hash 可以少写样板代码，但注意它内部会创建数组，极高频的哈希计算要权衡。' },
+
     { code: 'import java.util.Objects;\n\npublic class ObjectsDemo {\n    static class Point {\n        final int x;\n        final int y;\n        Point(int x, int y) { this.x = x; this.y = y; }\n        @Override public boolean equals(Object o) {\n            if (this == o) return true;\n            if (!(o instanceof Point)) return false;\n            Point p = (Point) o;\n            return x == p.x && y == p.y;\n        }\n        @Override public int hashCode() { return Objects.hash(x, y); }\n        @Override public String toString() { return "(" + x + "," + y + ")"; }\n    }\n\n    public static void main(String[] args) {\n        Point a = new Point(1, 2);\n        Point b = new Point(1, 2);\n        System.out.println(a.equals(b));\n        System.out.println(a.hashCode() == b.hashCode());\n        System.out.println(Objects.toString(null, "unknown"));\n    }\n}', title: 'ObjectsDemo.java' },
+
     { out: 'true\ntrue\nunknown' },
+
     { p: 'equals 先比较引用，再比较类型，最后比较字段，这是标准套路；用 instanceof 已经包含 null 判断（null 不是任何类型的实例）。hashCode 用同一个字段列表生成，保证与 equals 一致。toString 让日志可读，Objects.toString 则给 null 提供了兜底。' },
+
     { p: 'requireNonNull 适合放在公共方法入口、构造函数和 setter 里，把契约写进代码；不要在每个 getter 里都加，那只是噪音。异常消息要写清楚哪个参数为 null、期望什么，比如“userId 不能为空”，比默认的空消息有用得多。' },
 
-    { h: '5.11 从浮点误差到 BigDecimal' },
+    { h: '5.10 从浮点误差到 BigDecimal' },
+
     { p: 'double 用二进制表示小数，很多十进制小数无法精确表示，0.1 就是其中之一。把 0.1 和 0.2 相加，得到的是 0.30000000000000004，而不是 0.3。这不是 Java 的 bug，而是 IEEE 754 浮点标准的结果，所有遵循标准的语言都一样。' },
+
     { p: '金额、税率、利率这类要求精确的场景，必须用 <code>BigDecimal</code>。构造时优先用字符串，或者用 <code>BigDecimal.valueOf(double)</code>；不要用 <code>new BigDecimal(0.1)</code>，它会把 double 的完整二进制误差原样带进来，得到一个很长的小数。' },
+
     { p: 'BigDecimal 是不可变类，add、subtract、multiply、divide 都返回新对象，原对象不变。<code>equals</code> 同时比较数值和 scale，所以 1.0 与 1.00 不相等；<code>compareTo</code> 只比较数值，返回 -1、0、1。判断金额是否相等要用 compareTo。' },
+
     { p: '除法必须考虑除不尽的情况：<code>divide</code> 不指定 scale 和舍入模式时，遇到 1/3 这种无限小数会抛 <code>ArithmeticException</code>。正确写法是 <code>divide(other, 2, RoundingMode.HALF_UP)</code>。setScale 也建议显式给舍入模式，否则同样可能抛异常。' },
+
     { table: { head: ['操作', '写法', '注意'], rows: [
       ['创建', 'new BigDecimal("19.99")', '优先字符串，避免 double 误差'],
       ['加法', 'a.add(b)', '返回新对象，原值不变'],
@@ -794,16 +830,25 @@
       ['保留两位', 'a.setScale(2, RoundingMode.HALF_UP)', '必须给舍入模式'],
       ['除法', 'a.divide(b, 2, RoundingMode.HALF_UP)', '不给 scale 可能抛异常']
     ] } },
+
     { code: 'public class FloatDemo {\n    public static void main(String[] args) {\n        System.out.println(0.1 + 0.2);\n        System.out.println(0.1 + 0.2 == 0.3);\n\n        java.math.BigDecimal a = new java.math.BigDecimal("0.1");\n        java.math.BigDecimal b = new java.math.BigDecimal("0.2");\n        System.out.println(a.add(b));\n        System.out.println(a.add(b).compareTo(new java.math.BigDecimal("0.3")) == 0);\n\n        java.math.BigDecimal x = new java.math.BigDecimal("1.0");\n        java.math.BigDecimal y = new java.math.BigDecimal("1.00");\n        System.out.println(x.equals(y));\n        System.out.println(x.compareTo(y));\n    }\n}', title: 'FloatDemo.java' },
+
     { out: '0.30000000000000004\nfalse\n0.3\ntrue\nfalse\n0' },
+
     { p: '前两行是浮点误差的直接证据。第三、四行说明 BigDecimal 用字符串构造后能精确相加，并用 compareTo 判断相等。最后两行展示 equals 与 compareTo 的差异：scale 不同导致 equals 为 false，但数值相同所以 compareTo 返回 0。' },
+
     { code: 'import java.math.BigDecimal;\nimport java.math.RoundingMode;\n\npublic class CartDemo {\n    public static void main(String[] args) {\n        BigDecimal price = new BigDecimal("19.99");\n        int quantity = 3;\n        BigDecimal subtotal = price.multiply(BigDecimal.valueOf(quantity));\n        BigDecimal shipping = new BigDecimal("6.00");\n        BigDecimal total = subtotal.add(shipping);\n\n        BigDecimal discount = total.multiply(new BigDecimal("0.10"))\n                .setScale(2, RoundingMode.HALF_UP);\n        BigDecimal payable = total.subtract(discount)\n                .setScale(2, RoundingMode.HALF_UP);\n\n        System.out.println(subtotal);\n        System.out.println(total);\n        System.out.println(discount);\n        System.out.println(payable);\n    }\n}', title: 'CartDemo.java' },
+
     { out: '59.97\n65.97\n6.60\n59.37' },
+
     { p: '单价 19.99 乘 3 得到 59.97，加运费 6.00 得到 65.97；打九折，折扣 6.597 保留两位四舍五入为 6.60，应付 59.37。注意每一步都显式 setScale，否则结果可能带很多位小数，也可能在除法时抛异常。' },
+
     { p: '金额计算还有两个工程习惯：数据库用 DECIMAL 而不是 DOUBLE；接口传输金额时用字符串或最小货币单位（分），避免 JSON 解析成浮点。这些约定和 BigDecimal 一起使用，才能真正确保一分钱都不差。' },
+
     { p: 'BigDecimal 的运算比 double 慢，但在金额这种量级上完全可接受；真正要避免的是在百万次循环里反复创建 BigDecimal。输出金额用 <code>toPlainString</code>，避免 toString 在极小或极大值时变成科学计数法，前端展示会莫名其妙。' },
 
-    { h: '5.12 常见错误清单' },
+    { h: '5.11 常见错误清单' },
+
     { list: [
       '用 <code>==</code> 比较数组或字符串内容，比较的其实是引用。',
       '循环条件写成 <code>i &lt;= a.length</code>，稳定触发越界异常。',
@@ -818,7 +863,9 @@
     ] },
 
     { p: '把这些错误抄成一张检查清单，提交代码前扫一眼：数组比较、越界条件、asList 可变性、二分前提、金额类型。清单不丢人，线上事故才丢人。' },
-    { h: '5.13 本章小结' },
+
+    { h: '5.12 本章小结' },
+
     { list: [
       '数组是定长对象，变量保存引用，赋值不会复制元素。',
       '下标从 0 到 length-1，length 是字段不是方法。',
@@ -832,7 +879,8 @@
       '金额用 BigDecimal，构造用字符串，比较用 compareTo。'
     ] },
 
-    { h: '5.14 常见追问' },
+    { h: '5.13 常见追问' },
+
     { list: [
       '<b>数组和 ArrayList 怎么选？</b>长度固定、追求性能用数组；需要增删、丰富 API 用 ArrayList。',
       '<b>Arrays.sort 用了什么算法？</b>基本类型是双轴快排，对象是 TimSort，后者稳定。',
@@ -842,13 +890,15 @@
       '<b>arraycopy 和目标数组重叠会怎样？</b>JVM 按内存搬移处理，结果正确，类似 memmove。'
     ] },
 
-    { h: '5.15 自测与练习' },
+    { h: '5.14 自测与练习' },
+
     { ol: [
       '写一个方法，接收 int 数组，返回去掉所有 0 之后的新数组，要求用 copyOf 控制长度。',
       '定义 Student 类（姓名、分数），用 Comparator 先按分数降序、再按姓名升序排序，并打印结果。',
       '实现一个金额结算：三种商品、各自单价与数量、运费 6 元、满 100 减 10，全部用 BigDecimal，结果保留两位。'
     ] },
-    { note: '<b>练习建议：</b>先自己写，再对照本章示例。重点检查边界：空数组、null 元素、金额为 0、折扣后应付为负。每道题至少准备三组测试数据，比写出来更重要。' }
+
+    { note: '<b>练习建议：</b>先自己写，再对照本章示例。重点检查边界：空数组、null 元素、金额为 0、折扣后应付为负。每道题至少准备三组测试数据，比写出来更重要。' },
   ] };
 
 

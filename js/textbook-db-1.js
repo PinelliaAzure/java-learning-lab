@@ -18,12 +18,10 @@
       { code: 'public class AppConfig {\n    // 类加载时就创建，JVM 保证只执行一次\n    private static final AppConfig INSTANCE = new AppConfig();\n\n    private AppConfig() {\n        // 私有构造器，外部无法 new\n    }\n\n    public static AppConfig getInstance() {\n        return INSTANCE;\n    }\n\n    public String get(String key) {\n        return System.getProperty(key);\n    }\n}', title: 'AppConfig.java' },
       { p: '调用方只能写 <code>AppConfig.getInstance()</code>，写 <code>new AppConfig()</code> 会直接编译失败。这里没有加锁，也没有任何判断，因为静态字段的初始化发生在类加载的初始化阶段，而 JVM 会保证一个类的初始化方法在多线程下只被执行一次，天然线程安全。' },
 
-      { h: '1.3 饿汉式：最简单也最稳' },
+      { h: '1.3 饿汉式与懒汉式：从简单到并发' },
       { p: '饿汉式的“饿”，指的是它很着急：类一被加载就把对象造好，不管后面用不用。优点是实现极简、没有并发问题、获取实例的速度也最快，因为只是读一个静态字段。绝大多数场景下这就够了，尤其是配置类、常量表这类“程序启动就一定要用”的对象。' },
       { p: '它的代价有两个。第一，如果构造过程很重（比如要读大文件、建连接池），而程序这次运行根本没用到它，就白花了一次启动时间。第二，构造器里不能抛受检异常，也不能依赖运行期才知道的参数；一旦构造失败，类初始化失败，后续访问会抛 <code>NoClassDefFoundError</code>，排查起来比较绕。' },
       { note: '<b>选择建议：</b>实例创建便宜、一定会用到，用饿汉式；创建昂贵且可能用不到，才考虑懒加载。不要一上来就写双重检查锁，多数业务代码根本不需要。' },
-
-      { h: '1.4 懒汉式与线程安全' },
       { p: '懒汉式（Lazy）把创建推迟到第一次调用。思路是：静态字段先不赋值，<code>getInstance()</code> 里判断是否为空，为空才 new。先看单线程下完全正确的写法：' },
       { code: 'public class LazyConfig {\n    private static LazyConfig instance;\n\n    private LazyConfig() {}\n\n    public static LazyConfig getInstance() {\n        if (instance == null) {          // 线程 A 和 B 可能同时进来\n            instance = new LazyConfig();\n        }\n        return instance;\n    }\n}', title: 'LazyConfig.java' },
       { p: '问题出在并发。假设线程 A 和线程 B 同时执行到 <code>if (instance == null)</code>，此时字段都还是 null，两个线程都判断成立，于是各自执行一次 new。结果堆上出现两个对象，一个被 A 返回，一个被 B 返回，之后谁覆盖谁还取决于调度顺序。单例的前提被打破，而这种 bug 在测试环境几乎不会出现，只会在压测或生产环境偶发。' },
@@ -36,7 +34,7 @@
         ['枚举单例', '安全', '否', '不能继承类，写法略陌生']
       ] } },
 
-      { h: '1.5 双重检查锁与 volatile' },
+      { h: '1.4 双重检查锁与 volatile' },
       { p: '双重检查锁（Double-Checked Locking，简称 DCL）的代码如下。注意两个细节：第一，静态字段必须加 <code>volatile</code>；第二，同步块内部要再判断一次 null。少任何一个，这个写法都不成立。' },
       { code: 'public class DclConfig {\n    private static volatile DclConfig instance;\n\n    private DclConfig() {}\n\n    public static DclConfig getInstance() {\n        if (instance == null) {                 // 第一次检查：避免每次都加锁\n            synchronized (DclConfig.class) {\n                if (instance == null) {         // 第二次检查：防止重复创建\n                    instance = new DclConfig();\n                }\n            }\n        }\n        return instance;\n    }\n}', title: 'DclConfig.java' },
       { p: '为什么需要 volatile？<code>new DclConfig()</code> 在字节码层面大致分三步：一，在堆上分配内存；二，调用构造器，把字段初始化成默认值或指定值；三，把这块内存的地址赋给静态字段 instance。编译器和 CPU 为了性能，可能把第二步和第三步重排成“先赋地址，再初始化”。' },
@@ -44,7 +42,7 @@
       { flow: ['调用 getInstance', '第一次判空', '为空则加锁', '锁内再判空', 'new 并赋值', '返回唯一实例'] },
       { p: '需要提醒的是，DCL 在今天更多是“理解并发”的经典案例。实际项目中，如果你只是要一个延迟加载的单例，用“静态内部类持有”更简单：外部类加载时不会初始化内部类，第一次调用 <code>getInstance()</code> 才触发内部类初始化，同样由 JVM 保证线程安全，而且不需要 volatile 和 synchronized。' },
 
-      { h: '1.6 枚举单例与被破坏的单例' },
+      { h: '1.5 枚举单例与被破坏的单例' },
       { p: '《Effective Java》推荐的最简写法是枚举。枚举的每个常量在 JVM 中都是唯一实例，创建发生在类初始化阶段，天然线程安全；写法短到几乎不可能写错：' },
       { code: 'public enum ConfigHolder {\n    INSTANCE;\n\n    private final Properties props = load();\n\n    private static Properties load() {\n        Properties p = new Properties();\n        try (InputStream in = ConfigHolder.class.getResourceAsStream("/app.properties")) {\n            if (in != null) p.load(in);\n        } catch (IOException e) {\n            throw new IllegalStateException("配置加载失败", e);\n        }\n        return p;\n    }\n\n    public String get(String key) {\n        return props.getProperty(key);\n    }\n}', title: 'ConfigHolder.java' },
       { p: '枚举单例还有一个容易被忽略的优势：它能防住反射和序列化。普通单例即使把构造器设为 private，别人仍可以用 <code>Constructor.setAccessible(true)</code> 强行调用；而 JDK 明确规定，对枚举类型调用 <code>newInstance</code> 会抛 <code>IllegalArgumentException</code>。序列化方面，普通单例反序列化会生成新对象，除非你写 <code>readResolve()</code>；枚举则按名字查找，反序列化后还是同一个常量。' },
@@ -57,13 +55,13 @@
       ] },
       { note: '<b>结论：</b>单例的作用域是“一个类加载器”，不是“整个 JVM”，更不是“整个集群”。多实例部署时，每个进程各有一个单例，需要共享状态请用 Redis、数据库等外部存储。' },
 
-      { h: '1.7 工厂：把 new 藏起来' },
+      { h: '1.6 工厂：把 new 藏起来' },
       { p: '工厂模式要解决的是“创建哪个实现”的问题。假设系统要支持支付宝、微信、银联三种支付，最直觉的写法是在下单方法里写 if-else，按渠道 new 不同的类。这样写有三个问题：调用方必须知道所有实现类，依赖面很宽；新增渠道要改调用方代码，违反开闭原则；每个渠道的初始化步骤（读密钥、建客户端）散落在多处，容易漏。' },
       { p: '简单工厂的做法是：把“根据类型创建对象”集中到一个工厂类里，调用方只传类型、拿接口。' },
       { code: 'public interface PayChannel {\n    void pay(long amountCents);\n}\n\npublic class AliPay implements PayChannel {\n    public void pay(long amountCents) {\n        System.out.println("支付宝支付 " + amountCents + " 分");\n    }\n}\n\npublic class WechatPay implements PayChannel {\n    public void pay(long amountCents) {\n        System.out.println("微信支付 " + amountCents + " 分");\n    }\n}\n\npublic class PayChannelFactory {\n    public static PayChannel create(String type) {\n        switch (type) {\n            case "ali":    return new AliPay();\n            case "wechat": return new WechatPay();\n            default: throw new IllegalArgumentException("不支持的支付渠道: " + type);\n        }\n    }\n}', title: 'SimpleFactory.java' },
       { p: '调用方现在只依赖 <code>PayChannel</code> 接口和工厂，不再 import 具体实现。工厂里集中处理参数校验、默认值、初始化，改起来只有一处。简单工厂的缺点也很明显：它自己成了新的变化点，每加一个渠道都要改 <code>create</code> 方法里的 switch，严格来说仍不满足开闭原则。' },
 
-      { h: '1.8 工厂方法与抽象工厂' },
+      { h: '1.7 工厂方法与抽象工厂' },
       { p: '工厂方法（Factory Method）把“创建”下放到子类：抽象工厂只声明 <code>create()</code>，每个具体工厂负责造一种产品。这样新增产品时，只需要新增一个产品类和一个工厂类，已有代码一行不改。' },
       { code: 'public abstract class PayChannelFactory {\n    public abstract PayChannel create();\n\n    // 模板方法：创建之后的通用流程写在这里\n    public void payWithLog(long amountCents) {\n        PayChannel channel = create();\n        System.out.println("开始支付, 金额=" + amountCents);\n        channel.pay(amountCents);\n    }\n}\n\npublic class AliPayFactory extends PayChannelFactory {\n    public PayChannel create() { return new AliPay(); }\n}\n\npublic class WechatPayFactory extends PayChannelFactory {\n    public PayChannel create() { return new WechatPay(); }\n}\n\n// 使用\nPayChannelFactory f = new AliPayFactory();\nf.payWithLog(1990);', title: 'FactoryMethod.java' },
       { p: '抽象工厂（Abstract Factory）再往上走一层，解决的是“产品族”问题：同一个主题下有一组相互关联的产品，比如一套 UI 组件里的按钮、输入框、下拉框，必须保证风格一致。抽象工厂声明一组创建方法，具体工厂负责造一整套。它在 JDK 里的典型例子是 <code>java.sql.Connection</code> 和配套的 Statement、ResultSet，不同数据库驱动提供各自的实现。' },
@@ -74,7 +72,7 @@
         ['抽象工厂', '保证一组产品风格配套', '改抽象接口 + 全部实现', '跨平台 UI、数据库驱动']
       ] } },
 
-      { h: '1.9 建造者：参数很多时怎么办' },
+      { h: '1.8 建造者：参数很多时怎么办' },
       { p: '当一个类有十几个字段，其中大部分可选，构造器就会变灾难。常见做法是写多个重载构造器，参数从少到多，这叫“重叠构造器”。它的问题是可读性极差：调用处 <code>new Order("张三", 100, true, false, null, 3)</code>，没人知道第三个参数是“是否加急”还是“是否开票”，而且顺序写错编译器也发现不了。' },
       { p: '建造者（Builder）把“设置参数”拆成一个个具名方法，最后统一 build。它有四个要点：Builder 的构造器接收必填参数；可选参数用链式方法设置，每个方法返回 this；<code>build()</code> 里做合法性校验并一次性创建目标对象；目标对象字段设为 final，创建后不可变。' },
       { code: 'public final class HttpRequest {\n    private final String url;\n    private final String method;\n    private final Map<String, String> headers;\n    private final int timeoutMs;\n\n    private HttpRequest(Builder b) {\n        this.url = b.url;\n        this.method = b.method;\n        this.headers = Collections.unmodifiableMap(new HashMap<>(b.headers));\n        this.timeoutMs = b.timeoutMs;\n    }\n\n    public static class Builder {\n        private final String url;              // 必填\n        private String method = "GET";\n        private final Map<String, String> headers = new HashMap<>();\n        private int timeoutMs = 3000;\n\n        public Builder(String url) {\n            if (url == null || url.isEmpty()) {\n                throw new IllegalArgumentException("url 不能为空");\n            }\n            this.url = url;\n        }\n\n        public Builder method(String method) {\n            this.method = method;\n            return this;\n        }\n\n        public Builder header(String name, String value) {\n            this.headers.put(name, value);\n            return this;\n        }\n\n        public Builder timeout(int timeoutMs) {\n            if (timeoutMs <= 0) throw new IllegalArgumentException("超时必须大于 0");\n            this.timeoutMs = timeoutMs;\n            return this;\n        }\n\n        public HttpRequest build() {\n            return new HttpRequest(this);\n        }\n    }\n}', title: 'HttpRequest.java' },
@@ -83,7 +81,12 @@
       { p: '建造者把“参数名”搬到了调用处，读代码时不需要来回翻构造器定义。它还有一个额外好处：可以先校验再创建，避免对象出现“创建成功但状态非法”的中间态。需要注意的是，Builder 本身是可变对象，不要在多线程间共享同一个 Builder；另外字段多但都必填时，直接用构造器反而更清楚，不必硬套。' },
       { note: '<b>Lombok 的 @Builder 就是这套东西的代码生成版。</b>理解手写版本后，你就知道它生成的 build() 里为什么会有必填字段校验，也能看懂 @Builder.Default 的作用。' },
 
-      { h: '1.10 三种模式怎么选' },
+      { h: '1.9 原型模式：复制一份现成的对象' },
+      { p: '有些对象的成本不在构造器里，而在“造出来之前”：要查三张表拼一份报表配置，要解析几百 KB 的 JSON 模板，要调一次远程接口拿基础数据。这类对象如果每次使用都重新造，接口会慢到无法接受。原型模式（Prototype）的思路是：先造一个样板，之后需要新对象时复制样板，而不是重走一遍昂贵的创建流程。' },
+      { p: 'Java 提供的复制入口是 <code>Object.clone()</code>，它按字段逐个复制：基本类型直接拷值，引用类型只拷地址，这叫浅拷贝。错误写法很典型：订单模板里有一个 <code>List&lt;Item&gt;</code> 字段，clone 之后两个订单指向同一个 List，改 A 的商品，B 也跟着变，而且这种 bug 往往在“复制完改了其中一个”时才暴露。<b>修正</b>有两条路：在 clone 里手动 new 一个集合并逐个复制元素，做成深拷贝；或者干脆放弃 clone，改用拷贝构造器 <code>public Order(Order other)</code> 显式复制每个字段。后者更推荐，因为 clone 的语义隐晦，还必须实现 <code>Cloneable</code>、处理受检异常，稍不留神就漏字段。' },
+      { p: '原型适合“结构稳定、创建昂贵、需要大量相似实例”的场景，比如游戏里成批生成的敌人、报表模板、缓存里的基准配置；不适合字段里有不可复制资源的对象，例如数据库连接、文件句柄、线程。复制出来的对象会和原件抢同一个资源，用起来必然出问题。动手前先问一句：这个对象里有没有“不该被共享”的东西。' },
+
+      { h: '1.10 三种模式怎么选：数量、类型、参数' },
       { p: '这三个模式经常被混用，判断标准其实很朴素：看你要控制的是“数量”“类型”还是“参数”。控制数量用单例，控制类型用工厂，控制参数用建造者。如果一个问题同时涉及多者，可以组合使用，比如工厂返回的对象内部用建造者创建。' },
       { table: { head: ['你的痛点', '首选模式', '不用的后果'], rows: [
         ['全局只能有一份，重复创建会浪费或出错', '单例', '资源翻倍、状态不一致'],
@@ -98,7 +101,13 @@
         '三种模式都不改变业务逻辑，只调整创建方式；如果为了套模式而增加一层，就是过度设计。'
       ] },
 
-      { h: '1.11 常见坑与排查' },
+      { h: '1.11 常见坑与错误写法' },
+      { p: '第一种错误是拿实例字段当锁。有人写 <code>synchronized (instance)</code>，想锁住创建过程，可第一次进入时 instance 还是 null，同步块直接抛 <code>NullPointerException</code>。锁对象必须是独立且不变的东西，<b>修正</b>是 <code>synchronized (DclConfig.class)</code>，或者声明一个 <code>private static final Object LOCK = new Object()</code> 专门用来加锁。' },
+      { p: '第二种错误是把单例当缓存。在单例里放一个 <code>HashMap</code> 存“用户 ID 到用户对象”的映射，看似省事，实际上这个 Map 被所有线程共享，又没有淘汰策略，跑几天就内存溢出；更糟的是多线程同时写 HashMap，扩容时可能让链表成环，CPU 直接打满。<b>修正</b>是：请求级数据放方法局部变量，需要跨请求缓存就换成带容量上限与过期策略的缓存组件，容器至少用 <code>ConcurrentHashMap</code>。' },
+      { p: '第三种错误是初始化顺序。静态字段按书写顺序赋值，如果唯一实例声明在它依赖的配置字段之前，构造器里读到的就是 null，表现为“启动就空指针，但字段明明写了值”。<b>修正</b>是把被依赖的字段声明在实例之前，或改用静态块按顺序初始化；更稳的是用静态内部类，把创建推迟到第一次调用，顺序问题自然消失。' },
+      { p: '第四种错误是测试污染。单例的静态状态会在同一个 JVM 的所有测试用例之间残留，前一个用例改了配置，后一个用例莫名其妙失败，单独跑又都是绿的。<b>修正</b>是让单例只保存不可变配置，可变状态通过方法参数传入；确实需要重置时，提供一个包级可见的 reset 方法，并在测试的清理阶段调用。' },
+      { p: '工厂的错误写法常见两种。第一种是把“类型判断”留在调用方：<code>if (type.equals("ali")) channel = new AliPay();</code>，工厂只是把 new 包了一层，调用方依旧 import 了所有实现类，新增渠道仍要改调用方。修正：调用方只传枚举或类型字符串，判断全部收进工厂，返回类型声明成接口。第二种是工厂类爆炸：每个产品都配一个只含一行 create 的工厂类，包里塞了几十个这样的类。修正：产品族稳定时退回简单工厂，用 Map 保存“类型到创建函数”的映射，新增产品只加一行注册。' },
+      { p: '建造者的错误写法是“伪建造者”：每个设置方法返回 void，无法链式调用；或者 build() 只是把字段原样拷过去、不做任何校验，于是对象能以非法状态被创建出来，问题要到业务深处才炸。修正：链式方法一律返回 this，build() 里集中校验必填项与取值范围，私有构造器再兜一层，目标对象字段全部 final，创建完就不可变。' },
       { list: [
         '<b>单例构造器忘了私有：</b>外部照样能 new，单例形同虚设；用 IDE 的“查找用法”确认没有 new 调用。',
         '<b>DCL 漏写 volatile：</b>压测时才偶发拿到半初始化对象；代码评审时把 volatile 当成硬性检查项。',
@@ -108,22 +117,7 @@
         '<b>把简单工厂写成巨型 switch：</b>几十个分支说明该用注册表或工厂方法了；可以用 Map 存“类型 → 创建函数”。'
       ] },
 
-      { h: '1.12 原型模式：复制一份现成的对象' },
-      { p: '有些对象的成本不在构造器里，而在“造出来之前”：要查三张表拼一份报表配置，要解析几百 KB 的 JSON 模板，要调一次远程接口拿基础数据。这类对象如果每次使用都重新造，接口会慢到无法接受。原型模式（Prototype）的思路是：先造一个样板，之后需要新对象时复制样板，而不是重走一遍昂贵的创建流程。' },
-      { p: 'Java 提供的复制入口是 <code>Object.clone()</code>，它按字段逐个复制：基本类型直接拷值，引用类型只拷地址，这叫浅拷贝。错误写法很典型：订单模板里有一个 <code>List&lt;Item&gt;</code> 字段，clone 之后两个订单指向同一个 List，改 A 的商品，B 也跟着变，而且这种 bug 往往在“复制完改了其中一个”时才暴露。<b>修正</b>有两条路：在 clone 里手动 new 一个集合并逐个复制元素，做成深拷贝；或者干脆放弃 clone，改用拷贝构造器 <code>public Order(Order other)</code> 显式复制每个字段。后者更推荐，因为 clone 的语义隐晦，还必须实现 <code>Cloneable</code>、处理受检异常，稍不留神就漏字段。' },
-      { p: '原型适合“结构稳定、创建昂贵、需要大量相似实例”的场景，比如游戏里成批生成的敌人、报表模板、缓存里的基准配置；不适合字段里有不可复制资源的对象，例如数据库连接、文件句柄、线程。复制出来的对象会和原件抢同一个资源，用起来必然出问题。动手前先问一句：这个对象里有没有“不该被共享”的东西。' },
-
-      { h: '1.13 单例的四种错误写法与修正' },
-      { p: '第一种错误是拿实例字段当锁。有人写 <code>synchronized (instance)</code>，想锁住创建过程，可第一次进入时 instance 还是 null，同步块直接抛 <code>NullPointerException</code>。锁对象必须是独立且不变的东西，<b>修正</b>是 <code>synchronized (DclConfig.class)</code>，或者声明一个 <code>private static final Object LOCK = new Object()</code> 专门用来加锁。' },
-      { p: '第二种错误是把单例当缓存。在单例里放一个 <code>HashMap</code> 存“用户 ID 到用户对象”的映射，看似省事，实际上这个 Map 被所有线程共享，又没有淘汰策略，跑几天就内存溢出；更糟的是多线程同时写 HashMap，扩容时可能让链表成环，CPU 直接打满。<b>修正</b>是：请求级数据放方法局部变量，需要跨请求缓存就换成带容量上限与过期策略的缓存组件，容器至少用 <code>ConcurrentHashMap</code>。' },
-      { p: '第三种错误是初始化顺序。静态字段按书写顺序赋值，如果唯一实例声明在它依赖的配置字段之前，构造器里读到的就是 null，表现为“启动就空指针，但字段明明写了值”。<b>修正</b>是把被依赖的字段声明在实例之前，或改用静态块按顺序初始化；更稳的是用静态内部类，把创建推迟到第一次调用，顺序问题自然消失。' },
-      { p: '第四种错误是测试污染。单例的静态状态会在同一个 JVM 的所有测试用例之间残留，前一个用例改了配置，后一个用例莫名其妙失败，单独跑又都是绿的。<b>修正</b>是让单例只保存不可变配置，可变状态通过方法参数传入；确实需要重置时，提供一个包级可见的 reset 方法，并在测试的清理阶段调用。' },
-
-      { h: '1.14 工厂与建造者的两种典型错误' },
-      { p: '工厂的错误写法常见两种。第一种是把“类型判断”留在调用方：<code>if (type.equals("ali")) channel = new AliPay();</code>，工厂只是把 new 包了一层，调用方依旧 import 了所有实现类，新增渠道仍要改调用方。修正：调用方只传枚举或类型字符串，判断全部收进工厂，返回类型声明成接口。第二种是工厂类爆炸：每个产品都配一个只含一行 create 的工厂类，包里塞了几十个这样的类。修正：产品族稳定时退回简单工厂，用 Map 保存“类型到创建函数”的映射，新增产品只加一行注册。' },
-      { p: '建造者的错误写法是“伪建造者”：每个设置方法返回 void，无法链式调用；或者 build() 只是把字段原样拷过去、不做任何校验，于是对象能以非法状态被创建出来，问题要到业务深处才炸。修正：链式方法一律返回 this，build() 里集中校验必填项与取值范围，私有构造器再兜一层，目标对象字段全部 final，创建完就不可变。' },
-
-      { h: '1.15 本章小结' },
+      { h: '1.12 本章小结' },
       { list: [
         '创建型模式只负责“怎么造对象”，不改变对象的行为。',
         '单例三要素：私有构造器、静态实例、静态获取方法；饿汉最简单，DCL 必须配 volatile。',
@@ -132,7 +126,7 @@
         '建造者用链式调用解决多参数问题，build() 里做校验并产出不可变对象。'
       ] },
 
-      { h: '1.16 常见追问' },
+      { h: '1.13 常见追问' },
       { list: [
         '<b>单例和静态类有什么区别？</b>静态类不能实现接口、不能被注入替换、无法延迟初始化；单例是对象，可以传参、可以 mock，更适合需要面向接口的场景。',
         '<b>Spring 的 singleton Bean 是单例模式吗？</b>是“容器内单例”：每个容器每个 Bean 名一个实例，但类本身没有私有构造器，你仍可以自己 new。',
@@ -142,7 +136,7 @@
         '<b>这些模式在真实项目里用得多吗？</b>单例和建造者非常常见，工厂更多以“注册表 + 反射”或“依赖注入容器”的形式出现，思想一致。'
       ] },
 
-      { h: '1.17 自测与练习' },
+      { h: '1.14 自测与练习' },
       { ol: [
         '手写一个饿汉式单例和一个枚举单例，比较两者的代码量和线程安全性。',
         '把本章的 DCL 代码去掉 volatile，说明在什么情况下会出错，出错的现象是什么。',
@@ -219,7 +213,21 @@
       { p: '理解代理还要理解它的边界：代理只能拦截“从外部进来”的调用。对象内部的方法互调、构造函数里的调用、静态方法调用，都不会经过代理。另外代理会增加一层栈帧和一次反射（或字节码跳转），对绝大多数业务可以忽略，但在极端高频的路径上要实测，不要凭感觉优化。' },
       { p: '除了 Spring AOP，代理还出现在很多地方：MyBatis 的 Mapper 接口没有实现类，运行时用 JDK 动态代理生成，方法调用被转成 SQL 执行；RPC 框架给远程服务生成本地代理，调用方像调本地方法；事务、缓存、重试、限流，本质都是代理。' },
 
-      { h: '2.9 三个模式怎么分工' },
+      { h: '2.9 模板方法：骨架不变，步骤可变' },
+      { p: '模板方法（Template Method）处理的是“流程一样、细节不同”。比如导入数据固定五步：打开文件、校验表头、逐行解析、写入数据库、关闭资源；但打开的可能是本地 CSV，也可能是对象存储，解析的可能是用户，也可能是订单。把五步抽成抽象方法，父类只写流程骨架，子类填细节，就是模板方法。' },
+      { p: '错误写法是让每个子类各复制一份完整流程，五步代码贴了四遍；后来发现关闭资源漏了 try-finally，得改四个地方，还容易漏一个。<b>修正</b>：父类用 final 修饰模板方法，禁止子类覆盖整个流程；真正变化的步骤声明为 <code>protected abstract</code>；允许子类“可选干预”的步骤留成钩子方法，也就是一个空的 <code>protected</code> 方法，子类想改就覆盖，不想改就用默认行为。' },
+      { p: '两个注意点。第一，抽象步骤别超过五六个，超过说明这个骨架承担了太多职责，该拆成两条流程。第二，模板方法里父类调用子类实现，调试时调用栈会来回跳，所以每个步骤的日志要打全，出问题时才能看出卡在哪一步。' },
+
+      { h: '2.10 命令与状态：把动作和状态都变成对象' },
+      { p: '命令模式把“一次操作”封装成对象，对象里带着执行所需的全部参数。好处是操作可以被排队、记录、撤销、重放。错误写法是在 Controller 里直接调 service，等到想加“撤销上一步”时，才发现没有任何地方保存过参数和接收者。<b>修正</b>：定义 <code>Command</code> 接口，含 <code>execute()</code> 与 <code>undo()</code>；每个具体命令持有接收者和参数；调用方只依赖接口，再用一个栈保存已执行的命令，撤销时弹出并调用 undo。' },
+      { p: '状态模式把“对象在不同状态下的不同行为”拆成状态类。错误写法是订单的 <code>pay()</code> 里判断“待支付 / 已支付 / 已取消”，还要拦住已取消的订单；每加一个状态，所有方法都要补分支，漏一个就是资损事故。<b>修正</b>：抽象出 <code>OrderState</code>，每个状态实现自己的 pay、cancel、ship，非法操作直接抛业务异常；上下文把请求委托给当前状态，下一个状态由状态自己决定。' },
+      { p: '两者容易混：命令关注“做了什么、能不能撤销”，状态关注“现在是谁、允许做什么”。同一个“支付成功”，用命令表达这次调用，用状态表达订单进入已支付。真实项目里它们经常一起出现，命令负责审计与补偿，状态负责约束合法流转。' },
+
+      { h: '2.11 责任链：让请求沿着处理者往下走' },
+      { p: '责任链（Chain of Responsibility）把一串处理者首尾相连，请求从链头进入，谁能处理谁处理，处理完可以选择继续传递，也可以就此终止。典型场景有三个：参数校验，依次做非空、长度、敏感词；审批流，组长批完给经理，经理批完给总监；网关过滤器，先限流、再鉴权、最后路由。' },
+      { p: '错误写法是把校验写成三层嵌套 if，新增一条规则就要往最里面插一段，缩进越来越深，最后没人敢动，也不敢删。<b>修正</b>：每个校验器实现 <code>handle(request, chain)</code>，不通过就抛异常或返回错误码，通过就调用 <code>chain.handle(request)</code> 交给下一个；链在启动时组装好，顺序写在配置里，一眼能看出谁先谁后。' },
+
+      { h: '2.12 三个模式怎么分工，与 AOP 是什么关系' },
       { p: '策略、观察者、代理经常同时出现在一个业务里：下单时用策略算价，支付成功后用观察者通知下游，整个服务外面套一层代理做日志和事务。它们解决的是不同维度的问题，不要互相替代。' },
       { table: { head: ['模式', '解决的问题', '关键角色', '典型落地'], rows: [
         ['策略', '算法可替换，消除分支', '接口 + 多个实现 + 上下文', '优惠计算、支付渠道、排序规则'],
@@ -233,8 +241,11 @@
         ['方法覆盖率', '手写哪些就有哪些', '接口方法', '非 final 方法'],
         ['主要缺点', '模板代码多', '只能代理接口', '不能代理 final 类/方法']
       ] } },
+      { p: '前面讲代理时说过 AOP 是代理的产品化，这里补一层关联：模板方法、责任链、代理在框架里经常同时出现。一次带事务的请求，容器先让它经过过滤器链做鉴权和限流，这是责任链；接着进入代理对象开启事务，这是环绕通知；事务内部再按“开启、执行业务、提交或回滚、释放连接”的固定骨架走一遍，这是模板方法。看懂这三个模式，Spring 里一条请求链路就不再是黑盒。' },
 
-      { h: '2.10 常见坑与排查' },
+      { h: '2.13 选型口诀与常见坑' },
+      { p: '选型可以记一句话：流程固定、步骤可变，用模板方法；请求要经过一串可插拔的处理者，用责任链；操作要排队、撤销、审计，用命令；对象行为随内部状态大幅变化，用状态。反过来，只有一个处理者、只有两种状态、流程只有三步时，直接写代码比套模式清楚得多。' },
+      { p: '几个高频坑：模板方法在构造器里调用抽象方法，此时子类字段还没初始化，拿到的是 null；责任链忘了写链尾的终止逻辑，请求走到最后一个处理者后返回 null，调用方直接空指针；命令对象里保存了可变的外部引用，等到撤销时数据早被改掉，撤销等于没撤；状态类之间互相 new，形成循环依赖，状态一多就理不清。这些问题的共同点是“模式用对了，边界没想清楚”，写的时候多问一句谁负责收尾。' },
       { list: [
         '<b>策略注入为 null：</b>自己 new 的上下文不会经过容器，字段注入不生效；用构造器注入并在容器里取 Bean。',
         '<b>观察者列表遍历时修改：</b>抛 ConcurrentModificationException；改用 CopyOnWriteArrayList 或先复制一份再遍历。',
@@ -244,28 +255,7 @@
         '<b>动态代理的 equals 出错：</b>代理对象与目标对象 equals 为 false；比较业务主键，不要比较对象本身。'
       ] },
 
-      { h: '2.11 模板方法：骨架不变，步骤可变' },
-      { p: '模板方法（Template Method）处理的是“流程一样、细节不同”。比如导入数据固定五步：打开文件、校验表头、逐行解析、写入数据库、关闭资源；但打开的可能是本地 CSV，也可能是对象存储，解析的可能是用户，也可能是订单。把五步抽成抽象方法，父类只写流程骨架，子类填细节，就是模板方法。' },
-      { p: '错误写法是让每个子类各复制一份完整流程，五步代码贴了四遍；后来发现关闭资源漏了 try-finally，得改四个地方，还容易漏一个。<b>修正</b>：父类用 final 修饰模板方法，禁止子类覆盖整个流程；真正变化的步骤声明为 <code>protected abstract</code>；允许子类“可选干预”的步骤留成钩子方法，也就是一个空的 <code>protected</code> 方法，子类想改就覆盖，不想改就用默认行为。' },
-      { p: '两个注意点。第一，抽象步骤别超过五六个，超过说明这个骨架承担了太多职责，该拆成两条流程。第二，模板方法里父类调用子类实现，调试时调用栈会来回跳，所以每个步骤的日志要打全，出问题时才能看出卡在哪一步。' },
-
-      { h: '2.12 命令与状态：把动作和状态都变成对象' },
-      { p: '命令模式把“一次操作”封装成对象，对象里带着执行所需的全部参数。好处是操作可以被排队、记录、撤销、重放。错误写法是在 Controller 里直接调 service，等到想加“撤销上一步”时，才发现没有任何地方保存过参数和接收者。<b>修正</b>：定义 <code>Command</code> 接口，含 <code>execute()</code> 与 <code>undo()</code>；每个具体命令持有接收者和参数；调用方只依赖接口，再用一个栈保存已执行的命令，撤销时弹出并调用 undo。' },
-      { p: '状态模式把“对象在不同状态下的不同行为”拆成状态类。错误写法是订单的 <code>pay()</code> 里判断“待支付 / 已支付 / 已取消”，还要拦住已取消的订单；每加一个状态，所有方法都要补分支，漏一个就是资损事故。<b>修正</b>：抽象出 <code>OrderState</code>，每个状态实现自己的 pay、cancel、ship，非法操作直接抛业务异常；上下文把请求委托给当前状态，下一个状态由状态自己决定。' },
-      { p: '两者容易混：命令关注“做了什么、能不能撤销”，状态关注“现在是谁、允许做什么”。同一个“支付成功”，用命令表达这次调用，用状态表达订单进入已支付。真实项目里它们经常一起出现，命令负责审计与补偿，状态负责约束合法流转。' },
-
-      { h: '2.13 责任链：让请求沿着处理者往下走' },
-      { p: '责任链（Chain of Responsibility）把一串处理者首尾相连，请求从链头进入，谁能处理谁处理，处理完可以选择继续传递，也可以就此终止。典型场景有三个：参数校验，依次做非空、长度、敏感词；审批流，组长批完给经理，经理批完给总监；网关过滤器，先限流、再鉴权、最后路由。' },
-      { p: '错误写法是把校验写成三层嵌套 if，新增一条规则就要往最里面插一段，缩进越来越深，最后没人敢动，也不敢删。<b>修正</b>：每个校验器实现 <code>handle(request, chain)</code>，不通过就抛异常或返回错误码，通过就调用 <code>chain.handle(request)</code> 交给下一个；链在启动时组装好，顺序写在配置里，一眼能看出谁先谁后。' },
-
-      { h: '2.14 这些模式和 AOP 的关系' },
-      { p: '前面讲代理时说过 AOP 是代理的产品化，这里补一层关联：模板方法、责任链、代理在框架里经常同时出现。一次带事务的请求，容器先让它经过过滤器链做鉴权和限流，这是责任链；接着进入代理对象开启事务，这是环绕通知；事务内部再按“开启、执行业务、提交或回滚、释放连接”的固定骨架走一遍，这是模板方法。看懂这三个模式，Spring 里一条请求链路就不再是黑盒。' },
-
-      { h: '2.15 选型口诀与常见坑' },
-      { p: '选型可以记一句话：流程固定、步骤可变，用模板方法；请求要经过一串可插拔的处理者，用责任链；操作要排队、撤销、审计，用命令；对象行为随内部状态大幅变化，用状态。反过来，只有一个处理者、只有两种状态、流程只有三步时，直接写代码比套模式清楚得多。' },
-      { p: '几个高频坑：模板方法在构造器里调用抽象方法，此时子类字段还没初始化，拿到的是 null；责任链忘了写链尾的终止逻辑，请求走到最后一个处理者后返回 null，调用方直接空指针；命令对象里保存了可变的外部引用，等到撤销时数据早被改掉，撤销等于没撤；状态类之间互相 new，形成循环依赖，状态一多就理不清。这些问题的共同点是“模式用对了，边界没想清楚”，写的时候多问一句谁负责收尾。' },
-
-      { h: '2.16 本章小结' },
+      { h: '2.14 本章小结' },
       { list: [
         '行为型模式关注对象协作；核心是找到变化点并隔离它。',
         '策略把算法封装成实现同一接口的类，用注册表或容器消除分支。',
@@ -274,7 +264,7 @@
         'Spring AOP 是代理的产品化，自调用会绕过代理，是最常见失效原因。'
       ] },
 
-      { h: '2.17 常见追问' },
+      { h: '2.15 常见追问' },
       { list: [
         '<b>策略模式和简单工厂有什么区别？</b>工厂负责创建对象，策略负责选择算法；工厂常用来生产策略实例，两者是配合关系。',
         '<b>观察者模式和发布订阅一样吗？</b>不完全一样。观察者里主题直接持有观察者，发布订阅通过消息中间件解耦，发布者不知道订阅者存在。',
@@ -284,7 +274,7 @@
         '<b>什么时候不该用观察者？</b>只有一两个固定后续动作、且顺序要求严格时，直接调用更简单可读；观察者适合数量会增长的场景。'
       ] },
 
-      { h: '2.18 自测与练习' },
+      { h: '2.16 自测与练习' },
       { ol: [
         '把一个含 5 个分支的优惠计算改写成策略模式，统计改动前后新增规则需要改几个文件。',
         '给策略加一个 Map 注册表，要求未知类型抛出带类型的异常，并写单元测试覆盖。',
@@ -298,35 +288,66 @@
   T['sql-jdbc'] = {
     meta: '本章约 3500 字 · 建议 20 分钟 · 配套流程图与 3 道习题',
     blocks: [
-      { h: '3.8 JDBC 是什么：接口与驱动' },
+      { h: '3.1 JDBC 是什么：接口与驱动' },
       { p: 'JDBC 是一套标准接口，位于 <code>java.sql</code> 和 <code>javax.sql</code> 包中。核心接口有四个：<code>DriverManager</code> 负责根据 URL 找到合适的驱动并建立连接；<code>Connection</code> 代表一次数据库会话，能创建语句、控制事务；<code>Statement</code> / <code>PreparedStatement</code> 用来执行 SQL；<code>ResultSet</code> 承载查询结果，是一个可逐行移动的游标。' },
       { p: '接口由 JDK 提供，实现由数据库厂商提供。MySQL 的驱动是 <code>mysql-connector-j</code>，PostgreSQL 是 <code>postgresql</code>，它们都实现了同一套接口。所以你的代码里不应该出现 <code>com.mysql.cj.jdbc.Driver</code> 这样的具体类，除非在配置驱动类名。' },
       { p: 'JDBC 4.0 之后，驱动会通过 SPI 机制自动注册：只要 classpath 里有驱动 jar，<code>DriverManager</code> 就能根据 URL 前缀找到它，<code>Class.forName</code> 加载驱动这一步通常可以省略。老教程里的这行代码不是错，只是不再必要；如果遇到“No suitable driver”，先检查依赖有没有打进运行环境，而不是急着加 forName。' },
 
-      { h: '3.9 JDBC 五步：从连接到关闭' },
+      { h: '3.2 一次查询的五步流程' },
       { p: '一次完整的 JDBC 查询可以拆成五步，这是本章最需要背下来的流程：一，获取连接；二，创建 PreparedStatement 并写好带占位符的 SQL；三，设置参数；四，执行并拿到 ResultSet；五，遍历结果、关闭资源。' },
       { flow: ['获取 Connection', '创建 PreparedStatement', 'setXxx 绑定参数', 'executeQuery 拿 ResultSet', '遍历并关闭资源'] },
       { code: 'import java.sql.*;\n\npublic class JdbcQueryDemo {\n    public static void main(String[] args) throws SQLException {\n        String url = "jdbc:mysql://localhost:3306/demo?useSSL=false&serverTimezone=Asia/Shanghai";\n        String user = "root";\n        String password = "123456";\n\n        String sql = "SELECT id, name, age FROM users WHERE age > ? ORDER BY id";\n\n        try (Connection conn = DriverManager.getConnection(url, user, password);\n             PreparedStatement ps = conn.prepareStatement(sql)) {\n\n            ps.setInt(1, 18);\n\n            try (ResultSet rs = ps.executeQuery()) {\n                while (rs.next()) {\n                    long id = rs.getLong("id");\n                    String name = rs.getString("name");\n                    int age = rs.getInt("age");\n                    System.out.println(id + "\\t" + name + "\\t" + age);\n                }\n            }\n        }\n    }\n}', title: 'JdbcQueryDemo.java' },
       { out: '1\t张三\t28\n2\t李四\t32\n3\t王五\t25' },
       { p: '这段代码可以直接运行，前提是本地有 MySQL、建好了 demo 库和 users 表、并把驱动 jar 放进 classpath。URL 里的参数因数据库而异：MySQL 常带时区和 SSL 配置，PostgreSQL 默认端口是 5432，写法是 <code>jdbc:postgresql://localhost:5432/demo</code>。密码不要硬编码在源码里，真实项目从环境变量或配置中心读取。' },
+      { p: '五步写三遍就该抽方法：把 SQL 与参数传进去、把结果交给回调处理，关闭交给 try-with-resources——Spring 的 JdbcTemplate 就是这么来的。' },
 
-      { h: '3.10 ResultSet：游标与取值' },
+      { h: '3.3 五步的失败现场：异常出现在哪一步' },
+      { p: '五步背下来只是开始，排错时要能说出每一步失败时异常长什么样。第一步拿连接失败多半不是代码问题：<code>Access denied</code> 是账号、密码或授权库不对；<code>Unknown database</code> 是库名拼错；<code>Communications link failure</code> 是端口不通、防火墙拦截或数据库没启动；<code>Public Key Retrieval is not allowed</code> 是 MySQL 8 的认证插件要求补上 <code>allowPublicKeyRetrieval=true</code>。' },
+      { p: '第二步 <code>prepareStatement</code> 就会校验表名、列名和语法，写错在这一步抛，不必等到 <code>executeQuery</code>。第三步绑参，少绑一个报 <code>No value specified for parameter 2</code>，多绑一个报 <code>Parameter index out of range</code>。第四步对 SELECT 调 <code>executeUpdate</code>、对 UPDATE 调 <code>executeQuery</code>，都会立刻抛异常。第五步漏关资源不会马上报错，只在高并发时表现为连接池耗尽。' },
+      { p: '所以定位顺序是：先确认异常发生在第几步，再判断是环境、SQL、参数还是资源问题。一看到 <code>SQLException</code> 就改 SQL，往往改不到点上。' },
+
+      { h: '3.4 ResultSet：游标与取值' },
       { p: 'ResultSet 不是“一个列表”，而是一个游标。刚拿到时，游标停在第一行之前，必须调用 <code>next()</code> 才能移动到第一行；<code>next()</code> 返回 true 表示当前行有数据，返回 false 表示已经遍历完。所以标准写法一定是 <code>while (rs.next())</code>，而不是先取再判断。' },
       { p: '取值有两种方式：按列名 <code>rs.getString("name")</code>，或按列下标 <code>rs.getString(1)</code>。下标从 1 开始，不是 0，这是新手最常犯的错。按列名可读性好、对列顺序变化不敏感，推荐优先使用；按下标略快，适合列非常多且固定的场景。' },
       { p: '类型要匹配：整数用 <code>getInt</code> / <code>getLong</code>，小数用 <code>getBigDecimal</code>（金额不要用 getDouble），字符串用 <code>getString</code>，时间用 <code>getTimestamp</code> 或 Java 8 之后的 <code>getObject("created_at", LocalDateTime.class)</code>。数据库里的 NULL 取出来是 Java 的 null（对象类型）或 0（基本类型），<code>getInt</code> 遇到 NULL 返回 0，无法区分“真的是 0”和“没有值”。要区分就用 <code>getObject</code> 或取完调用 <code>wasNull()</code>。' },
       { code: 'while (rs.next()) {\n    long id = rs.getLong("id");\n    String email = rs.getString("email");\n    if (rs.wasNull()) {\n        email = "(未填写)";\n    }\n    System.out.println(id + " -> " + email);\n}', title: 'NullDemo.java' },
       { p: '除了查询，还有两种执行方式：<code>executeUpdate</code> 用于 INSERT、UPDATE、DELETE，返回受影响的行数；<code>execute</code> 返回 boolean，true 表示结果是一个 ResultSet，false 表示是更新计数，一般只在动态 SQL 或存储过程时用。插入后想拿自增主键，用 <code>conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)</code>，执行后从 <code>getGeneratedKeys()</code> 读取。' },
 
-      { h: '3.11 资源关闭与 try-with-resources' },
+      { h: '3.5 Statement 与 PreparedStatement 的边界' },
+      { p: 'Statement 不是完全不能用。执行不带参数的 DDL、查看执行计划、开关账号这类管理语句，用 Statement 更直接。判断标准只有一条：这条 SQL 的字符串是不是由外部变量拼出来的，是，就必须换成 PreparedStatement。' },
+      { p: '错误写法是 <code>"SELECT * FROM users WHERE name = \'" + name + "\'"</code>，修正为 <code>"SELECT * FROM users WHERE name = ?"</code> 再 <code>ps.setString(1, name)</code>。安全不来自“过滤单引号”，而来自参数不参与语法解析。' },
+      { p: '但占位符只能替值，不能替标识符。<code>ORDER BY</code> 的列名、<code>ASC</code> 或 <code>DESC</code>、表名都不能写成问号，驱动会把问号当字符串常量，排序失效或直接报错。这类动态需求用白名单：把允许的列名放进 Map，用户传的键查不到就拒绝，再用查到的固定字符串拼接。黑名单过滤关键字挡不住大小写、注释符、编码变形，白名单才可控。' },
+      { p: '同一个 PreparedStatement 复用多次时参数不会自动清空，第二次没绑的列会沿用上一次的值；批量里传 null 要显式给出类型，<code>setNull(3, Types.VARCHAR)</code>，否则驱动可能拼出错误的字面量。' },
+
+      { h: '3.6 ResultSet 到对象：映射、一对多与流式读取' },
+      { p: '框架里的 RowMapper 本质就是一段 while 加一次 new。手写时注意三点：列名用查询里的别名，不要依赖原列名，别名是稳定契约；数字列取完立刻判 <code>wasNull</code>，再决定是否装箱；金额列用 <code>getBigDecimal</code>，不要 getDouble 再转。' },
+      { p: '枚举和时间字段最容易出问题。数据库存字符串或 tinyint，映射成枚举时 <code>valueOf</code> 要捕获 <code>IllegalArgumentException</code>，否则一条脏数据会让整次查询失败；时间字段优先 <code>getObject("created_at", LocalDateTime.class)</code>，比 <code>getTimestamp</code> 再 <code>toLocalDateTime</code> 少一层时区心智负担。' },
+      { p: '一对多不要在 while 里再查子表，那是一百行数据发一百零一条 SQL。两种做法：一次 JOIN 出扁平行，在内存里按主键分组；或先查主表拿 id，再用一条 IN 查询捞子表回来配对。前者注意行数膨胀，后者注意 IN 列表长度，超过几百个就分批。' },
+      { p: '结果集很大时不要一次读进 List。驱动默认会把查询结果尽量取到客户端，百万行足以把堆撑爆；<code>setFetchSize</code> 设成几百并配合驱动的游标参数，才能边取边处理。多数业务其实不需要流式读取，分页查、每页处理完就丢弃，反而更简单可控。看到 <code>OutOfMemoryError</code> 先怀疑全量查询，不要急着调大堆。' },
+      { p: '字段一多就更容易漏：映射时用全参构造器或 builder，让编译器替你数参数，比逐字段 <code>set</code> 更难漏。漏掉的字段是 null，而 null 往往要等业务跑到很远处才炸。' },
+
+      { h: '3.7 资源关闭与 try-with-resources' },
       { p: '数据库连接是有限资源，用完必须归还，否则连接数耗尽后整个应用都会卡死。传统写法是在 finally 里逐个关闭，顺序与打开顺序相反：ResultSet → Statement → Connection。每个 close 还要各自 try-catch，代码又长又容易漏。' },
       { p: 'Java 7 引入的 try-with-resources 解决了这个问题：只要资源实现了 <code>AutoCloseable</code>，写在 try 的括号里，无论正常结束还是抛异常，都会自动按声明的逆序关闭。Connection、PreparedStatement、ResultSet 都实现了这个接口。' },
       { code: 'try (Connection conn = DriverManager.getConnection(url, user, pwd);\n     PreparedStatement ps = conn.prepareStatement(sql);\n     ResultSet rs = ps.executeQuery()) {\n    while (rs.next()) {\n        System.out.println(rs.getString("name"));\n    }\n}   // 逆序关闭：rs → ps → conn', title: 'TryWithResources.java' },
       { p: '注意不要把 <code>Connection</code> 声明在 try 外面再用 try 包语句，那样连接不会被自动关闭。另外，关闭顺序有实际意义：先关 ResultSet，再关 Statement，最后关 Connection；如果先关连接，后面的 close 可能抛异常。try-with-resources 的逆序关闭正好符合这个要求。' },
       { note: '<b>连接池的 close 不是真关闭：</b>从 HikariCP 等连接池拿到的 Connection 是一个包装对象，调用 close 只是把连接还给池子。所以依然要 close，否则池子会被借空。' },
 
-      { h: '3.12 连接池、批量操作与常见坑' },
+      { h: '3.8 连接池与连接参数' },
       { p: '每次 <code>DriverManager.getConnection</code> 都要建立 TCP 连接、做认证、初始化会话，耗时可能是几毫秒到几十毫秒。高并发下频繁创建连接会拖垮数据库，所以生产环境必须用连接池：启动时建好一批连接，用的时候借、用完还。常用实现是 HikariCP（Spring Boot 默认）和 Druid。连接池需要配置最大连接数、最小空闲、获取超时、空闲回收，最大连接数不是越大越好，超过数据库承载能力反而会互相拖慢。' },
+      { p: '驱动版本要和数据库主版本匹配。MySQL 8 的库配 5.x 驱动常常连不上；反过来用 8.x 驱动连 5.7 虽然能通，认证插件和时区默认值也可能不同。依赖里同时出现两个版本的驱动，表现为“有时能连有时不能”，用 <code>mvn dependency:tree</code> 找出来排除旧版本。' },
+      { p: 'URL 上有几个参数值得记：<code>serverTimezone</code> 决定时间字段怎么解释；<code>useSSL</code> 与 <code>requireSSL</code> 关系到链路加密，生产不该为省事关掉；<code>connectTimeout</code> 和 <code>socketTimeout</code> 分别控制建连与读写的等待上限。不设超时，网络抖动时线程会一直挂着，比直接报错更难排查。' },
+      { p: '连接池只需先调四个参数：最大连接数、最小空闲、获取连接超时、空闲淘汰时间。最大连接数按数据库承受能力定，常见起点是 CPU 核数乘二再加磁盘数，再压测微调；设成几百，数据库侧的线程切换和锁竞争反而把吞吐压下去。获取超时建议设短，让池被借空时快速失败，而不是让请求排队半分钟。' },
+      { p: '还有两个实用开关：<code>leakDetectionThreshold</code> 在连接借出超时后打印借出时的堆栈，专门抓忘记 close 的代码；池内连接的空闲存活时间要小于数据库的 <code>wait_timeout</code>，否则服务端先断开，池里留下的是死连接，借出去一次就报一次错。' },
+      { p: '连接是借来的，不是临时造出来的。借出那一刻池会先做有效性校验，校验本身也要花时间，所以最小空闲不能设成零，否则每次高峰都要现场建连；但设得太大，又长期占着数据库的连接名额，别的应用借不到。空闲回收要避开业务高峰，别和工作线程的调度撞在一起。' },
+
+      { h: '3.9 批量操作与事务边界' },
       { p: '批量插入时不要循环执行单条 INSERT。用 <code>addBatch()</code> 攒一批，再 <code>executeBatch()</code> 一次发送，配合 JDBC URL 里的 <code>rewriteBatchedStatements=true</code>（MySQL），性能可以提升一个数量级。批量大小控制在几百到几千，太大容易造成锁等待和内存压力。' },
+      { p: '批处理有两个细节。<code>addBatch</code> 攒批没问题，但同一批要重复执行前必须 <code>clearBatch</code>，否则上一批会再发一次。<code>executeBatch</code> 返回的数组里可能出现 -2（SUCCESS_NO_INFO），表示驱动不告诉具体行数，这不是失败，不要拿它和 0 比较来判断有没有插入。' },
+      { p: '批量失败抛的是 <code>BatchUpdateException</code>，<code>updateCounts</code> 只包含成功的那部分，后面的语句没有执行。外层开了事务，回滚即可；没开事务，已成功的几条就留在库里了。批量和事务必须一起考虑，只加 <code>addBatch</code> 不等于安全。' },
+      { p: '自动提交的边界也要看清：一条 SQL 执行完立刻生效，所以“先插主表、再用回填的主键插子表”这种前后依赖的操作，必须显式关掉自动提交。判断标准很简单：这组 SQL 是否互为前提、缺一条就不完整，是就放进同一个事务，否则分开提交反而减少锁的持有时间。' },
+
+      { h: '3.10 常见坑、排查顺序与上线自查' },
       { list: [
         '<b>SQL 拼接导致注入：</b>把用户输入直接拼进 SQL，输入 <code>1 OR 1=1</code> 就能绕过条件；必须用 PreparedStatement 占位符。',
         '<b>下标从 0 开始：</b><code>rs.getString(0)</code> 会抛异常，JDBC 的列下标从 1 开始。',
@@ -336,41 +357,11 @@
         '<b>在循环里查数据库：</b>N+1 查询，一百条数据发一百零一次 SQL；改成一次 IN 查询或 JOIN。'
       ] },
       { p: '排查 JDBC 问题有一套固定顺序：先看异常类型和信息，<code>SQLException</code> 通常带 SQLState 和 vendor code；再看 SQL 本身能否在客户端工具里执行；然后确认参数是否传对、列名是否拼错；最后检查连接串、驱动版本、时区和字符集。把这几步走完，绝大多数问题都能定位。' },
-
-      { h: '3.12.1 五步的失败现场：异常出现在哪一步' },
-      { p: '五步背下来只是开始，排错时要能说出每一步失败时异常长什么样。第一步拿连接失败多半不是代码问题：<code>Access denied</code> 是账号、密码或授权库不对；<code>Unknown database</code> 是库名拼错；<code>Communications link failure</code> 是端口不通、防火墙拦截或数据库没启动；<code>Public Key Retrieval is not allowed</code> 是 MySQL 8 的认证插件要求补上 <code>allowPublicKeyRetrieval=true</code>。' },
-      { p: '第二步 <code>prepareStatement</code> 就会校验表名、列名和语法，写错在这一步抛，不必等到 <code>executeQuery</code>。第三步绑参，少绑一个报 <code>No value specified for parameter 2</code>，多绑一个报 <code>Parameter index out of range</code>。第四步对 SELECT 调 <code>executeUpdate</code>、对 UPDATE 调 <code>executeQuery</code>，都会立刻抛异常。第五步漏关资源不会马上报错，只在高并发时表现为连接池耗尽。' },
-      { p: '所以定位顺序是：先确认异常发生在第几步，再判断是环境、SQL、参数还是资源问题。一看到 <code>SQLException</code> 就改 SQL，往往改不到点上。' },
-
-      { h: '3.12.2 驱动、URL 与连接池参数' },
-      { p: '驱动版本要和数据库主版本匹配。MySQL 8 的库配 5.x 驱动常常连不上；反过来用 8.x 驱动连 5.7 虽然能通，认证插件和时区默认值也可能不同。依赖里同时出现两个版本的驱动，表现为“有时能连有时不能”，用 <code>mvn dependency:tree</code> 找出来排除旧版本。' },
-      { p: 'URL 上有几个参数值得记：<code>serverTimezone</code> 决定时间字段怎么解释；<code>useSSL</code> 与 <code>requireSSL</code> 关系到链路加密，生产不该为省事关掉；<code>connectTimeout</code> 和 <code>socketTimeout</code> 分别控制建连与读写的等待上限。不设超时，网络抖动时线程会一直挂着，比直接报错更难排查。' },
-      { p: '连接池只需先调四个参数：最大连接数、最小空闲、获取连接超时、空闲淘汰时间。最大连接数按数据库承受能力定，常见起点是 CPU 核数乘二再加磁盘数，再压测微调；设成几百，数据库侧的线程切换和锁竞争反而把吞吐压下去。获取超时建议设短，让池被借空时快速失败，而不是让请求排队半分钟。' },
-      { p: '还有两个实用开关：<code>leakDetectionThreshold</code> 在连接借出超时后打印借出时的堆栈，专门抓忘记 close 的代码；池内连接的空闲存活时间要小于数据库的 <code>wait_timeout</code>，否则服务端先断开，池里留下的是死连接，借出去一次就报一次错。' },
-      { p: '连接是借来的，不是临时造出来的。借出那一刻池会先做有效性校验，校验本身也要花时间，所以最小空闲不能设成零，否则每次高峰都要现场建连；但设得太大，又长期占着数据库的连接名额，别的应用借不到。空闲回收要避开业务高峰，别和工作线程的调度撞在一起。' },
-
-      { h: '3.12.3 Statement 与 PreparedStatement 的边界' },
-      { p: 'Statement 不是完全不能用。执行不带参数的 DDL、查看执行计划、开关账号这类管理语句，用 Statement 更直接。判断标准只有一条：这条 SQL 的字符串是不是由外部变量拼出来的，是，就必须换成 PreparedStatement。' },
-      { p: '错误写法是 <code>"SELECT * FROM users WHERE name = \'" + name + "\'"</code>，修正为 <code>"SELECT * FROM users WHERE name = ?"</code> 再 <code>ps.setString(1, name)</code>。安全不来自“过滤单引号”，而来自参数不参与语法解析。' },
-      { p: '但占位符只能替值，不能替标识符。<code>ORDER BY</code> 的列名、<code>ASC</code> 或 <code>DESC</code>、表名都不能写成问号，驱动会把问号当字符串常量，排序失效或直接报错。这类动态需求用白名单：把允许的列名放进 Map，用户传的键查不到就拒绝，再用查到的固定字符串拼接。黑名单过滤关键字挡不住大小写、注释符、编码变形，白名单才可控。' },
-
-      { h: '3.12.4 ResultSet 到对象' },
-      { p: '框架里的 RowMapper 本质就是一段 while 加一次 new。手写时注意三点：列名用查询里的别名，不要依赖原列名，别名是稳定契约；数字列取完立刻判 <code>wasNull</code>，再决定是否装箱；金额列用 <code>getBigDecimal</code>，不要 getDouble 再转。' },
-      { p: '枚举和时间字段最容易出问题。数据库存字符串或 tinyint，映射成枚举时 <code>valueOf</code> 要捕获 <code>IllegalArgumentException</code>，否则一条脏数据会让整次查询失败；时间字段优先 <code>getObject("created_at", LocalDateTime.class)</code>，比 <code>getTimestamp</code> 再 <code>toLocalDateTime</code> 少一层时区心智负担。' },
-      { p: '一对多不要在 while 里再查子表，那是一百行数据发一百零一条 SQL。两种做法：一次 JOIN 出扁平行，在内存里按主键分组；或先查主表拿 id，再用一条 IN 查询捞子表回来配对。前者注意行数膨胀，后者注意 IN 列表长度，超过几百个就分批。' },
-      { p: '结果集很大时不要一次读进 List。驱动默认会把查询结果尽量取到客户端，百万行足以把堆撑爆；<code>setFetchSize</code> 设成几百并配合驱动的游标参数，才能边取边处理。多数业务其实不需要流式读取，分页查、每页处理完就丢弃，反而更简单可控。看到 <code>OutOfMemoryError</code> 先怀疑全量查询，不要急着调大堆。' },
-
-      { h: '3.12.5 批处理与事务边界' },
-      { p: '批处理有两个细节。<code>addBatch</code> 攒批没问题，但同一批要重复执行前必须 <code>clearBatch</code>，否则上一批会再发一次。<code>executeBatch</code> 返回的数组里可能出现 -2（SUCCESS_NO_INFO），表示驱动不告诉具体行数，这不是失败，不要拿它和 0 比较来判断有没有插入。' },
-      { p: '批量失败抛的是 <code>BatchUpdateException</code>，<code>updateCounts</code> 只包含成功的那部分，后面的语句没有执行。外层开了事务，回滚即可；没开事务，已成功的几条就留在库里了。批量和事务必须一起考虑，只加 <code>addBatch</code> 不等于安全。' },
-      { p: '自动提交的边界也要看清：一条 SQL 执行完立刻生效，所以“先插主表、再用回填的主键插子表”这种前后依赖的操作，必须显式关掉自动提交。判断标准很简单：这组 SQL 是否互为前提、缺一条就不完整，是就放进同一个事务，否则分开提交反而减少锁的持有时间。' },
-
-      { h: '3.12.6 异常、资源与上线自查' },
       { p: '<code>SQLException</code> 除了 message 还有 SQLState 和 vendor code。SQLState 以 23 开头是约束冲突，08 开头是连接问题，40 开头是死锁或回滚。按前缀分类比字符串匹配可靠。一条异常还可能挂着 <code>nextException</code> 链，遍历到底才能看到根因。' },
       { p: '关闭资源三条规则：谁打开谁关闭、顺序与打开相反、关闭失败不能覆盖原始异常。try-with-resources 自带这三条，新代码不要手写 finally。必须手写时，每个 close 各自 try-catch，并用 <code>addSuppressed</code> 把关闭异常挂到主异常上，而不是吞掉。' },
       { p: '上线前自查：SQL 是否全部参数化、连接是否都来自池、批量与分页是否有上限、超时是否设置、异常是否带上下文、日志是否打印了 SQL 与参数并做了脱敏。清单不长，每一条都对应过真实事故。' },
 
-      { h: '3.13 本章小结' },
+      { h: '3.11 本章小结' },
       { list: [
         'JDBC 五步：取 Connection → 预编译语句 → setXxx 绑参 → 执行取 ResultSet → 关闭资源；SQL 语句本身的写法见上一课。',
         '连接从池里借、用完必须还：<code>close()</code> 不是真关闭，是把连接交回池子，不还就会把池借空。',
@@ -379,7 +370,7 @@
         '事务边界：互为前提的几条 SQL 先 <code>setAutoCommit(false)</code>，全部成功 commit()，中途异常 rollback()。'
       ] },
 
-      { h: '3.14 常见追问' },
+      { h: '3.12 常见追问' },
       { list: [
         '<b>JDBC 和 MyBatis 是什么关系？</b>MyBatis 封装了 JDBC：帮你管理连接、设置参数、把 ResultSet 映射成对象，底层仍然是 JDBC。',
         '<b>为什么推荐 PreparedStatement 而不是 Statement？</b>参数化防注入、可预编译复用执行计划、类型处理更安全，还能避免拼接引号带来的转义问题。',
@@ -389,7 +380,7 @@
         '<b>数据库连接池越大越好吗？</b>不是。连接数受数据库最大连接数、CPU 核数、磁盘 IO 限制，过大反而增加上下文切换和锁竞争。'
       ] },
 
-      { h: '3.15 自测与练习' },
+      { h: '3.13 自测与练习' },
       { ol: [
         '用 <code>DriverManager</code> 从零跑通五步：取 Connection、prepareStatement、setXxx 绑参、executeQuery、遍历 ResultSet，并从结果集里取出三列打印。',
         '把连接来源换成 HikariCP 连接池，同一段代码各跑一百次，把建连耗时打印出来对比；再故意漏掉 close()，观察池被借空时报的错。',
@@ -428,7 +419,7 @@
       { p: '关于“预编译”要说清楚一点：PreparedStatement 在客户端一定做了参数分离，但服务端是否真的缓存了执行计划，取决于驱动和数据库。MySQL 默认在客户端做转义和拼接（<code>useServerPrepStmts=false</code>），开启服务端预编译需要显式配置。不过无论哪种模式，注入都已被杜绝，预编译复用只是额外收益。' },
       { note: '<b>常见误解：</b>“用了 PreparedStatement 就绝对安全。”如果 SQL 里仍用字符串拼接表名、列名或 ORDER BY 方向，注入依然存在，因为这些位置不能使用占位符。' },
 
-      { h: '4.4 setXxx 与参数绑定规则' },
+      { h: '4.4 参数绑定：下标、类型与 null' },
       { p: '参数下标从 1 开始，按占位符出现的顺序编号。同一个占位符如果要使用两次，就要写两个问号、绑定两次；JDBC 不支持命名参数，这是它和 MyBatis 的一个明显区别。绑定方法要和数据库类型对应，选错类型可能导致隐式转换、索引失效，甚至报错。' },
       { table: { head: ['Java 类型', '绑定方法', '对应 SQL 类型'], rows: [
         ['int / long', 'setInt / setLong', 'INT / BIGINT'],
@@ -442,6 +433,9 @@
       { p: '金额必须用 <code>setBigDecimal</code>，不要用 <code>setDouble</code>；时间优先用 Java 8 的 <code>java.time</code> 类型配合 <code>setObject</code>，比 <code>java.sql.Date</code> 更清晰。传 null 时不能直接 <code>setString(1, null)</code> 了事，规范写法是 <code>setNull(1, Types.VARCHAR)</code>，让驱动知道该用什么类型；某些数据库对“无类型的 NULL”会报错。' },
       { code: 'ps.setLong(1, userId);\nps.setBigDecimal(2, new BigDecimal("99.90"));\nps.setObject(3, LocalDateTime.now());\nps.setNull(4, Types.VARCHAR);\nps.setString(5, "%" + keyword + "%");   // LIKE 的通配符由参数携带', title: 'BindParams.java' },
       { p: '最后一行值得展开：LIKE 查询的正确写法是 <code>WHERE name LIKE ?</code>，然后把 <code>"%" + keyword + "%"</code> 作为参数传进去。这样通配符是值的一部分，不会破坏 SQL 结构；同时也说明为什么 LIKE 以 % 开头会全表扫描——这是索引问题，不是安全问题，两者要分开考虑。' },
+      { p: '绑参第一件事是数清问号。SQL 里几个问号就绑几次，少一个报 <code>No value specified</code>，多一个报 <code>Parameter index out of range</code>。同一个 PreparedStatement 执行第二次前要 <code>clearParameters</code>，否则没重新绑的位置会残留上一次的值，表现为“偶尔用了旧条件”，这种 bug 在单测里几乎复现不了。' },
+      { p: '类型要贴合列定义。给 DECIMAL 列 <code>setDouble</code>，驱动会把二进制浮点转成十进制，0.1 可能变成 0.100000000000000005；给 DATETIME 列 <code>setString</code>，能否成功取决于数据库的宽松模式，换一个库就不可靠。金额用 <code>setBigDecimal</code>，时间用 <code>setObject(LocalDateTime)</code>，让类型在编译期对齐。' },
+      { p: 'null 必须带类型。<code>setString(1, null)</code> 在部分驱动上能按 VARCHAR 处理，列是 DATE 时却可能报错；规范写法是 <code>setNull(1, Types.DATE)</code>。这一条和“参数个数要对”一样，属于写完就该检查的机械项。' },
 
       { h: '4.5 executeUpdate、executeQuery 与批量操作' },
       { p: 'PreparedStatement 有三个执行方法，用途不同：<code>executeQuery</code> 只用于 SELECT，返回 ResultSet；<code>executeUpdate</code> 用于 INSERT、UPDATE、DELETE，返回受影响行数；<code>execute</code> 返回 boolean，适合事先不知道语句类型的场景，比如动态 SQL 或调用存储过程。用错方法会直接抛异常，比如对 SELECT 调 executeUpdate。' },
@@ -461,11 +455,14 @@
       ] } },
       { p: '需要强调的是，数据库只能保证“事务内”的一致性，业务规则仍然要靠代码把关。比如转账金额不能为负、账户必须存在，这些检查要放在事务里、更新之前完成，否则事务提交了才发现数据不合法，回滚也救不回来。' },
 
-      { h: '4.7 JDBC 事务：三行代码' },
+      { h: '4.7 JDBC 事务：三行代码与边界画在哪一层' },
       { p: 'JDBC 的 Connection 默认 <code>autoCommit = true</code>，每条 SQL 执行完立刻提交。开启事务只需要一行：<code>conn.setAutoCommit(false)</code>。此后所有语句都在同一个事务里，直到调用 <code>commit()</code> 提交，或 <code>rollback()</code> 回滚。' },
       { flow: ['setAutoCommit(false)', '执行多条 SQL', '全部成功 commit()', '任一步失败 rollback()', '恢复 autoCommit 并归还连接'] },
       { code: 'Connection conn = null;\ntry {\n    conn = dataSource.getConnection();\n    conn.setAutoCommit(false);          // 开启事务\n\n    try (PreparedStatement out = conn.prepareStatement(\n            "UPDATE account SET balance = balance - ? WHERE id = ? AND balance >= ?")) {\n        out.setBigDecimal(1, amount);\n        out.setLong(2, fromId);\n        out.setBigDecimal(3, amount);\n        if (out.executeUpdate() != 1) {\n            throw new IllegalStateException("余额不足或账户不存在");\n        }\n    }\n\n    try (PreparedStatement in = conn.prepareStatement(\n            "UPDATE account SET balance = balance + ? WHERE id = ?")) {\n        in.setBigDecimal(1, amount);\n        in.setLong(2, toId);\n        if (in.executeUpdate() != 1) {\n            throw new IllegalStateException("收款账户不存在");\n        }\n    }\n\n    conn.commit();                      // 两步都成功才提交\n} catch (SQLException | RuntimeException e) {\n    if (conn != null) {\n        try {\n            conn.rollback();            // 任一步失败整体回滚\n        } catch (SQLException ex) {\n            e.addSuppressed(ex);\n        }\n    }\n    throw e;\n} finally {\n    if (conn != null) {\n        try {\n            conn.setAutoCommit(true);   // 恢复默认，避免影响后续使用\n            conn.close();\n        } catch (SQLException ignored) {\n        }\n    }\n}', title: 'TransferService.java' },
       { p: '这段模板有几个关键点。第一，扣款 SQL 带了 <code>AND balance &gt;= ?</code>，把“余额是否足够”的判断交给数据库，避免先查后改之间的并发漏洞。第二，每一步都检查 <code>executeUpdate()</code> 的返回值，不等于 1 就主动抛异常，触发回滚。第三，catch 里先 rollback 再抛出，保证调用方知道失败。第四，finally 里恢复 autoCommit，因为连接可能来自连接池，状态会被下一个使用者继承。' },
+      { p: '边界应该画在“一个业务用例”上。Service 方法开始时开启，方法结束前提交，中间所有 DAO 调用共享同一个连接。DAO 只写 SQL，不碰 commit；错误写法是在 DAO 里提交，Service 想把两个 DAO 调用组合成一个事务时，第一个已经落库，第二个失败也回滚不了。' },
+      { p: '连接必须显式传递。同一事务的多条 SQL 要走同一个 Connection，如果每个 DAO 方法都从池里拿新连接，它们根本不在一个事务里。这也是框架把连接绑定到线程的原因：同一个线程里拿到的永远是同一条连接。' },
+      { p: '传播行为解决“事务方法调用事务方法”。<code>REQUIRED</code> 是默认值，有事务就加入、没有就新建；<code>REQUIRES_NEW</code> 挂起外层、开独立事务，适合“外层失败也要留下”的流水；<code>NESTED</code> 用保存点，内层回滚不影响外层。选错的典型后果是日志跟着业务一起回滚，或者内层失败把外层一起拖死。' },
 
       { h: '4.8 提交、回滚与异常处理' },
       { p: 'commit 和 rollback 都可能抛 SQLException。提交失败通常意味着连接断了或数据库异常，此时事务状态不确定，不能假设“没提交就等于回滚了”，应该记录日志并让上层决定是否重试。回滚失败更麻烦，连接可能已经不可用，正确做法是丢弃这个连接（关闭并让池子重新创建），而不是继续使用。' },
@@ -486,7 +483,7 @@
       { p: 'MySQL 的 InnoDB 在 REPEATABLE READ 下通过 MVCC（多版本并发控制）让同一事务的多次读看到同一个快照，并用间隙锁（gap lock）阻止其他事务在范围内插入，因此在很多场景下连幻读也能避免。但这不等于可以随意依赖，涉及跨表约束时仍要显式加锁或提升隔离级别。' },
       { p: '在 JDBC 里设置隔离级别用 <code>conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)</code>，必须在事务开始前设置。连接池会复用连接，隔离级别是连接级状态，用完要恢复，否则下一个借到这条连接的业务会莫名其妙地“变慢”或“看到旧数据”。HikariCP 默认会在归还时重置这些状态，自己管理连接时则要手动处理。' },
 
-      { h: '4.10 锁、死锁与事务长度' },
+      { h: '4.10 锁、死锁与重试' },
       { p: 'InnoDB 的行锁是加在索引上的。如果 WHERE 条件没有走索引，锁会退化成表锁，这是很多“莫名其妙锁全表”的根源。所以更新语句一定要走索引，并且尽量用主键或唯一键定位，锁的范围最小。' },
       { p: '死锁发生在两个事务以相反顺序申请同一组锁时：事务 A 锁了行 1 等行 2，事务 B 锁了行 2 等行 1，双方都不释放，数据库只能检测并回滚其中一个。避免死锁的办法是统一加锁顺序：批量更新时按主键排序，多表操作时按固定表顺序，减少交叉持锁。真发生了死锁，捕获异常后重试通常是可行的。' },
       { list: [
@@ -495,9 +492,23 @@
         '<b>大事务：</b>一次更新十万行，undo log 膨胀、锁等待严重；拆成小批次提交。',
         '<b>嵌套事务误用：</b>以为内层 rollback 只回滚内层，实际可能把外层一起标记为回滚。'
       ] },
-      { p: '判断事务是否过长，可以看三个指标：事务持续时间、持有锁数量、undo log 增长量。生产上建议给事务加超时（<code>conn.setNetworkTimeout</code> 或数据库的 innodb_lock_wait_timeout），让异常尽早暴露，而不是无限等待。' },
+      { p: '死锁和锁等待超时要分开处理。死锁（MySQL 1213）是数据库主动回滚一方，重试通常能成功；锁等待超时（1205）是等太久主动放弃，说明有长事务或热点行，重试前要先找到持锁的人。无脑重试死锁可以，无脑重试超时只会放大问题。' },
+      { p: '重试要满足三个条件：操作幂等、次数有上限、每次之间有短暂退避。转账如果已经提交但客户端超时，重试会重复扣款，必须靠唯一请求号去重，而不是靠“再试一次”。' },
+      { p: '乐观锁和悲观锁的选择，本质看冲突概率。冲突少，用版本号条件更新，失败就重试，不占锁；冲突多，用 <code>SELECT ... FOR UPDATE</code> 直接排队，避免大量重试空转。两者都不解决“事务太长”，只是把等待换了位置。' },
 
-      { h: '4.11 常见坑与排查' },
+      { h: '4.11 长事务：危害与拆法' },
+      { p: '判断事务是否过长，可以看三个指标：事务持续时间、持有锁数量、undo log 增长量。生产上建议给事务加超时（<code>conn.setNetworkTimeout</code> 或数据库的 innodb_lock_wait_timeout），让异常尽早暴露，而不是无限等待。' },
+      { p: '长事务有四个可见危害：undo log 持续膨胀、锁持有时间长、主从延迟变大、连接被长期占用。判断可以量化：单事务超过一秒要审视，超过十秒基本要拆。' },
+      { p: '拆法有三种。把远程调用、发消息、生成文件挪到事务外，先落本地状态，再用补偿或消息推进；把十万行的大更新按主键区间分批，每批几千行单独提交；把“先查后改”改成一条带条件的更新，减少事务里的往返次数。' },
+
+      { h: '4.12 分页、批量与一致性' },
+      { p: '深分页的 <code>LIMIT offset</code> 越大越慢，因为数据库要数过前面所有行。改成 <code>WHERE id &gt; 上一页最后一个 id ORDER BY id LIMIT 20</code>，每页都是索引定位，代价稳定。前提是排序字段唯一且有序，否则要用排序值加 id 的组合游标。' },
+      { p: '同一事务里翻页看到的是同一个快照，但页与页之间若有新数据插入，结果仍可能重复或漏行。对一致性要求高的导出，用一次性快照读，或按主键游标从头到尾推进，不要用 offset 分页。' },
+      { p: '批量提交的批次大小要实测。批次太小，网络往返多；太大，锁等待和内存压力上升，失败回滚的成本也高。常见起点是五百到一千条，并给整批加一个总超时。' },
+      { p: '批量更新撞上唯一键冲突时，整批不会静默跳过，而是抛异常并中断后面的语句。想“跳过重复、继续处理”，要么逐条 try-catch（慢），要么用 <code>INSERT ... ON DUPLICATE KEY UPDATE</code>，要么先把数据按唯一键去重再批处理。注意 <code>INSERT IGNORE</code> 会把其他错误一起吞掉，只适合确实能忽略的场景。' },
+      { p: '分页查询常配一个总数查询，<code>COUNT(*)</code> 在条件复杂时可能比列表本身还慢。大表可以把总数换成“是否有下一页”的判断：多查一条，看能不能取到第 21 条。前端非要精确总数时，再单独维护统计表或缓存，别让每次翻页都扫一遍。' },
+
+      { h: '4.13 常见坑、排查顺序与收尾硬规则' },
       { list: [
         '<b>忘记 setAutoCommit(false)：</b>每条 SQL 自动提交，rollback 不起作用；事务代码第一行就要关自动提交。',
         '<b>rollback 写在 finally：</b>成功时也回滚；应该放在 catch 里，只有失败才回滚。',
@@ -507,38 +518,10 @@
         '<b>批量执行没包事务：</b>中途失败留下半批数据；批量 + 事务要一起用。'
       ] },
       { p: '排查事务问题有一套顺序：先确认 autoCommit 是否真的关了（打日志或断点看 Connection 状态），再看异常有没有被吞掉，然后确认异常类型是否触发回滚，最后检查连接是否来自池、状态是否被复用污染。多数“事务不生效”都能在这四步里找到答案。' },
-
-      { h: '4.11.1 参数绑定：下标、类型与复用' },
-      { p: '绑参第一件事是数清问号。SQL 里几个问号就绑几次，少一个报 <code>No value specified</code>，多一个报 <code>Parameter index out of range</code>。同一个 PreparedStatement 执行第二次前要 <code>clearParameters</code>，否则没重新绑的位置会残留上一次的值，表现为“偶尔用了旧条件”，这种 bug 在单测里几乎复现不了。' },
-      { p: '类型要贴合列定义。给 DECIMAL 列 <code>setDouble</code>，驱动会把二进制浮点转成十进制，0.1 可能变成 0.100000000000000005；给 DATETIME 列 <code>setString</code>，能否成功取决于数据库的宽松模式，换一个库就不可靠。金额用 <code>setBigDecimal</code>，时间用 <code>setObject(LocalDateTime)</code>，让类型在编译期对齐。' },
-      { p: 'null 必须带类型。<code>setString(1, null)</code> 在部分驱动上能按 VARCHAR 处理，列是 DATE 时却可能报错；规范写法是 <code>setNull(1, Types.DATE)</code>。这一条和“参数个数要对”一样，属于写完就该检查的机械项。' },
-
-      { h: '4.11.2 事务边界画在哪一层' },
-      { p: '边界应该画在“一个业务用例”上。Service 方法开始时开启，方法结束前提交，中间所有 DAO 调用共享同一个连接。DAO 只写 SQL，不碰 commit；错误写法是在 DAO 里提交，Service 想把两个 DAO 调用组合成一个事务时，第一个已经落库，第二个失败也回滚不了。' },
-      { p: '连接必须显式传递。同一事务的多条 SQL 要走同一个 Connection，如果每个 DAO 方法都从池里拿新连接，它们根本不在一个事务里。这也是框架把连接绑定到线程的原因：同一个线程里拿到的永远是同一条连接。' },
-      { p: '传播行为解决“事务方法调用事务方法”。<code>REQUIRED</code> 是默认值，有事务就加入、没有就新建；<code>REQUIRES_NEW</code> 挂起外层、开独立事务，适合“外层失败也要留下”的流水；<code>NESTED</code> 用保存点，内层回滚不影响外层。选错的典型后果是日志跟着业务一起回滚，或者内层失败把外层一起拖死。' },
-
-      { h: '4.11.3 死锁、锁等待与重试' },
-      { p: '死锁和锁等待超时要分开处理。死锁（MySQL 1213）是数据库主动回滚一方，重试通常能成功；锁等待超时（1205）是等太久主动放弃，说明有长事务或热点行，重试前要先找到持锁的人。无脑重试死锁可以，无脑重试超时只会放大问题。' },
-      { p: '重试要满足三个条件：操作幂等、次数有上限、每次之间有短暂退避。转账如果已经提交但客户端超时，重试会重复扣款，必须靠唯一请求号去重，而不是靠“再试一次”。' },
-      { p: '乐观锁和悲观锁的选择，本质看冲突概率。冲突少，用版本号条件更新，失败就重试，不占锁；冲突多，用 <code>SELECT ... FOR UPDATE</code> 直接排队，避免大量重试空转。两者都不解决“事务太长”，只是把等待换了位置。' },
-
-      { h: '4.11.4 长事务怎么拆' },
-      { p: '长事务有四个可见危害：undo log 持续膨胀、锁持有时间长、主从延迟变大、连接被长期占用。判断可以量化：单事务超过一秒要审视，超过十秒基本要拆。' },
-      { p: '拆法有三种。把远程调用、发消息、生成文件挪到事务外，先落本地状态，再用补偿或消息推进；把十万行的大更新按主键区间分批，每批几千行单独提交；把“先查后改”改成一条带条件的更新，减少事务里的往返次数。' },
-
-      { h: '4.11.5 分页、批量与一致性' },
-      { p: '深分页的 <code>LIMIT offset</code> 越大越慢，因为数据库要数过前面所有行。改成 <code>WHERE id &gt; 上一页最后一个 id ORDER BY id LIMIT 20</code>，每页都是索引定位，代价稳定。前提是排序字段唯一且有序，否则要用排序值加 id 的组合游标。' },
-      { p: '同一事务里翻页看到的是同一个快照，但页与页之间若有新数据插入，结果仍可能重复或漏行。对一致性要求高的导出，用一次性快照读，或按主键游标从头到尾推进，不要用 offset 分页。' },
-      { p: '批量提交的批次大小要实测。批次太小，网络往返多；太大，锁等待和内存压力上升，失败回滚的成本也高。常见起点是五百到一千条，并给整批加一个总超时。' },
-      { p: '批量更新撞上唯一键冲突时，整批不会静默跳过，而是抛异常并中断后面的语句。想“跳过重复、继续处理”，要么逐条 try-catch（慢），要么用 <code>INSERT ... ON DUPLICATE KEY UPDATE</code>，要么先把数据按唯一键去重再批处理。注意 <code>INSERT IGNORE</code> 会把其他错误一起吞掉，只适合确实能忽略的场景。' },
-      { p: '分页查询常配一个总数查询，<code>COUNT(*)</code> 在条件复杂时可能比列表本身还慢。大表可以把总数换成“是否有下一页”的判断：多查一条，看能不能取到第 21 条。前端非要精确总数时，再单独维护统计表或缓存，别让每次翻页都扫一遍。' },
-
-      { h: '4.11.6 收尾：几条硬规则' },
       { p: '事务里不要 catch 了异常还继续执行。吞掉异常后继续跑，事务可能已被数据库标记为只能回滚，后面的语句要么报错，要么在提交时才发现整个事务被回滚。要么明确知道可以继续，要么立刻抛出。' },
       { p: '还有三条：不在事务里等待用户输入或调用外部接口；不在事务里做全表扫描；提交或回滚之后不要再复用这条连接做业务操作。这三条守住，绝大多数事务事故可以避免。' },
 
-      { h: '4.12 本章小结' },
+      { h: '4.14 本章小结' },
       { list: [
         'SQL 注入源于把数据拼进语句结构；PreparedStatement 用占位符把结构和值分开，从机制上杜绝注入。',
         '参数下标从 1 开始；金额用 setBigDecimal，null 用 setNull 并指定类型。',
@@ -547,7 +530,7 @@
         'ACID 保证事务可靠；隔离级别在一致性与并发之间取舍，事务要短、更新要走索引。'
       ] },
 
-      { h: '4.13 常见追问' },
+      { h: '4.15 常见追问' },
       { list: [
         '<b>PreparedStatement 比 Statement 快吗？</b>不一定。它的首要价值是安全和类型处理；能否复用执行计划取决于驱动和数据库配置。',
         '<b>为什么 MySQL 默认隔离级别是 REPEATABLE READ？</b>配合 MVCC 可以在较少锁的情况下提供较好的一致性，主从复制在早期版本中也依赖它。',
@@ -557,7 +540,7 @@
         '<b>分布式事务怎么办？</b>单库事务解决不了跨服务一致性，需要 TCC、Saga、本地消息表等方案，按业务容忍度选择，不要盲目上强一致。'
       ] },
 
-      { h: '4.14 自测与练习' },
+      { h: '4.16 自测与练习' },
       { ol: [
         '写一段存在 SQL 注入漏洞的登录代码，构造输入绕过它，再用 PreparedStatement 修复并验证。',
         '实现转账事务：任一步失败都回滚，余额不足时抛业务异常，并用两个线程验证不会超扣。',
@@ -613,52 +596,67 @@
       ] } },
       { p: '区分 401 和 403 是面试常问：401 是“你是谁我不知道”，需要登录；403 是“我知道你是谁，但你不能做这件事”，登录了也没用。区分 404 和 405 也很实用：路径对但方法不对，返回 405，说明映射存在，只是没实现 doPost。' },
 
-      { h: '5.5 无状态与 Cookie、Session' },
-      { p: 'HTTP 本身是无状态的：服务器处理完一个请求就忘了你是谁，下一个请求对它来说完全是新的。这在设计上是优点（简单、易扩展），但登录、购物车这类功能需要“记住”用户，于是有了 Cookie 和 Session。' },
-      { p: 'Cookie 是服务器通过 <code>Set-Cookie</code> 响应头种在浏览器里的一小段文本，浏览器之后每次请求同一域名都会自动带上。它容量小（约 4KB）、明文可见，所以不能存密码等敏感信息。Session 是服务端的一块存储，每个会话一个 ID，通常通过名为 JSESSIONID 的 Cookie 传给客户端。客户端只拿 ID，真正的数据在服务器内存或 Redis 里。' },
-      { p: '这套机制有三个必须知道的属性。<code>HttpOnly</code> 让 JS 读不到 Cookie，能防 XSS 窃取；<code>Secure</code> 限定只在 HTTPS 下发送；<code>SameSite</code> 限制跨站携带，缓解 CSRF。Session 有超时时间，默认 30 分钟不活动就失效；服务端调用 <code>invalidate()</code> 可以立即注销。' },
-      { p: '分布式部署时，Session 存在单机内存里会出问题：用户第一次请求打到 A 机器，第二次打到 B 机器，B 上没有这个 Session，登录态就丢了。解决办法有三种：会话粘滞（同一用户固定打到一台，简单但有单点风险）、Session 复制（多台互相同步，浪费内存）、集中存储（Redis 存 Session，最常用）。另一种思路是彻底不用服务端 Session，改发 Token（如 JWT），由客户端每次携带、服务端验签。' },
-
-      { h: '5.6 Servlet 是什么' },
+      { h: '5.5 Servlet 是什么：生命周期与单例多线程' },
       { p: 'Servlet 是 Java EE 规范里的一个接口，定义在 <code>javax.servlet</code>（Jakarta EE 9 之后改为 <code>jakarta.servlet</code>）包中。它规定了容器如何初始化、调用、销毁一个处理 HTTP 请求的组件。你写的类实现这个接口（通常继承 <code>HttpServlet</code>），打包成 war 放进 Tomcat，容器就会在合适的时机调用它。' },
       { p: 'Servlet 的生命周期由容器管理，分三个阶段。<code>init()</code> 在 Servlet 第一次被请求时调用（配置了 load-on-startup 则容器启动时调用），只调用一次，用来读配置、建连接池；<code>service()</code> 每次请求都调用，根据方法分派到 doGet、doPost 等；<code>destroy()</code> 在应用卸载或容器关闭时调用一次，用来释放资源。' },
       { p: '这里有一个关键事实：容器通常只创建一个 Servlet 实例，所有请求由不同线程并发调用同一个对象的 service 方法。这就是“单例多线程”模型。它节省内存、启动快，但也意味着实例字段是所有请求共享的，绝对不能拿来存当前用户、当前请求的数据。' },
       { note: '<b>对比 Spring：</b>Spring MVC 的 DispatcherServlet 也是一个 Servlet，同样单例多线程；Controller 默认也是单例，所以 Controller 里同样不能有可变实例字段。' },
 
-      { h: '5.7 第一个 Servlet' },
+      { h: '5.6 第一个 Servlet' },
       { p: '用 Maven 建一个 war 项目，引入 <code>jakarta.servlet-api</code>（scope 为 provided，因为容器会提供），写一个继承 HttpServlet 的类，用 <code>@WebServlet</code> 指定访问路径。部署到 Tomcat 后访问对应 URL 即可。' },
       { code: 'import jakarta.servlet.annotation.WebServlet;\nimport jakarta.servlet.http.*;\nimport java.io.IOException;\n\n@WebServlet("/hello")\npublic class HelloServlet extends HttpServlet {\n\n    @Override\n    protected void doGet(HttpServletRequest req, HttpServletResponse resp)\n            throws IOException {\n        String name = req.getParameter("name");\n        if (name == null || name.isEmpty()) {\n            name = "world";\n        }\n        resp.setContentType("text/html;charset=UTF-8");\n        resp.getWriter().println("<h1>Hello, " + name + "</h1>");\n    }\n}', title: 'HelloServlet.java' },
       { p: '访问 <code>http://localhost:8080/app/hello?name=tom</code>，浏览器会显示 Hello, tom。<code>@WebServlet</code> 是 Servlet 3.0 引入的注解，替代了 web.xml 里的 servlet 与 servlet-mapping 配置。如果项目还在用 Servlet 2.5 或更早，就必须在 web.xml 里配置，注解不会生效。' },
       { p: '注意 <code>setContentType</code> 必须在 <code>getWriter()</code> 之前调用。一旦拿到了 Writer，响应头就已经确定，再改 Content-Type 不会生效，中文就可能乱码。这是新手最常踩的坑之一。' },
 
-      { h: '5.8 请求对象：参数、头与路径' },
+      { h: '5.7 请求对象与请求体：参数、编码、上传下载' },
       { p: 'HttpServletRequest 封装了一次请求的所有信息。最常用的是 <code>getParameter</code>：它同时支持 URL 查询串和表单体，返回 String，参数不存在时返回 null，存在但没值时返回空串。<code>getParameterValues</code> 用于复选框这类一个名字多个值的情况，返回 String[]。' },
       { p: '除了参数，请求对象还能拿到方法（getMethod）、请求 URI（getRequestURI）、上下文路径（getContextPath）、查询串（getQueryString）、请求头（getHeader）、客户端 IP（getRemoteAddr）、Cookie 数组（getCookies）。做权限校验、日志记录、限流时，这些信息都会用到。' },
       { code: '@Override\nprotected void doPost(HttpServletRequest req, HttpServletResponse resp)\n        throws IOException {\n    req.setCharacterEncoding("UTF-8");          // 必须在 getParameter 之前\n    String username = req.getParameter("username");\n    String[] hobbies = req.getParameterValues("hobby");\n\n    resp.setContentType("application/json;charset=UTF-8");\n    resp.getWriter().printf(\n            "{\\"username\\":\\"%s\\",\\"hobbyCount\\":%d}",\n            username, hobbies == null ? 0 : hobbies.length);\n}', title: 'FormServlet.java' },
       { out: '{"username":"tom","hobbyCount":2}' },
       { p: '处理 POST 表单时，<code>setCharacterEncoding("UTF-8")</code> 必须放在第一次 getParameter 之前。因为容器在第一次读取参数时就把请求体按当时的字符集解码了，之后再设置已经来不及。GET 请求的参数在 URL 上，由容器按 URI 编码解析，Tomcat 8 之后默认就是 UTF-8，一般不需要额外设置。' },
       { p: '文件上传不能用 getParameter 拿文件，因为 <code>multipart/form-data</code> 的请求体是分段二进制。Servlet 3.0 提供了 <code>req.getPart("file")</code>，需要在 Servlet 上标注 <code>@MultipartConfig</code> 并配置文件大小上限。Part 可以拿到文件名、头信息和输入流，保存时要注意文件名不能直接信任（可能含路径穿越字符）。' },
+      { p: '<code>getParameter</code> 是一个会读请求体的方法。对 <code>application/x-www-form-urlencoded</code> 的 POST，容器在第一次调用它时就把整个 body 读出来解析成参数表，此后 <code>getInputStream</code> 再读只能得到空流；反过来，如果你先手动读完了 body，getParameter 也拿不到值。两者只能选一个，排查参数全是 null 时先确认这一点。' },
+      { p: '上传必须用 multipart。Servlet 3.0 之后不必再引第三方库：给 Servlet 加 <code>@MultipartConfig(maxFileSize = 5 * 1024 * 1024, maxRequestSize = 20 * 1024 * 1024)</code>，然后用 <code>req.getPart("file")</code> 拿到 Part，<code>getSubmittedFileName()</code> 取原始文件名，<code>getInputStream()</code> 取内容。超过限制会抛 IllegalStateException，要在 Filter 或异常处理里转成友好的 400。' },
+      { p: '文件名绝对不能直接拼进路径。攻击者可以把文件名写成 <code>../../webapps/ROOT/x.jsp</code>，你一拼接就等于把文件写进了站点目录。正确做法是用 UUID 重新生成文件名、只保留扩展名，存到 Web 根目录之外，原始文件名仅作为展示字段入库。' },
+      { p: '下载要注意三件事。第一，设 <code>setContentType("application/octet-stream")</code> 并加 <code>Content-Disposition: attachment; filename=...</code>，浏览器才会弹保存框而不是尝试渲染。第二，中文文件名要做编码，现代浏览器认 RFC 5987 的 filename 星号写法并显式声明 UTF-8，直接塞中文可能变成乱码或问号。第三，写二进制用 <code>getOutputStream</code>，不要混用 Writer，也不要在前面多打空行，否则文件开头多出几个字节而损坏。' },
 
-      { h: '5.9 响应对象：状态码、头与输出' },
+      { h: '5.8 响应对象：状态码、头与输出' },
       { p: 'HttpServletResponse 负责把结果写回客户端。常用操作有四类：设置状态码 <code>setStatus</code>、设置响应头 <code>setHeader</code> / <code>addHeader</code>、设置内容类型与编码 <code>setContentType</code>、写响应体 <code>getWriter</code>（字符）或 <code>getOutputStream</code>（字节）。两者不能同时使用，用了 Writer 再拿 OutputStream 会抛 IllegalStateException。' },
       { p: '重定向和转发是两件不同的事，务必分清。<code>resp.sendRedirect("/app/login")</code> 返回 302，浏览器收到后重新发起一个请求，地址栏会变，原请求的数据丢失；<code>req.getRequestDispatcher("/WEB-INF/views/ok.jsp").forward(req, resp)</code> 是服务器内部转发，同一个请求、同一个 request 对象，地址栏不变。登录成功后跳转通常用重定向，避免刷新重复提交；把数据交给视图渲染用转发。' },
       { p: '设置响应头时，<code>setHeader</code> 会覆盖同名头，<code>addHeader</code> 会追加。有一个特例：<code>setContentType("text/html;charset=UTF-8")</code> 会同时设置 Content-Type 和字符集，等价于再调一次 <code>setCharacterEncoding</code>，但必须在 getWriter 之前。' },
       { code: 'resp.setStatus(HttpServletResponse.SC_CREATED);\nresp.setHeader("Location", "/app/orders/1001");\nresp.setHeader("Cache-Control", "no-store");\nresp.setContentType("application/json;charset=UTF-8");\nresp.getWriter().write("{\\"id\\":1001,\\"status\\":\\"CREATED\\"}");', title: 'ResponseDemo.java' },
 
-      { h: '5.10 Filter 与完整请求链路' },
+      { h: '5.9 Filter 与完整请求链路' },
       { p: 'Filter 是 Servlet 规范里的另一类组件，它在请求到达 Servlet 之前、响应返回客户端之前执行，可以决定“放行”还是“拦截”。典型用途包括：统一设置编码、记录访问日志、登录校验、跨域头、压缩响应、限流。多个 Filter 组成一条链，按配置顺序依次执行，每个 Filter 调用 <code>chain.doFilter</code> 才会继续往下走。' },
       { code: '@WebFilter("/*")\npublic class AuthFilter implements Filter {\n\n    @Override\n    public void doFilter(ServletRequest request, ServletResponse response,\n                         FilterChain chain) throws IOException, ServletException {\n        HttpServletRequest req = (HttpServletRequest) request;\n        HttpServletResponse resp = (HttpServletResponse) response;\n\n        HttpSession session = req.getSession(false);\n        if (session == null || session.getAttribute("user") == null) {\n            resp.sendRedirect(req.getContextPath() + "/login");\n            return;                       // 不调用 chain，请求到此为止\n        }\n        chain.doFilter(request, response);  // 放行\n    }\n}', title: 'AuthFilter.java' },
       { p: '这段代码里 <code>getSession(false)</code> 的含义是“有会话就返回，没有就返回 null，不要新建”。如果用无参的 <code>getSession()</code>，每个未登录请求都会创建一个新 Session，白白占用内存。判断登录态时用 false，登录成功后再用 <code>getSession()</code> 创建。' },
       { p: '完整链路可以这样串起来：浏览器 → DNS → TCP → Tomcat 连接器解析 HTTP → 根据 context path 找到 Web 应用 → 匹配 Filter 链 → 匹配 Servlet → Filter 前置逻辑 → Servlet 的 service → 业务代码 → Filter 后置逻辑 → 容器写响应 → 浏览器渲染。任何一环出问题，表现都不同：DNS 错是“找不到网站”，连接拒绝是“无法访问”，404 是路径没匹配，500 是代码抛了异常。' },
       { flow: ['浏览器发起请求', 'Tomcat 解析报文', '匹配 context 与 Filter', 'Filter 前置校验', 'Servlet 处理业务', 'Filter 后置处理', '写回响应'] },
 
-      { h: '5.11 会话跟踪与登录' },
+      { h: '5.10 会话与登录：Cookie、Session 与分布式方案' },
+      { p: 'HTTP 本身是无状态的：服务器处理完一个请求就忘了你是谁，下一个请求对它来说完全是新的。这在设计上是优点（简单、易扩展），但登录、购物车这类功能需要“记住”用户，于是有了 Cookie 和 Session。' },
+      { p: 'Cookie 是服务器通过 <code>Set-Cookie</code> 响应头种在浏览器里的一小段文本，浏览器之后每次请求同一域名都会自动带上。它容量小（约 4KB）、明文可见，所以不能存密码等敏感信息。Session 是服务端的一块存储，每个会话一个 ID，通常通过名为 JSESSIONID 的 Cookie 传给客户端。客户端只拿 ID，真正的数据在服务器内存或 Redis 里。' },
+      { p: '这套机制有三个必须知道的属性。<code>HttpOnly</code> 让 JS 读不到 Cookie，能防 XSS 窃取；<code>Secure</code> 限定只在 HTTPS 下发送；<code>SameSite</code> 限制跨站携带，缓解 CSRF。Session 有超时时间，默认 30 分钟不活动就失效；服务端调用 <code>invalidate()</code> 可以立即注销。' },
+      { p: '分布式部署时，Session 存在单机内存里会出问题：用户第一次请求打到 A 机器，第二次打到 B 机器，B 上没有这个 Session，登录态就丢了。解决办法有三种：会话粘滞（同一用户固定打到一台，简单但有单点风险）、Session 复制（多台互相同步，浪费内存）、集中存储（Redis 存 Session，最常用）。另一种思路是彻底不用服务端 Session，改发 Token（如 JWT），由客户端每次携带、服务端验签。' },
       { p: '登录的本质是“让后续请求能证明自己是同一个人”。用 Session 的做法是：登录成功后把用户信息放进 Session，容器自动通过 JSESSIONID 关联后续请求；注销时调用 <code>invalidate()</code> 让会话立即失效。' },
       { code: '// 登录成功\nHttpSession session = req.getSession();\nsession.setAttribute("user", user);\nsession.setMaxInactiveInterval(30 * 60);   // 30 分钟\n\n// 其他请求读取\nObject user = req.getSession(false) == null\n        ? null : req.getSession(false).getAttribute("user");\n\n// 注销\nreq.getSession().invalidate();', title: 'SessionDemo.java' },
       { p: 'Session 里只放必要的标识，比如用户 ID、角色，不要把整个用户对象塞进去。对象越大，内存占用越高，集群复制成本也越高；而且用户信息变更后，Session 里的旧数据不会自动刷新。需要最新信息时按 ID 回查，或者只缓存短时间。' },
       { p: '还有几个安全细节：登录成功后应调用 <code>req.changeSessionId()</code> 防止会话固定攻击；Cookie 要加 HttpOnly 和 Secure；注销时不仅要 invalidate，还要清掉客户端 Cookie；敏感操作要求二次验证，不能只靠 Session 判断。' },
 
-      { h: '5.12 线程安全与常见坑' },
+      { h: '5.11 Listener：在容器事件上挂钩子' },
+      { p: 'Filter 只在一个请求到来时才有机会执行，可有些事根本没有请求：应用启动时要预热缓存、加载字典，关闭时要关掉连接池、把缓冲区刷盘，用户会话创建和销毁时要统计在线人数。这些时机由 Listener 提供。它监听的是容器的生命周期事件而不是请求，所以比 Filter 介入得更早、退出得更晚。' },
+      { p: '最常用的是 <code>ServletContextListener</code>：<code>contextInitialized</code> 在应用启动完成后调用，<code>contextDestroyed</code> 在停止时调用。可以在前者里读配置、建连接池、把共享对象放进 ServletContext，在后者里按相反顺序释放。要特别注意，这个方法里抛出的异常会让整个应用启动失败，所以要么当场处理干净，要么明确让它失败，千万不要 try-catch 之后只打一行日志继续往下走。' },
+      { p: '统计在线人数用 <code>HttpSessionListener</code>：会话创建时计数加一，销毁时减一，计数器用 <code>AtomicInteger</code>，因为这两个回调可能在不同线程上同时执行。这里有个容易忽略的点：会话超时也会触发销毁回调，但只有容器扫描到过期时才触发；如果服务重启，内存里的会话直接消失，回调不一定执行，所以不能把持久化的在线数完全交给这个计数器。' },
+      { p: '还有 <code>ServletRequestListener</code>，它在请求进入和离开时各触发一次，适合记录耗时、在结束时清理 ThreadLocal。新手常犯的错是把用户信息放进 ThreadLocal 却忘记 remove：Tomcat 的线程是复用的，下一个请求会读到上一个请求残留的值，表现为偶尔串数据，而且极难复现。' },
+      { p: '注册方式和 Servlet 一样，用 <code>@WebListener</code> 注解或 web.xml 的 <code>&lt;listener&gt;</code> 元素。注解要生效，web.xml 不能设置 <code>metadata-complete="true"</code>，否则容器会跳过整个 jar 的注解扫描，连 @WebServlet 也一起失效。' },
+
+      { h: '5.12 web.xml、初始化参数与启动顺序' },
+      { p: '注解方便，但不是所有配置都能用注解表达；而且注解编译进 class 文件，改一个参数就得重新打包。web.xml 的价值是可外部化：运维改一行配置不用动 jar，还能覆盖注解。两者可以共存，规则是同名配置以 web.xml 为准。' },
+      { p: '初始化参数分两个层级，读错就拿到 null。<code>@WebInitParam</code> 定义的是 Servlet 私有参数，用 <code>getServletConfig().getInitParameter</code> 读取；<code>&lt;context-param&gt;</code> 定义的是应用级参数，用 <code>getServletContext().getInitParameter</code> 读取，所有 Servlet 和 Filter 都能访问。分页大小、功能开关这类全局配置放应用级，只属于某个 Servlet 的放私有级。' },
+      { p: '启动顺序也值得说清。默认 Servlet 在第一次被请求时才 init，第一个用户要承担初始化开销，初始化慢就会表现为首屏很卡。给 <code>@WebServlet</code> 加 <code>loadOnStartup = 1</code>（或 web.xml 里的 <code>&lt;load-on-startup&gt;</code>），容器启动时就初始化，数字越小越早；负数或省略表示惰性加载。' },
+      { p: '整体时序是：容器创建 ServletContext，触发 contextInitialized，再初始化 Filter 与标了 load-on-startup 的 Servlet，最后才开始接收请求。所以 Listener 里不要假设某个 Servlet 已经就绪；反过来，Servlet 里可以安全使用 Listener 放进 context 的共享对象。' },
+
+      { h: '5.13 线程安全与常见坑' },
       { p: 'Servlet 单例多线程，最常见的错误是在实例字段里存请求数据。比如 <code>private String currentUser;</code>，在 doGet 里赋值再使用，两个并发请求会互相覆盖，用户 A 可能看到用户 B 的数据。正确做法是把请求级数据放在方法局部变量里，或者放进 request 属性。' },
       { p: '需要共享且可变的资源要加同步或换成线程安全实现。计数器用 <code>AtomicLong</code>，缓存用 <code>ConcurrentHashMap</code>，不要在 Servlet 里直接操作非线程安全的 <code>HashMap</code> 和 <code>SimpleDateFormat</code>（后者应换成 <code>DateTimeFormatter</code>）。' },
       { list: [
@@ -671,32 +669,13 @@
       ] },
       { p: '调试 Web 问题，浏览器开发者工具的 Network 面板是最好的入口：看请求方法、URL、状态码、请求头、响应头、响应体。服务端则看 Tomcat 日志和异常栈。两边对照，基本能定位到是“请求没发对”“路由没匹配”还是“代码抛异常”。' },
 
-      { h: '5.13 Listener：在容器事件上挂钩子' },
-      { p: 'Filter 只在一个请求到来时才有机会执行，可有些事根本没有请求：应用启动时要预热缓存、加载字典，关闭时要关掉连接池、把缓冲区刷盘，用户会话创建和销毁时要统计在线人数。这些时机由 Listener 提供。它监听的是容器的生命周期事件而不是请求，所以比 Filter 介入得更早、退出得更晚。' },
-      { p: '最常用的是 <code>ServletContextListener</code>：<code>contextInitialized</code> 在应用启动完成后调用，<code>contextDestroyed</code> 在停止时调用。可以在前者里读配置、建连接池、把共享对象放进 ServletContext，在后者里按相反顺序释放。要特别注意，这个方法里抛出的异常会让整个应用启动失败，所以要么当场处理干净，要么明确让它失败，千万不要 try-catch 之后只打一行日志继续往下走。' },
-      { p: '统计在线人数用 <code>HttpSessionListener</code>：会话创建时计数加一，销毁时减一，计数器用 <code>AtomicInteger</code>，因为这两个回调可能在不同线程上同时执行。这里有个容易忽略的点：会话超时也会触发销毁回调，但只有容器扫描到过期时才触发；如果服务重启，内存里的会话直接消失，回调不一定执行，所以不能把持久化的在线数完全交给这个计数器。' },
-      { p: '还有 <code>ServletRequestListener</code>，它在请求进入和离开时各触发一次，适合记录耗时、在结束时清理 ThreadLocal。新手常犯的错是把用户信息放进 ThreadLocal 却忘记 remove：Tomcat 的线程是复用的，下一个请求会读到上一个请求残留的值，表现为偶尔串数据，而且极难复现。' },
-      { p: '注册方式和 Servlet 一样，用 <code>@WebListener</code> 注解或 web.xml 的 <code>&lt;listener&gt;</code> 元素。注解要生效，web.xml 不能设置 <code>metadata-complete="true"</code>，否则容器会跳过整个 jar 的注解扫描，连 @WebServlet 也一起失效。' },
-
-      { h: '5.14 web.xml、初始化参数与启动顺序' },
-      { p: '注解方便，但不是所有配置都能用注解表达；而且注解编译进 class 文件，改一个参数就得重新打包。web.xml 的价值是可外部化：运维改一行配置不用动 jar，还能覆盖注解。两者可以共存，规则是同名配置以 web.xml 为准。' },
-      { p: '初始化参数分两个层级，读错就拿到 null。<code>@WebInitParam</code> 定义的是 Servlet 私有参数，用 <code>getServletConfig().getInitParameter</code> 读取；<code>&lt;context-param&gt;</code> 定义的是应用级参数，用 <code>getServletContext().getInitParameter</code> 读取，所有 Servlet 和 Filter 都能访问。分页大小、功能开关这类全局配置放应用级，只属于某个 Servlet 的放私有级。' },
-      { p: '启动顺序也值得说清。默认 Servlet 在第一次被请求时才 init，第一个用户要承担初始化开销，初始化慢就会表现为首屏很卡。给 <code>@WebServlet</code> 加 <code>loadOnStartup = 1</code>（或 web.xml 里的 <code>&lt;load-on-startup&gt;</code>），容器启动时就初始化，数字越小越早；负数或省略表示惰性加载。' },
-      { p: '整体时序是：容器创建 ServletContext，触发 contextInitialized，再初始化 Filter 与标了 load-on-startup 的 Servlet，最后才开始接收请求。所以 Listener 里不要假设某个 Servlet 已经就绪；反过来，Servlet 里可以安全使用 Listener 放进 context 的共享对象。' },
-
-      { h: '5.15 请求体、文件上传与下载' },
-      { p: '<code>getParameter</code> 是一个会读请求体的方法。对 <code>application/x-www-form-urlencoded</code> 的 POST，容器在第一次调用它时就把整个 body 读出来解析成参数表，此后 <code>getInputStream</code> 再读只能得到空流；反过来，如果你先手动读完了 body，getParameter 也拿不到值。两者只能选一个，排查参数全是 null 时先确认这一点。' },
-      { p: '上传必须用 multipart。Servlet 3.0 之后不必再引第三方库：给 Servlet 加 <code>@MultipartConfig(maxFileSize = 5 * 1024 * 1024, maxRequestSize = 20 * 1024 * 1024)</code>，然后用 <code>req.getPart("file")</code> 拿到 Part，<code>getSubmittedFileName()</code> 取原始文件名，<code>getInputStream()</code> 取内容。超过限制会抛 IllegalStateException，要在 Filter 或异常处理里转成友好的 400。' },
-      { p: '文件名绝对不能直接拼进路径。攻击者可以把文件名写成 <code>../../webapps/ROOT/x.jsp</code>，你一拼接就等于把文件写进了站点目录。正确做法是用 UUID 重新生成文件名、只保留扩展名，存到 Web 根目录之外，原始文件名仅作为展示字段入库。' },
-      { p: '下载要注意三件事。第一，设 <code>setContentType("application/octet-stream")</code> 并加 <code>Content-Disposition: attachment; filename=...</code>，浏览器才会弹保存框而不是尝试渲染。第二，中文文件名要做编码，现代浏览器认 RFC 5987 的 filename 星号写法并显式声明 UTF-8，直接塞中文可能变成乱码或问号。第三，写二进制用 <code>getOutputStream</code>，不要混用 Writer，也不要在前面多打空行，否则文件开头多出几个字节而损坏。' },
-
-      { h: '5.16 异步处理与错误页' },
+      { h: '5.14 异步处理与错误页' },
       { p: '默认一个请求占用一个容器线程，直到响应写完才归还。如果业务里有慢操作，比如调第三方接口、导出大文件，线程被长时间占着，并发一高线程池就满，表现是所有接口一起变慢甚至超时。Servlet 3.0 的异步支持就是为这个场景准备的。' },
       { p: '用法是 <code>AsyncContext ctx = req.startAsync();</code>，必要时调 <code>ctx.setTimeout(30000)</code>，把耗时任务交给另一个线程池，任务完成后用 <code>ctx.getResponse()</code> 写结果并调用 <code>ctx.complete()</code>。原线程立刻返回去处理别的请求。注意异步不等于自动并发：你仍需提供一个有界线程池，否则任务会堆在无界队列里，问题只是从线程耗尽变成内存耗尽。' },
       { p: '错误处理分两层。参数不合法、余额不足这类预期内的失败，应该返回 400 或带错误码的 JSON，而不是抛异常；只有真正没预料到的错误才让它冒泡成 500。容器可以配置错误页，在 web.xml 里用 <code>&lt;error-page&gt;</code> 把状态码或异常类型映射到页面，用户看到友好提示，日志里保留完整堆栈。' },
       { p: '排查 500 不要只看最后一行消息。从第一行的异常类型开始，顺着 caused by 往下看，最外层通常是框架包装的，根因藏在最深的一层。遇到 404 而代码明明写了，按顺序确认三件事：context path 对不对、war 包名与访问路径是否一致、注解扫描有没有被 metadata-complete 关掉。' },
 
-      { h: '5.17 本章小结' },
+      { h: '5.15 本章小结' },
       { list: [
         'HTTP 报文由起始行、头、空行、体组成；方法表达意图，状态码表达结果。',
         'HTTP 无状态，靠 Cookie + Session 或 Token 维持登录态；分布式下 Session 要集中存储。',
@@ -705,7 +684,7 @@
         'Filter 在 Servlet 前后执行，可拦截或放行；Servlet 单例多线程，禁止用实例字段存请求数据。'
       ] },
 
-      { h: '5.18 常见追问' },
+      { h: '5.16 常见追问' },
       { list: [
         '<b>Servlet 和 Spring MVC 的 Controller 是什么关系？</b>DispatcherServlet 是唯一的 Servlet，它把请求分发给 Controller；Controller 是普通对象，由 Spring 管理。',
         '<b>forward 和 redirect 怎么选？</b>需要保留请求数据、URL 不变用 forward；需要改变 URL、避免刷新重复提交用 redirect。',
@@ -715,7 +694,7 @@
         '<b>Tomcat 和 Servlet 是什么关系？</b>Tomcat 是 Servlet 容器的一种实现，负责解析 HTTP、管理 Servlet 生命周期；Jetty、Undertow 也是容器。'
       ] },
 
-      { h: '5.19 自测与练习' },
+      { h: '5.17 自测与练习' },
       { ol: [
         '用浏览器开发者工具抓一次登录请求，抄下请求行、三个请求头和响应状态码。',
         '写一个 Servlet，接收 name 参数并返回 JSON；分别用 GET 和 POST 访问，观察参数位置差异。',
@@ -734,8 +713,7 @@
       { p: 'Maven 和 Gradle 负责“把源码变成可交付产物”：下载依赖、编译、跑测试、打包、发布。它们把一套约定固化成命令，让任何人 clone 代码后执行一条命令就能得到相同结果。单元测试负责“证明代码还对”：每次改动后自动验证行为，把回归问题挡在提交之前。' },
       { p: '很多人把构建当成运维的事，其实它是日常开发的一部分。依赖冲突导致 NoSuchMethodError、测试没跑导致线上回归、打包漏了资源文件，这些问题都源于对构建过程不清楚。学完这一章，你应该能看懂 pom 和 build.gradle，能解释 mvn package 到底做了什么，也能写出有价值的单元测试而不是为了覆盖率凑数。' },
       { note: '<b>一句话：</b>构建工具保证“别人拿到代码能跑起来”，单元测试保证“改完之后还能跑”。两者共同构成工程化的底线。' },
-
-            { p: '先看手工方式。假设项目有两个类，Main 依赖 Util，都在 src 目录下。编译要指定输出目录和源码路径：<code>javac -d out src/Util.java src/Main.java</code>，运行要指定 classpath：<code>java -cp out Main</code>。如果用到第三方 jar，还要把 jar 路径加到 -cp 里，多个用冒号（Windows 用分号）分隔。' },
+      { p: '先看手工方式。假设项目有两个类，Main 依赖 Util，都在 src 目录下。编译要指定输出目录和源码路径：<code>javac -d out src/Util.java src/Main.java</code>，运行要指定 classpath：<code>java -cp out Main</code>。如果用到第三方 jar，还要把 jar 路径加到 -cp 里，多个用冒号（Windows 用分号）分隔。' },
       { p: '文件一多，问题就来了。每次都要列出所有源文件，或者用通配符；依赖的 jar 要手动下载、手动放进 lib 目录；版本升级要一个个替换；不同人机器上的路径还不一样。更麻烦的是“传递依赖”：你用 A，A 依赖 B，B 又依赖 C，手工维护这条链几乎不可能。' },
       { p: '构建工具做了四件事：用标准目录结构省去配置、用坐标声明依赖并自动解析传递依赖、用生命周期把编译测试打包串起来、用仓库统一存放产物。Maven 是“约定优于配置”的代表，Gradle 是“用代码描述构建”的代表。' },
       { code: '# 手工编译与运行\njavac -encoding UTF-8 -d out src/main/java/com/example/*.java\njava -cp out com.example.Main\n\n# 带第三方依赖\njavac -cp "lib/*" -d out src/main/java/com/example/*.java\njava -cp "out:lib/*" com.example.Main', title: 'build.sh' },
@@ -751,14 +729,12 @@
         '<b>target：</b>构建输出，可随时删除，不要提交到 Git。',
         '<b>pom.xml：</b>项目描述文件，坐标、依赖、插件都在这里。'
       ] },
-
-      { h: '6.3 pom.xml 与坐标' },
       { p: 'pom 是 Maven 项目的身份证。最外层是 project 根元素，<code>modelVersion</code> 固定为 4.0.0，然后是三个坐标：groupId（组织，通常是反写域名）、artifactId（项目名）、version（版本号）。这三个合起来唯一标识一个构件，仓库就是按这个路径存放 jar 的。' },
       { code: '<?xml version="1.0" encoding="UTF-8"?>\n<project xmlns="http://maven.apache.org/POM/4.0.0"\n         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0\n                             http://maven.apache.org/xsd/maven-4.0.0.xsd">\n  <modelVersion>4.0.0</modelVersion>\n\n  <groupId>com.example</groupId>\n  <artifactId>demo-shop</artifactId>\n  <version>1.0.0</version>\n  <packaging>jar</packaging>\n\n  <properties>\n    <maven.compiler.release>17</maven.compiler.release>\n    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>\n  </properties>\n\n  <dependencies>\n    <dependency>\n      <groupId>org.junit.jupiter</groupId>\n      <artifactId>junit-jupiter</artifactId>\n      <version>5.10.2</version>\n      <scope>test</scope>\n    </dependency>\n  </dependencies>\n</project>', title: 'pom.xml' },
       { p: 'packaging 决定产物类型：jar 打成 jar，war 打成 war（Web 项目），pom 表示只做聚合不产出构件（多模块的父工程）。properties 里可以定义变量，后面用 <code>${...}</code> 引用——注意这只是 Maven 的占位符，和前端模板字符串无关。' },
       { p: '依赖写在 dependencies 里，每个依赖同样用三坐标定位。Maven 会先查本地仓库（默认 ~/.m2/repository），没有再查中央仓库下载，下载后缓存到本地。公司内网通常配置私服（Nexus），在 settings.xml 里用 mirror 把中央仓库指向私服。' },
 
-      { h: '6.4 依赖范围：compile、provided、runtime、test' },
+      { h: '6.3 依赖范围：compile、provided、runtime、test' },
       { p: 'scope 决定一个依赖在哪些阶段可见、是否会被传递、是否打进最终产物。选错 scope 的典型后果是：测试库被打进生产包、Servlet API 和容器冲突、编译期找不到类。' },
       { table: { head: ['scope', '编译', '测试', '运行', '打进产物', '典型例子'], rows: [
         ['compile（默认）', '是', '是', '是', '是', 'Spring、Jackson、工具库'],
@@ -771,7 +747,7 @@
       { p: 'runtime 表示“编译时不用直接引用，但运行时需要”。JDBC 驱动最典型：代码里只有 <code>java.sql.*</code> 和 <code>Class.forName</code> 或 SPI，不直接 import MySQL 的类，所以编译期不需要，但运行时必须有。test 只用于测试，不会传递到使用方，也不会打进产物。' },
       { note: '<b>常见错误：</b>把 JUnit 写成默认 scope，结果测试框架被打进生产 jar；或者忘记给驱动加 runtime，本地能跑、打包后连不上数据库。' },
 
-      { h: '6.5 Maven 生命周期与常用命令' },
+      { h: '6.4 Maven 生命周期与常用命令' },
       { p: 'Maven 有三套生命周期：clean（清理）、default（构建）、site（文档）。每套由若干阶段（phase）组成，阶段有先后顺序，执行某个阶段时，它前面的阶段会自动依次执行。这就是为什么 <code>mvn package</code> 会自动编译并跑测试——package 之前的阶段都被触发了。' },
       { flow: ['clean', 'validate', 'compile', 'test', 'package', 'verify', 'install', 'deploy'] },
       { p: 'default 生命周期的核心阶段依次是：validate 校验项目、compile 编译主代码、test 跑单元测试、package 打包、verify 校验产物、install 安装到本地仓库、deploy 发布到远程仓库。中间还有很多细粒度阶段（如 process-resources、test-compile），平时不用记，知道主链路即可。' },
@@ -779,20 +755,18 @@
       { p: '两个跳过测试的参数要分清：<code>-DskipTests</code> 仍然编译测试代码，只是不执行；<code>-Dmaven.test.skip=true</code> 连编译都跳过，速度更快，但如果测试代码本身有编译错误，用前者能提前发现。CI 上应该老老实实跑测试，跳过只用于本地应急。' },
       { p: '插件是生命周期的执行者。每个阶段绑定一个或多个插件的目标（goal），比如 compile 阶段默认绑定 maven-compiler-plugin 的 compile 目标，test 阶段绑定 maven-surefire-plugin 的 test 目标，package 阶段 jar 打包绑定 maven-jar-plugin。要改行为就配插件，比如指定 Java 版本、设置 surefire 的参数。' },
 
-      { h: '6.6 依赖冲突与传递依赖' },
+      { h: '6.5 依赖冲突与传递依赖' },
       { p: 'Maven 会自动解析传递依赖：你声明 A，A 的 pom 里声明了 B，B 也会被引入。这很方便，但也带来冲突——同一个库的不同版本可能同时出现在依赖树里，Maven 必须选一个，选错了就可能 NoSuchMethodError 或 ClassNotFoundException。' },
       { p: 'Maven 的调解规则有两条。第一是“最短路径优先”：直接声明的依赖深度为 1，传递来的为 2、3，路径短的胜出。第二是“先声明优先”：路径长度相同时，pom 里写在前面的胜出。这解释了一个常见困惑：明明升级了 B 的版本，运行时却还是旧版，因为另一个依赖以更短路径引入了旧版。' },
       { p: '解决冲突的手段有四种。用 <code>mvn dependency:tree</code> 先看清楚谁引入了谁；用 <code>&lt;exclusions&gt;</code> 排除某个传递依赖；用 <code>&lt;dependencyManagement&gt;</code> 统一声明版本（不实际引入，只锁定版本）；用 BOM（<code>&lt;scope&gt;import&lt;/scope&gt;</code> 导入 spring-boot-dependencies 这类清单）批量管理版本。' },
       { code: '<dependency>\n  <groupId>com.example</groupId>\n  <artifactId>module-a</artifactId>\n  <version>1.2.0</version>\n  <exclusions>\n    <exclusion>\n      <groupId>commons-logging</groupId>\n      <artifactId>commons-logging</artifactId>\n    </exclusion>\n  </exclusions>\n</dependency>', title: 'exclusion.xml' },
       { p: '还要认识 SNAPSHOT 版本。以 -SNAPSHOT 结尾的版本表示开发中的快照，每次构建都可能变化，Maven 会按更新策略重新拉取；正式版本一旦发布就不应该再改内容，否则同一版本号对应不同代码，构建就不可重现了。生产依赖不要用 SNAPSHOT。' },
 
-      { h: '6.7 Gradle：用代码描述构建' },
+      { h: '6.6 Gradle：用代码描述构建' },
       { p: 'Gradle 是另一种构建工具，用 Groovy 或 Kotlin DSL 写构建脚本，比 XML 更灵活。它的核心概念是“任务（task）”：编译、测试、打包都是任务，任务之间有依赖关系，Gradle 据此构建有向无环图并决定执行顺序，还能跳过没有变化的任务，也就是增量构建。' },
       { code: 'plugins {\n    java\n    id("org.springframework.boot") version "3.2.5"\n}\n\ngroup = "com.example"\nversion = "1.0.0"\n\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")\n    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")\n    testRuntimeOnly("org.junit.platform:junit-platform-launcher")\n}\n\njava {\n    toolchain {\n        languageVersion = JavaLanguageVersion.of(17)\n    }\n}\n\ntasks.test {\n    useJUnitPlatform()\n}', title: 'build.gradle.kts' },
       { p: '配置里的 implementation 和 testImplementation 对应 Maven 的 scope：implementation 类似 compile，但不会暴露给使用方的编译期（更利于封装）；testImplementation 对应 test；还有 compileOnly（类似 provided）、runtimeOnly（类似 runtime）。repositories 声明仓库，mavenCentral() 是中央仓库。' },
       { p: '实际项目要用 Wrapper：执行 <code>gradle wrapper</code> 生成 gradlew 脚本和配置，之后统一用 <code>./gradlew build</code>。Wrapper 会锁定 Gradle 版本，保证团队和 CI 用同一个版本构建，避免“我这能跑”。常用命令有 <code>./gradlew build</code>（编译+测试+打包）、<code>./gradlew test</code>、<code>./gradlew clean</code>、<code>./gradlew dependencies</code>。' },
-
-      { h: '6.8 Maven 与 Gradle 怎么选' },
       { p: '两者都能胜任绝大多数项目，差别主要在配置风格、性能和学习成本。Maven 的 XML 冗长但结构固定、插件生态成熟、IDE 支持稳定；Gradle 脚本简洁灵活、增量构建快，但灵活也意味着不同项目写法差异大，排查问题需要懂 Groovy/Kotlin。' },
       { table: { head: ['维度', 'Maven', 'Gradle'], rows: [
         ['配置方式', 'XML，约定强', 'Groovy/Kotlin DSL，灵活'],
@@ -804,7 +778,7 @@
       ] } },
       { p: '选择建议很朴素：公司已有体系就用哪个，别为了尝鲜混用；新项目如果团队不熟 Gradle，Maven 更稳；Android 或需要复杂构建逻辑，Gradle 更合适。面试时能说清两者生命周期/任务模型的差异，比背命令更有价值。' },
 
-      { h: '6.9 单元测试与 JUnit 5' },
+      { h: '6.7 单元测试与 JUnit 5' },
       { p: '单元测试是“针对最小可测单元写的自动化验证”。它不启动整个应用、不连真实数据库、不发网络请求，只调用一个类或方法，断言输出符合预期。好处是快、稳定、失败时能直接定位到哪一行逻辑错了。' },
       { p: 'JUnit 5 由三部分组成：Jupiter 是新的编程模型和扩展模型（你写的注解都来自这里），Platform 是运行测试的基础设施，Vintage 用于兼容 JUnit 4 的老测试。日常说“JUnit 5”通常指 Jupiter。' },
       { code: 'import org.junit.jupiter.api.*;\nimport static org.junit.jupiter.api.Assertions.*;\n\nclass CalculatorTest {\n\n    private Calculator calculator;\n\n    @BeforeEach\n    void setUp() {\n        calculator = new Calculator();\n    }\n\n    @Test\n    @DisplayName("两个正数相加")\n    void add_positiveNumbers() {\n        assertEquals(5, calculator.add(2, 3));\n    }\n\n    @Test\n    void divide_byZero_throws() {\n        ArithmeticException ex = assertThrows(\n                ArithmeticException.class,\n                () -> calculator.divide(1, 0));\n        assertEquals("除数不能为 0", ex.getMessage());\n    }\n}', title: 'CalculatorTest.java' },
@@ -812,22 +786,33 @@
       { p: '注意 assertEquals 的参数顺序是“期望值在前、实际值在后”，写反了失败信息会误导人。测试方法命名建议用“行为_条件_期望”的风格，比如 <code>withdraw_insufficientBalance_throws</code>，失败时一眼能看出场景。方法上加 @DisplayName 可以让报告更可读。' },
       { p: '生命周期注解要分清：@BeforeAll / @AfterAll 在每个测试类前后各执行一次，方法必须是 static（除非测试类标注了 @TestInstance(PER_CLASS)）；@BeforeEach / @AfterEach 在每个测试方法前后执行，用来准备和清理数据。测试方法本身必须无参、返回 void、不能是 private。' },
 
-      { h: '6.10 断言、参数化与异常测试' },
+      { h: '6.8 断言、参数化与异常测试' },
       { p: '断言是测试的核心。JUnit 提供了 assertEquals、assertNotEquals、assertTrue/False、assertNull/NotNull、assertSame、assertArrayEquals、assertIterableEquals、assertThrows、assertDoesNotThrow、assertTimeout 等。断言失败会抛 AssertionFailedError，测试立即结束，后面的代码不执行。' },
       { p: '一组相关断言用 <code>assertAll</code> 包起来，可以让所有断言都执行完再汇总失败项，而不是第一个失败就停。这在验证对象的多个字段时很有用。要注意 assertAll 里的断言是“软失败”，不会中断流程，但如果里面有异常抛出，仍然会中断。' },
       { code: '@ParameterizedTest\n@CsvSource({\n    "1, 1, 2",\n    "2, 3, 5",\n    "-1, 1, 0"\n})\nvoid add_variousInputs(int a, int b, int expected) {\n    assertEquals(expected, calculator.add(a, b));\n}\n\n@Test\nvoid userFields_areCorrect() {\n    User u = new User("tom", 20);\n    assertAll(\n        () -> assertEquals("tom", u.getName()),\n        () -> assertEquals(20, u.getAge()),\n        () -> assertNotNull(u.getId())\n    );\n}', title: 'ParameterizedTest.java' },
       { p: '参数化测试用 @ParameterizedTest 替代 @Test，配合 @ValueSource（单值列表）、@CsvSource（逗号分隔多参数）、@MethodSource（方法提供数据）、@EnumSource 等。它能用一份逻辑覆盖多组输入，比复制粘贴多个测试方法更易维护。每组参数在报告里单独计数。' },
       { p: '测试异常有两个层次：只关心“抛了某个异常”用 assertThrows；还要校验异常消息或状态用返回值。不要用 try-catch 加 fail() 的老写法，断言失败信息不清晰。测试超时用 assertTimeout，但要注意它不会强制中断正在执行的代码，只是事后判断。' },
 
-      { h: '6.11 测试替身与 Mockito' },
+      { h: '6.9 测试替身与 Mockito' },
       { p: '真实单元测试要隔离外部依赖：数据库、HTTP 接口、文件系统、时间。把这些换成“测试替身”，测试才能快且稳定。替身分几种：Stub 提供预设返回值，Mock 还能验证调用行为，Fake 是有简化实现的真对象（如内存数据库），Spy 是包在真对象外面记录调用。' },
       { p: 'Mockito 是 Java 最常用的 mock 框架。用 <code>mock(Class)</code> 创建替身，<code>when(...).thenReturn(...)</code> 设定行为，<code>verify(...)</code> 验证调用次数和参数。配合 <code>@ExtendWith(MockitoExtension.class)</code> 和 <code>@Mock</code> 注解可以自动注入，减少样板代码。' },
       { code: '@ExtendWith(MockitoExtension.class)\nclass OrderServiceTest {\n\n    @Mock\n    private OrderRepository repository;\n\n    @InjectMocks\n    private OrderService service;\n\n    @Test\n    void createOrder_savesWithPendingStatus() {\n        when(repository.save(any(Order.class)))\n                .thenAnswer(inv -> inv.getArgument(0));\n\n        Order order = service.create(1001L, new BigDecimal("99.90"));\n\n        assertEquals("PENDING", order.getStatus());\n        verify(repository, times(1)).save(order);\n    }\n}', title: 'OrderServiceTest.java' },
       { p: 'Mock 的边界要把握好：只 mock 你拥有的依赖的“边界”，不要 mock 值对象，也不要 mock 被测类自己。过度 mock 会让测试与实现细节耦合——重构一改，测试全红，但它其实没验证任何业务价值。判断标准是：这个测试是为了验证“行为正确”，还是为了验证“我按这个顺序调了这些方法”。' },
-      { note: '<b>测试金字塔：</b>大量快速的单元测试打底，适量集成测试验证组件协作，少量端到端测试覆盖关键链路。倒金字塔（大量 E2E、少量单元）会又慢又脆。' },
 
-      { h: '6.12 覆盖率、TDD 与常见坑' },
+      { h: '6.10 测试金字塔：三层各测什么' },
+      { p: '测试金字塔是分配比例的经验模型：底层大量单元测试，中层适量集成测试，顶层少量端到端测试。比例没有硬指标，但它描述的取舍是对的，越往上越接近真实用户，也越慢、越脆、越难定位。' },
+      { p: '单元测试测一个类或方法的逻辑分支，外部依赖全部替换掉，应当毫秒级完成，失败时直接指出哪一行判断错了。它适合覆盖金额计算、状态机流转、参数校验、边界条件；不适合用来验证 SQL 写得对不对，那需要真实数据库。' },
+      { p: '集成测试验证组件协作：映射文件能不能查出数据、事务注解有没有生效、Bean 能不能装配起来。它需要真实或接近真实的环境，常用内存数据库或临时容器。这类测试慢一些，却能抓出单元测试永远抓不到的配置错误。' },
+      { p: '端到端测试从外部入口发起，走完整条链路，适合覆盖登录后下单支付这类关键路径。数量要少，因为任何一处文案改动都可能让它失败，维护成本最高。倒金字塔是常见反模式：大量端到端、几乎没有单元测试，结果是流水线跑半小时、红一片却说不清是谁的问题，最后大家开始忽略失败。修正方向不是删掉端到端测试，而是把其中的业务判断下沉成单元测试。' },
+
+      { h: '6.11 覆盖率怎么读：JaCoCo、门禁与陷阱' },
       { p: '覆盖率衡量“测试执行了多少代码”，常见指标有行覆盖、分支覆盖、方法覆盖。工具用 JaCoCo，Maven 里加插件后在 package 阶段生成报告。覆盖率是参考指标，不是目标：100% 覆盖也可能一个断言都没有，关键业务的分支没测到，覆盖率再高也没用。' },
+      { p: 'JaCoCo 通过字节码插桩记录哪些指令被执行过，产出类、方法、行、分支四个层级的覆盖数据。Maven 里加 jacoco-maven-plugin，把 prepare-agent 绑到 initialize、report 绑到 test 之后，执行 mvn test 就会在 <code>target/site/jacoco</code> 下生成 HTML 报告，点进去能看到每一行是否被执行、每个分支走了哪个方向。' },
+      { p: '指标含义要分清。行覆盖看这行有没有被执行，分支覆盖看 if 的两个方向是否都走过，方法覆盖看哪些方法一次没被调用。分支覆盖通常更能暴露问题：一行 <code>a &amp;&amp; b</code> 即使行覆盖百分之百，也可能只测了 a 为真的情况，b 为假的分支从未执行。' },
+      { p: '覆盖率有三个陷阱。第一，它只说明代码被执行过，不说明结果被断言过，把所有方法调一遍再不断言，数字能到九成以上而测试毫无价值。第二，getter 方法、异常兜底、日志分支会拉低分母或永远无法覆盖，追求满分往往要写一堆无意义测试。第三，总量下降不等于质量下降，看本次改动的增量覆盖率比看总量更有意义。' },
+      { p: '门禁的正确用法是设下限而不是设目标：整体不低于六成，本次增量不低于八成，低于就让流水线失败，同时把报告归档，评审时能看到哪些分支没被覆盖。数字是手段，逼人回答这个分支为什么没测，才是目的。' },
+
+      { h: '6.12 TDD 的节奏与测试常见坑' },
       { p: 'TDD（测试驱动开发）的节奏是“红-绿-重构”：先写一个失败的测试，再写最少的代码让它通过，最后在测试保护下重构。它的价值不在于“测试多”，而在于逼你先想清楚接口和行为，再动手实现。实践中不必教条，但新功能先写测试确实能减少返工。' },
       { list: [
         '<b>测试相互依赖：</b>后一个测试依赖前一个留下的数据，单独跑就失败；每个测试要能独立运行。',
@@ -846,19 +831,7 @@
       { p: '构建顺序不用手工指定。Maven 读取模块间的依赖，把参与本次构建的模块排成有向无环图，按拓扑序依次构建，这个机制叫 reactor。A 依赖 B，执行 <code>mvn install</code> 时一定先构建 B；只想构建某块及其上游依赖，用 <code>-pl 模块名 -am</code>，只构建某块本身则去掉 -am。' },
       { p: '还有个坑：在根目录执行时，子模块之间用的是 reactor 里的最新产物；单独进入某个子模块目录执行，它会去本地仓库找依赖，可能拿到旧版本。所以日常构建尽量在根目录跑，或者先 install 一次再进子目录。' },
 
-      { h: '6.14 测试金字塔：三层各测什么' },
-      { p: '测试金字塔是分配比例的经验模型：底层大量单元测试，中层适量集成测试，顶层少量端到端测试。比例没有硬指标，但它描述的取舍是对的，越往上越接近真实用户，也越慢、越脆、越难定位。' },
-      { p: '单元测试测一个类或方法的逻辑分支，外部依赖全部替换掉，应当毫秒级完成，失败时直接指出哪一行判断错了。它适合覆盖金额计算、状态机流转、参数校验、边界条件；不适合用来验证 SQL 写得对不对，那需要真实数据库。' },
-      { p: '集成测试验证组件协作：映射文件能不能查出数据、事务注解有没有生效、Bean 能不能装配起来。它需要真实或接近真实的环境，常用内存数据库或临时容器。这类测试慢一些，却能抓出单元测试永远抓不到的配置错误。' },
-      { p: '端到端测试从外部入口发起，走完整条链路，适合覆盖登录后下单支付这类关键路径。数量要少，因为任何一处文案改动都可能让它失败，维护成本最高。倒金字塔是常见反模式：大量端到端、几乎没有单元测试，结果是流水线跑半小时、红一片却说不清是谁的问题，最后大家开始忽略失败。修正方向不是删掉端到端测试，而是把其中的业务判断下沉成单元测试。' },
-
-      { h: '6.15 覆盖率怎么读：JaCoCo 与门禁' },
-      { p: 'JaCoCo 通过字节码插桩记录哪些指令被执行过，产出类、方法、行、分支四个层级的覆盖数据。Maven 里加 jacoco-maven-plugin，把 prepare-agent 绑到 initialize、report 绑到 test 之后，执行 mvn test 就会在 <code>target/site/jacoco</code> 下生成 HTML 报告，点进去能看到每一行是否被执行、每个分支走了哪个方向。' },
-      { p: '指标含义要分清。行覆盖看这行有没有被执行，分支覆盖看 if 的两个方向是否都走过，方法覆盖看哪些方法一次没被调用。分支覆盖通常更能暴露问题：一行 <code>a &amp;&amp; b</code> 即使行覆盖百分之百，也可能只测了 a 为真的情况，b 为假的分支从未执行。' },
-      { p: '覆盖率有三个陷阱。第一，它只说明代码被执行过，不说明结果被断言过，把所有方法调一遍再不断言，数字能到九成以上而测试毫无价值。第二，getter 方法、异常兜底、日志分支会拉低分母或永远无法覆盖，追求满分往往要写一堆无意义测试。第三，总量下降不等于质量下降，看本次改动的增量覆盖率比看总量更有意义。' },
-      { p: '门禁的正确用法是设下限而不是设目标：整体不低于六成，本次增量不低于八成，低于就让流水线失败，同时把报告归档，评审时能看到哪些分支没被覆盖。数字是手段，逼人回答这个分支为什么没测，才是目的。' },
-
-      { h: '6.16 CI：让每次提交都经过同一套检查' },
+      { h: '6.14 CI：让每次提交都经过同一套检查' },
       { p: '持续集成解决的是“在我机器上是好的”。每次推送都由一台干净机器从零拉取、构建、跑测试，结果对所有人可见，把过去每周一次的集成痛苦拆成每次提交的小步验证。' },
       { p: '一条典型流水线分几段：拉代码、还原依赖缓存、编译、跑单元测试、跑集成测试、静态检查与覆盖率门禁、打包归档、发布到制品库。任何一段失败就立刻停止并通知提交者，不要配成失败也继续，那等于没有门禁。' },
       { p: '缓存是提速关键。Maven 缓存 <code>~/.m2/repository</code>，Gradle 缓存 <code>~/.gradle/caches</code>，缓存的 key 取 pom 或锁文件的哈希，依赖变了自动失效。但不要把 target 目录一起缓存，增量编译的旧产物混进新构建，会产出难以复现的问题。' },
@@ -866,7 +839,7 @@
       { p: '还有两个安全细节：密钥、数据库密码不能写进仓库或构建脚本，应该放在流水线的加密变量里运行时注入；日志里不要打印完整的环境变量与连接串，很多泄露都是从日志里翻出来的。构建产物要归档保留，出问题时能拿到当时那一份 jar 复现。' },
       { p: '本地与流水线不一致是排查成本最高的问题之一。养成提交前跑一遍相同命令的习惯，用 mvn verify 或 gradlew build，而不是只跑单个测试类；如果线上失败而本地通过，先对比 JDK 版本、环境变量、时区、文件编码这四项。' },
 
-      { h: '6.17 本章小结' },
+      { h: '6.15 本章小结' },
       { list: [
         'Maven 用约定目录 + 坐标管理项目；pom 描述坐标、依赖、插件与打包方式。',
         'scope 决定依赖在编译、测试、运行期的可见性与是否打包；provided 与 runtime 最易配错。',
@@ -876,7 +849,7 @@
         'JUnit 5 用注解组织测试，断言验证行为，参数化覆盖多组输入，Mockito 隔离外部依赖；覆盖率是参考不是目标。'
       ] },
 
-      { h: '6.18 常见追问' },
+      { h: '6.16 常见追问' },
       { list: [
         '<b>mvn package 和 mvn install 的区别？</b>package 只把产物打到 target；install 还会复制到本地仓库，供其他项目依赖。',
         '<b>为什么 Servlet API 用 provided？</b>运行时由 Tomcat 提供，打进 war 会重复甚至版本冲突。',
@@ -886,7 +859,7 @@
         '<b>覆盖率要求多少合适？</b>没有统一标准，核心模块可要求较高，整体看趋势；不要为数字写无断言的测试。'
       ] },
 
-      { h: '6.19 自测与练习' },
+      { h: '6.17 自测与练习' },
       { ol: [
         '新建一个 Maven 项目，写出包含 junit-jupiter（test scope）的 pom，执行 mvn clean package 并找到 target 下的 jar。',
         '故意引入两个版本的同一依赖，用 dependency:tree 找出冲突，再用 exclusion 解决并验证。',

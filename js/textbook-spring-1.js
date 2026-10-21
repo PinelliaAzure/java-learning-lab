@@ -6,6 +6,7 @@
   T['ioc-di'] = {
     meta: '本章约 10000 字 · 建议 40 分钟 · 含 3 张表、1 张流程图与 7 段代码',
     blocks: [
+
       { h: '1.1 为什么先学 IoC：从一行 new 说起' },
       { p: '假设你在写一个下单功能。OrderService 需要 PayService 扣款、OrderRepository 存订单、InventoryService 扣库存、MailService 发通知。最直觉的写法，是在每个类里自己把需要的对象 new 出来：<code>this.payService = new PayService();</code>。程序能跑，代码也不长，看起来没有任何问题。' },
       { p: '但只要需求动一下，代价就来了。PayService 的构造器多加一个参数，所有 new 它的地方都要跟着改；测试时想换成一个不会真正扣钱的假实现，却发现 new 写死在类内部，根本换不掉；两个 Service 各自 new 了一个 OrderRepository，于是内存里出现好几份承担同一职责的对象，缓存和计数器全部对不上。' },
@@ -33,7 +34,15 @@
       { code: 'import org.springframework.context.annotation.AnnotationConfigApplicationContext;\n\npublic class Main {\n    public static void main(String[] args) {\n        // try-with-resources：退出时自动 close，触发销毁回调\n        try (AnnotationConfigApplicationContext ctx =\n                 new AnnotationConfigApplicationContext(AppConfig.class)) {\n            OrderService orderService = ctx.getBean(OrderService.class);\n            orderService.checkout();\n        }\n    }\n}', title: 'Main.java' },
       { out: '容器已启动\n支付 99.00' },
 
-      { h: '1.4 第一个可运行的例子' },
+      { h: '1.4 把 Bean 注册进容器：两条路' },
+      { p: '第一条路是组件扫描：自己写的类加上 <code>@Component</code>、<code>@Service</code>、<code>@Repository</code>、<code>@Controller</code>，容器扫描到就注册。注解本身不带任何逻辑，它只是给扫描器看的标记。' },
+      { p: '第二条路是 <code>@Configuration</code> 加 <code>@Bean</code>，用于第三方类：连接池、RestTemplate、ObjectMapper 这些都是别人的代码，你没法给它们加注解，就在配置类里写一个返回该对象的方法，方法名默认就是 Bean 名称。' },
+      { p: '@Bean 方法本身也可以带参数，容器会按类型自动注入。例如 dataSource(DataSourceProperties props) 这种写法，参数由容器提供，不需要自己 new。这样配置类就能把“读配置”和“建对象”串起来，代码也更短。' },
+      { code: '@Configuration\npublic class DataSourceConfig {\n\n    @Bean\n    public DataSource dataSource() {\n        HikariDataSource ds = new HikariDataSource();\n        ds.setJdbcUrl("jdbc:mysql://localhost:3306/shop");\n        ds.setUsername("app");\n        ds.setPassword(System.getenv("DB_PASSWORD"));\n        ds.setMaximumPoolSize(10);\n        return ds;\n    }\n}', title: 'DataSourceConfig.java' },
+      { p: '这里有个容易踩的坑：<code>@Configuration</code> 类在运行时会被 CGLIB 增强，保证 <code>@Bean</code> 方法之间互相调用时返回同一个实例，这叫 full 模式。如果只加 <code>@Component</code> 而不加 <code>@Configuration</code>，方法之间的调用会真的执行两次，可能造出两个连接池。' },
+      { p: 'Bean 的名称默认是类名首字母小写（OrderService 对应 orderService）。需要改名时用 <code>@Service("orderSvc")</code> 或 <code>@Bean("orderSvc")</code>。当同一类型有多个 Bean 时，注入需要靠名称或 <code>@Qualifier</code> 区分，否则容器会抛 NoUniqueBeanDefinitionException。' },
+
+      { h: '1.5 第一个可运行的例子' },
       { p: '下面三个类构成一个最小工程：PayService 提供支付能力，OrderService 依赖它，AppConfig 负责开启组件扫描。请特别注意，OrderService 里没有一行 new PayService。' },
       { code: 'package com.example.shop;\n\nimport org.springframework.stereotype.Service;\nimport java.math.BigDecimal;\n\n@Service\npublic class PayService {\n    public void pay(BigDecimal amount) {\n        System.out.println("支付 " + amount);\n    }\n}', title: 'PayService.java' },
       { code: 'package com.example.shop;\n\nimport org.springframework.stereotype.Service;\n\n@Service\npublic class OrderService {\n    private final PayService payService;\n\n    // 只有一个构造器时，@Autowired 可以省略\n    public OrderService(PayService payService) {\n        this.payService = payService;\n    }\n\n    public void checkout() {\n        payService.pay(new java.math.BigDecimal("99.00"));\n    }\n}', title: 'OrderService.java' },
@@ -43,39 +52,29 @@
       { p: '把程序跑起来，输出顺序是先“容器已启动”再“支付 99.00”。如果你把 OrderService 上的 @Service 删掉，getBean 会抛 NoSuchBeanDefinitionException；这就是排查问题的第一条线索：Bean 到底有没有被注册。' },
       { p: '实际项目里，包结构建议按业务划分（order、pay、user），而不是按技术分层（controller、service、dao）。按业务分包时，一个功能的类聚在一起，扫描范围清晰，后续要拆成独立模块也更容易；按技术分层则容易出现一个包下几十个类、改一个功能要跳好几个目录的情况。' },
 
-      { h: '1.5 三种注入方式' },
+      { h: '1.6 三种注入方式与为什么推荐构造器注入' },
       { p: 'Spring 支持三种把依赖送进来的姿势：构造器注入、Setter 注入、字段注入。它们都能让程序跑起来，但在可测试性、不可变性和错误暴露程度上差别很大。' },
-      { p: '还有一个常被忽略的差异：字段注入无法注入 final 字段，也无法在构造器里做依赖合法性校验。比如支付渠道必须非空，构造器注入可以直接写 if (payService == null) throw new IllegalStateException(...)，字段注入只能等到真正调用那一行才发现问题，错误暴露得更晚。' },
       { table: { head: ['方式', '写法', '优点', '缺点'], rows: [
         ['构造器注入', '依赖写在构造器参数上，字段声明为 final', '依赖不可变、创建即完整、测试无需容器', '参数过多时构造器很长；循环依赖无法解决'],
         ['Setter 注入', '为每个依赖写 set 方法并加 @Autowired', '可以后期替换，适合可选依赖', '对象可能处于半成品状态，依赖可能为 null'],
         ['字段注入', '直接在字段上写 @Autowired', '代码最短，教程最常见', '无法 final、脱离容器不可用、隐藏依赖关系']
       ] } },
       { p: '字段注入之所以在教程里泛滥，是因为它看起来最省事。但它有三个硬伤：字段不能声明为 final，对象创建完依赖仍可能为空；一旦脱离容器，这个类就无法正常构造，单元测试必须启动 Spring 或者用反射硬塞；依赖关系藏在类内部，从构造器签名完全看不出这个类到底需要什么。' },
+      { p: '还有一个常被忽略的差异：字段注入无法注入 final 字段，也无法在构造器里做依赖合法性校验。比如支付渠道必须非空，构造器注入可以直接写 if (payService == null) throw new IllegalStateException(...)，字段注入只能等到真正调用那一行才发现问题，错误暴露得更晚。' },
       { p: 'Setter 注入适合“可选依赖”和“需要运行时重新设置”的场景，比如一个可以热切换的短信通道。代价是对象在构造完成之后还可能处于不完整状态，调用方必须记得先 set 再 use。' },
-      { p: '构造器注入把依赖写进签名，创建即完整；配合 final 保证依赖不被中途篡改；测试时直接 <code>new OrderService(new FakePayService())</code> 就能跑，完全不需要 Spring。这三条好处，足以让它成为官方推荐。' },
-
-      { h: '1.6 为什么构造器注入被推荐' },
       { list: [
         '<b>依赖不为空：</b>对象一旦创建成功，所有必需依赖都已就位，不会出现调用时才 NullPointerException。',
         '<b>依赖不可变：</b>字段声明为 final，编译期就禁止重新赋值，线程安全多一层保障。',
         '<b>便于测试：</b>不用启动容器，直接传 mock 或假实现，测试启动时间从几秒降到几毫秒。',
         '<b>暴露设计问题：</b>构造器参数越来越多，说明这个类承担的职责太多，该拆了。'
       ] },
+      { p: '落到代码上就是 <code>new OrderService(new FakePayService())</code>：测试时一行构造，不需要启动 Spring 上下文。上面这些好处叠加起来，就是官方推荐构造器注入的全部理由。' },
       { p: '构造器注入还有一个“副作用”值得知道：两个单例 Bean 用构造器互相依赖时，容器无法先造出任何一个，会抛 BeanCurrentlyInCreationException。这不是框架的缺陷，而是设计在提醒你：这两个类的职责纠缠在一起了，应该抽出第三个类，或者改用事件解耦。' },
       { p: '字段注入能靠 Spring 的三级缓存把循环依赖“糊”过去，但问题只是被藏起来，运行时的行为依然难以预测。所以看到循环依赖报错，第一反应应该是调整设计，而不是去搜“如何开启循环依赖”。' },
       { p: '顺便说清“三级缓存”是什么。Spring 用 singletonObjects、earlySingletonObjects、singletonFactories 三层 Map，提前暴露“刚实例化但还没注入属性”的对象，让字段注入的循环依赖能够完成装配。它解决的是“能不能启动”，而不是“设计是否合理”，所以不要把“能跑”当成“没问题”。' },
       { p: '如果确实需要延迟获取依赖，可以注入 <code>ObjectProvider&lt;PayService&gt;</code>，调用 <code>getObject()</code> 时才真正向容器要实例。这样既保留了构造器注入的整洁，又避免了启动期的强依赖。' },
 
-      { h: '1.7 把 Bean 注册进容器：两条路' },
-      { p: '第一条路是组件扫描：自己写的类加上 <code>@Component</code>、<code>@Service</code>、<code>@Repository</code>、<code>@Controller</code>，容器扫描到就注册。注解本身不带任何逻辑，它只是给扫描器看的标记。' },
-      { p: '第二条路是 <code>@Configuration</code> 加 <code>@Bean</code>，用于第三方类：连接池、RestTemplate、ObjectMapper 这些都是别人的代码，你没法给它们加注解，就在配置类里写一个返回该对象的方法，方法名默认就是 Bean 名称。' },
-      { p: '@Bean 方法本身也可以带参数，容器会按类型自动注入。例如 dataSource(DataSourceProperties props) 这种写法，参数由容器提供，不需要自己 new。这样配置类就能把“读配置”和“建对象”串起来，代码也更短。' },
-      { code: '@Configuration\npublic class DataSourceConfig {\n\n    @Bean\n    public DataSource dataSource() {\n        HikariDataSource ds = new HikariDataSource();\n        ds.setJdbcUrl("jdbc:mysql://localhost:3306/shop");\n        ds.setUsername("app");\n        ds.setPassword(System.getenv("DB_PASSWORD"));\n        ds.setMaximumPoolSize(10);\n        return ds;\n    }\n}', title: 'DataSourceConfig.java' },
-      { p: '这里有个容易踩的坑：<code>@Configuration</code> 类在运行时会被 CGLIB 增强，保证 <code>@Bean</code> 方法之间互相调用时返回同一个实例，这叫 full 模式。如果只加 <code>@Component</code> 而不加 <code>@Configuration</code>，方法之间的调用会真的执行两次，可能造出两个连接池。' },
-      { p: 'Bean 的名称默认是类名首字母小写（OrderService 对应 orderService）。需要改名时用 <code>@Service("orderSvc")</code> 或 <code>@Bean("orderSvc")</code>。当同一类型有多个 Bean 时，注入需要靠名称或 <code>@Qualifier</code> 区分，否则容器会抛 NoUniqueBeanDefinitionException。' },
-
-      { h: '1.8 作用域：一个还是很多个' },
+      { h: '1.7 作用域：一个还是很多个' },
       { p: '作用域决定容器为这个 Bean 创建几个实例、存活多久。默认是 singleton，也就是整个容器里只有一个实例，所有请求共享它。' },
       { table: { head: ['作用域', '实例数量', '典型用途', '注意点'], rows: [
         ['singleton', '容器内唯一', 'Service、Repository、配置类', '必须无状态，不能存请求数据'],
@@ -90,7 +89,7 @@
       { out: '1\n2' },
       { p: '解决方式有三种：注入 <code>ObjectProvider</code>（如上）、使用 <code>@Lookup</code> 方法让容器在每次调用时查找、或者给 prototype 加 scoped proxy。前两种最常用，第三种适合必须直接注入的场景。' },
 
-      { h: '1.9 Bean 的一生' },
+      { h: '1.8 Bean 的一生' },
       { p: '理解生命周期，才能解释“为什么初始化方法里拿不到某个 Bean”“为什么销毁方法没执行”“AOP 代理是什么时候套上去的”这类问题。' },
       { flow: ['扫描注解', '解析 BeanDefinition', '实例化', '属性注入', 'Aware 回调', 'BeanPostProcessor 前置', '@PostConstruct', '初始化完成', '使用', '@PreDestroy'] },
       { p: '实例化阶段调用构造器，此时依赖还没注入；属性注入阶段才把依赖塞进字段或调用 Setter；Aware 回调让 Bean 拿到容器相关的对象，例如 BeanNameAware、ApplicationContextAware。' },
@@ -107,7 +106,7 @@
       { out: '加载字典到本地缓存\n释放缓存资源' },
       { p: '注意：prototype Bean 的销毁回调不会自动执行，容器只负责创建，不负责追踪它的生命周期。需要清理的资源要在业务代码里显式关闭，或者改用 try-with-resources。' },
 
-      { h: '1.10 初学者最常见的六个错误' },
+      { h: '1.9 初学者最常见的六个错误' },
       { list: [
         '<b>在 Service 里 new 另一个 Service：</b>被 new 出来的对象不经过容器，依赖为 null、事务和 AOP 全部失效。',
         '<b>忘了加 @Service：</b>类没有被扫描到，注入时报 NoSuchBeanDefinitionException。',
@@ -121,7 +120,7 @@
       { p: '用 Lombok 的 @RequiredArgsConstructor 可以少写构造器：把依赖声明成 final 字段，注解会自动生成构造器，Spring 仍然走构造器注入。它只是省代码，不改变注入语义，团队里用与不用都可以，但不要在同一层混着两种风格。' },
       { p: '构造器注入还有一个限制：子类必须显式调用父类构造器，父子类依赖多时构造器会变长。遇到这种情况，优先考虑拆分职责，而不是退回字段注入。构造器长本身就是“这个类做的事太多”的信号。' },
 
-      { h: '1.11 本章小结' },
+      { h: '1.10 本章小结' },
       { list: [
         'IoC 是把创建、装配、生命周期的控制权交给容器；DI 是最常用的实现手段。',
         '容器先解析 BeanDefinition 图纸，再实例化、注入、初始化，最后放入单例池。',
@@ -130,7 +129,7 @@
         '默认 singleton 必须无状态；prototype 每次新建，容器不负责销毁。'
       ] },
 
-      { h: '1.12 常见追问' },
+      { h: '1.11 常见追问' },
       { list: [
         '<b>问：@Autowired 和 @Resource 有什么区别？</b>答：@Autowired 是 Spring 的注解，默认按类型注入，配合 @Qualifier 按名称；@Resource 是 JDK 规范，默认按名称注入，名称找不到再按类型。新项目统一用构造器注入即可，两者都不需要写。',
         '<b>问：Bean 太多会不会拖慢启动？</b>答：会。单例 Bean 在启动时全部创建，数量上千时启动时间明显上升。可以按需懒加载，但懒加载会把错误推迟到第一次调用，核心 Bean 不要懒加载。',
@@ -142,7 +141,7 @@
         '<b>问：启动慢和 Bean 太多有关吗？</b>答：有关。可以在排查时开启懒加载，或把非关键 Bean 标记为 @Lazy；但生产环境要谨慎，问题会推迟到第一次调用才暴露。'
       ] },
 
-      { h: '1.13 自测与练习' },
+      { h: '1.12 自测与练习' },
       { ol: [
         '把本章的 OrderService 改成 Setter 注入，比较两种写法在单元测试中的差异。',
         '新增一个 SmsService，用 @Configuration + @Bean 注册，并在 OrderService 中注入使用。',
@@ -158,6 +157,7 @@
   T['boot-autoconfig'] = {
     meta: '本章约 11500 字 · 建议 42 分钟 · 含 3 张表、1 张流程图与 7 段代码',
     blocks: [
+
       { h: '2.1 为什么学自动配置：从配置地狱说起' },
       { p: '在 Spring Boot 出现之前，搭一个 Web 项目要写大量 XML：配置 DispatcherServlet、配置视图解析器、配置数据源、配置事务管理器、配置 MyBatis 的 SqlSessionFactory。这些配置彼此关联，抄错一个属性名，启动时就报一堆看不懂的异常。' },
       { p: '更麻烦的是“抄配置”这件事本身没有创造力。十个项目里九个的数据源配置几乎一样，剩下那个只是因为数据库地址不同。于是 Spring Boot 提出一个思路：把常见组合的默认配置提前写好，放在框架里；只有当你的环境和默认值不一样时，才需要显式覆盖。' },
@@ -206,8 +206,6 @@
       { h: '2.5 条件装配：满足条件才生效' },
       { p: '条件注解是自动配置的灵魂。它让框架可以“猜”，但猜得有依据：类路径有什么、容器里已有什么、配置项是什么、当前是不是 Web 环境。' },
       { p: '条件注解的底层是 @Conditional 加上 Condition 接口。自己实现 matches 方法，就能写出任意判断逻辑，比如“只在特定操作系统生效”“只在某个环境变量存在时生效”。不过大多数场景用内置注解就够了，自定义条件要谨慎，因为它会让启动行为更难预测。' },
-      { p: '条件注解还有一个实用技巧：在 @ConditionalOnProperty 上写 matchIfMissing = true，让“配置缺失”等同于“开启”，适合默认就要生效的能力；写 false 则要求显式开启，适合危险操作。语义写清楚，比在文档里解释更可靠。' },
-      { p: '条件注解写多了会互相掩盖：A 不生效导致 B 的 @ConditionalOnBean 也不生效。排查时先看最外层候选为什么被跳过，再往下逐层看，不要一上来就怀疑最里层。' },
       { table: { head: ['条件注解', '判断依据', '典型场景'], rows: [
         ['@ConditionalOnClass', '类路径存在指定类', '有 HikariCP 才配置连接池'],
         ['@ConditionalOnMissingBean', '容器中没有该类型 Bean', '用户没自定义时才注册默认实现'],
@@ -216,14 +214,19 @@
         ['@ConditionalOnBean', '容器中已有该类型 Bean', '依赖某个 Bean 才能创建的衍生 Bean']
       ] } },
       { p: '其中最重要的是 <code>@ConditionalOnMissingBean</code>。它体现了自动配置的“让位”原则：框架先提供默认值，一旦用户定义了自己的 Bean，默认配置就自动退场。所以覆盖默认配置最正规的方式，不是改框架源码，而是自己声明一个同类型 Bean。' },
-      { p: '让位原则对使用者非常友好：你不需要关掉默认配置，只要自己声明一个同类型 Bean，默认实现就自动退场。代价是“我以为它生效了”这种情况变多，所以覆盖默认配置后，最好在启动日志或测试里确认一次，别让两个实现同时存在。' },
-      { p: '覆盖默认实现时，常见错误是“只覆盖了一半”：比如自定义了 DataSource，却没配置连接池参数，结果是能启动但性能很差。覆盖前先读原自动配置类做了什么，把必要的部分补齐，而不是只满足于“能跑”。' },
+      { p: '条件注解还有一个实用技巧：在 @ConditionalOnProperty 上写 matchIfMissing = true，让“配置缺失”等同于“开启”，适合默认就要生效的能力；写 false 则要求显式开启，适合危险操作。语义写清楚，比在文档里解释更可靠。' },
       { p: '条件的判断顺序也有讲究。Spring Boot 会先做类路径判断，再做 Bean 判断，最后做属性判断；配置类上的条件先于 @Bean 方法上的条件。写自定义自动配置时，把 @ConditionalOnClass 放在类上、@ConditionalOnMissingBean 放在方法上，是最常见的组合。' },
       { code: '@AutoConfiguration\n@ConditionalOnClass(PayClient.class)\n@EnableConfigurationProperties(PayProperties.class)\n@ConditionalOnProperty(prefix = "app.pay", name = "enabled",\n        havingValue = "true", matchIfMissing = true)\npublic class PayAutoConfiguration {\n\n    @Bean\n    @ConditionalOnMissingBean\n    public PayClient payClient(PayProperties props) {\n        return new PayClient(props.getAppId(), props.getSecret());\n    }\n}', title: 'PayAutoConfiguration.java' },
       { p: '这段代码可以这样读：类路径里有 PayClient 这个类，配置项 app.pay.enabled 不是 false，才进入这个配置类；容器里没有别人定义 PayClient 时，才注册这个默认实例。三个条件缺一不可，任何一个不满足，整段配置静默跳过。' },
-      { p: '“静默跳过”是自动配置的优点，也是排查困难的来源。跳过不会报错，只会表现为“Bean 不存在”。所以下一节会讲怎么让框架把判断过程打印出来。' },
 
-      { h: '2.6 Starter 到底是什么' },
+      { h: '2.6 条件装配的三个坑：互相掩盖与覆盖默认实现' },
+      { p: '条件装配最大的好处是“不满足就静默跳过”，最大的麻烦也在这里：跳过不报错，只表现为 Bean 不存在。下面三类情况最容易把人带偏。' },
+      { p: '条件注解写多了会互相掩盖：A 不生效导致 B 的 @ConditionalOnBean 也不生效。排查时先看最外层候选为什么被跳过，再往下逐层看，不要一上来就怀疑最里层。' },
+      { p: '让位原则对使用者非常友好：你不需要关掉默认配置，只要自己声明一个同类型 Bean，默认实现就自动退场。代价是“我以为它生效了”这种情况变多，所以覆盖默认配置后，最好在启动日志或测试里确认一次，别让两个实现同时存在。' },
+      { p: '覆盖默认实现时，常见错误是“只覆盖了一半”：比如自定义了 DataSource，却没配置连接池参数，结果是能启动但性能很差。覆盖前先读原自动配置类做了什么，把必要的部分补齐，而不是只满足于“能跑”。' },
+      { p: '“静默跳过”是自动配置的优点，也是排查困难的来源。跳过不会报错，只会表现为“Bean 不存在”。所以排查的第一步不是猜，而是让框架把判断过程打印出来——本章“让自动配置说人话”那一节会专门讲。' },
+
+      { h: '2.7 Starter 到底是什么' },
       { p: '很多人以为 starter 是一个有魔法的框架模块，其实它通常只是一个空的 Maven 依赖，作用是把一组相关的 jar 聚合进来。真正的逻辑在配套的 autoconfigure 模块里。' },
       { p: '以 <code>spring-boot-starter-web</code> 为例：它带来 spring-webmvc、内嵌 Tomcat、Jackson、校验 API。自动配置类检测到这些类存在，就创建 DispatcherServlet、消息转换器、内嵌容器工厂。你写的代码只有 Controller，其余全部由“依赖 + 条件”推导出来。' },
       { p: 'starter 还会带来自动配置的“默认值”，比如 Jackson 的日期格式、Tomcat 的线程数。想改默认值，优先用配置项；配置项覆盖不了，再自己定义 Bean。直接改源码或复制整个配置类，都会让升级变成噩梦。' },
@@ -239,7 +242,7 @@
       { p: '日常最常做的依赖调整是换内嵌容器：排除 spring-boot-starter-tomcat，再引入 spring-boot-starter-jetty 或 undertow。排除时要确认新容器提供了 Servlet 实现，否则启动会报缺少 ServletWebServerFactory。类似地，排除日志实现再引入 Log4j2，也要同步调整配置文件。' },
       { p: 'starter 的排除要写在依赖声明里，用 exclusion 精确到 groupId 和 artifactId。排除错了会得到 ClassNotFoundException，而不是配置错误，所以改完先跑一次完整启动，别只看编译是否通过。' },
 
-      { h: '2.7 配置从哪里来：外部化配置' },
+      { h: '2.8 配置从哪里来：外部化配置' },
       { p: 'Spring Boot 支持把配置写在 yml、properties、环境变量、命令行参数里。它按固定优先级合并：命令行参数最高，其次是 Java 系统属性，再次是操作系统环境变量，然后是 application-{profile}.yml、application.yml，最后是代码里的默认值。' },
       { code: '# application.yml\nserver:\n  port: 8080\n\nspring:\n  datasource:\n    url: jdbc:mysql://localhost:3306/shop\n    username: app\n\napp:\n  pay:\n    enabled: true\n    app-id: wx-123456\n    secret: change-me\n\n---\n# 生产环境覆盖\nspring:\n  config:\n    activate:\n      on-profile: prod\nserver:\n  port: 80', title: 'application.yml' },
       { p: '配置文件里的短横线命名（app-id）会自动绑定到 Java 字段的驼峰命名（appId），这叫宽松绑定。因此 appId、app-id、APP_ID 都能绑定成功，不需要手动转换。' },
@@ -253,7 +256,7 @@
       { p: '@Configuration 默认用 CGLIB 代理配置类，保证 @Bean 方法之间互相调用时拿到的是同一个实例。3.x 推荐显式写 proxyBeanMethods = false，减少启动开销；但关掉后，@Bean 方法内部直接调用另一个 @Bean 方法会得到新对象，不再是单例。' },
       { note: '<b>安全提醒：</b>密钥、数据库密码不要写进 application.yml 再提交到 Git。用环境变量、配置中心或启动参数注入，仓库里只保留占位符和示例值。' },
 
-      { h: '2.8 让自动配置“说人话”' },
+      { h: '2.9 让自动配置“说人话”：条件评估报告' },
       { p: '自动配置不生效时，不要靠猜。Spring Boot 提供了条件评估报告，会逐条列出每个候选配置类是否匹配、为什么不匹配。' },
       { code: '# 方式一：启动时加 --debug\njava -jar app.jar --debug\n\n# 方式二：只打开自动配置的日志\n# application.yml\n# logging:\n#   level:\n#     org.springframework.boot.autoconfigure: DEBUG\n\n# 方式三：Actuator 端点\n# GET /actuator/conditions', title: '开启条件评估报告' },
       { p: '报告分为 Positive matches 和 Negative matches 两部分。前者是生效的配置，后者是没生效的。找问题时直接搜 Negative matches 里的类名，看它给出的原因，例如“did not find required class com.mysql.cj.jdbc.Driver”。' },
@@ -262,7 +265,7 @@
       { p: '另外，报告里的 Positive matches 不一定是“你期望的那个配置”。同名能力可能被多个配置类提供，看生效的那一条的类名，才能确认到底是谁注册了 Bean。' },
       { p: 'Spring Boot 还有 FailureAnalyzer 机制：启动失败时不只抛异常，还会打印一段人话解释，例如“端口 8080 已被占用，请换端口或停止占用进程”。很多常见错误都有对应的分析器，所以启动失败时先读那段描述，往往比读堆栈更快。' },
 
-      { h: '2.9 六个高频坑' },
+      { h: '2.10 六个高频坑' },
       { list: [
         '<b>启动类不在根包：</b>扫描范围不够，业务类全部找不到；把启动类移到最外层包。',
         '<b>自己写了 @ComponentScan：</b>它会覆盖默认扫描范围，忘记加回启动类所在包就会漏扫。',
@@ -274,7 +277,7 @@
       { p: '排查顺序建议是：先看启动日志最后一段的异常，再看条件评估报告，最后才怀疑依赖版本。绝大多数“配置没生效”都能在前两步定位，不需要重装环境或换 JDK。' },
       { p: '一个真实案例：团队引入了数据库依赖，但忘了配 url，启动时报 Failed to configure a DataSource。有人以为是驱动版本问题，折腾了半天。其实日志里已经写明“未指定 url，无法配置数据源”。这类问题的共同点是：框架已经给出了结论，人却跳过了结论直接去搜异常类名。' },
 
-      { h: '2.10 本章小结' },
+      { h: '2.11 本章小结' },
       { list: [
         '@SpringBootApplication 是配置类、自动配置、组件扫描三个注解的组合。',
         '自动配置的候选清单来自 AutoConfiguration.imports，筛选依据是条件注解。',
@@ -284,7 +287,7 @@
         '不生效就用 --debug 看条件评估报告，而不是猜。'
       ] },
 
-      { h: '2.11 常见追问' },
+      { h: '2.12 常见追问' },
       { list: [
         '<b>问：自动配置类和普通 @Configuration 有什么区别？</b>答：@AutoConfiguration 本质是 @Configuration，额外增加了“必须在用户配置之后处理”的排序语义，并禁止被组件扫描直接扫到，避免重复注册。',
         '<b>问：@Configuration 里的 @Bean 方法能是 private 吗？</b>答：不能。CGLIB 代理需要可继承的方法，private 或 final 方法会导致代理失效或启动报错，写成 public 或包级可见。',
@@ -298,7 +301,7 @@
         '<b>问：配置会泄露到日志里吗？</b>答：Actuator 的 env 端点默认会对敏感键做脱敏，但自定义键不一定被识别；最稳妥的做法是密钥不落到配置文件里。'
       ] },
 
-      { h: '2.12 自测与练习' },
+      { h: '2.13 自测与练习' },
       { ol: [
         '新建一个 Spring Boot 项目，只保留启动类，用 --debug 启动，统计 Positive 和 Negative 各有多少条。',
         '自己写一个 PayProperties 并绑定配置，改一次 yml、改一次环境变量、改一次命令行参数，验证优先级。',
@@ -315,6 +318,7 @@
   T['mvc-flow'] = {
     meta: '本章约 12300 字 · 建议 42 分钟 · 含 3 张表、1 张流程图与 5 段代码',
     blocks: [
+
       { h: '3.1 为什么学请求链路' },
       { p: '写一个 Controller 只要几分钟：类上加 <code>@RestController</code>，方法上加 <code>@GetMapping</code>，return 一个对象，浏览器就能拿到 JSON。但“能用”和“知道为什么能用”之间，隔着一条完整的调度链路。' },
       { p: '把一次请求拆成时间线：浏览器发 TCP 请求，Tomcat 的 Connector 接收并解析成 HttpServletRequest，Filter 链先过一遍，然后交给 DispatcherServlet，它查映射表找到方法，用 HandlerAdapter 解析参数并调用，Service 访问数据库，返回对象被消息转换器写成 JSON，再反向经过 Filter 和 Connector 回到浏览器。任何一环出问题，现象都可能表现为“接口挂了”，但位置完全不同。' },
@@ -335,22 +339,7 @@
       { p: '在 Spring Boot 里，DispatcherServlet 由 <code>DispatcherServletAutoConfiguration</code> 自动注册，你通常看不到它的配置。如果要改映射路径或关闭它，才需要写定制代码。' },
       { p: '改 DispatcherServlet 的映射路径通常在 spring.mvc.servlet.path 里配置，比如改成 /api，此时 Controller 上的路径会拼在它后面。没有特殊需求不要改，改了容易和静态资源、健康检查路径冲突。' },
 
-      { h: '3.3 一次请求的完整旅程' },
-      { p: '下面这条链路是本章的主干。建议顺着流程走一遍，把每个组件的职责记成一句话。' },
-      { p: '记九个组件不需要背定义，记“谁在什么时候被问什么问题”就够了：HandlerMapping 回答“这个请求归谁”，HandlerAdapter 回答“怎么调用它”，ViewResolver 回答“结果渲染成什么页面”，HttpMessageConverter 回答“对象和 JSON 怎么互转”。' },
-      { flow: ['HTTP 请求', 'Filter 链', 'DispatcherServlet', 'HandlerMapping 找方法', 'HandlerAdapter 绑定参数', 'Controller 执行业务', '返回值处理', 'HttpMessageConverter 序列化', 'HTTP 响应'] },
-      { p: '第一步，请求先经过 Filter 链。Filter 属于 Servlet 规范，能改写请求、做编码设置、记录耗时、做鉴权。它工作在 DispatcherServlet 之前，此时还没有“Controller 方法”这个概念。' },
-      { p: '映射注册发生在启动阶段。如果两个方法写了同样的路径和方法类型，启动会直接报 Ambiguous mapping，而不是等到请求进来才冲突。看到这个错，去搜报错里列出的两个方法名，改掉其中一个的路径即可。' },
-      { p: '第二步，DispatcherServlet 的 <code>doDispatch</code> 方法开始工作。它先调用 HandlerMapping，根据 URL、HTTP 方法、请求头匹配到一个 Handler（通常是一个 Controller 方法加上拦截器链）。' },
-      { p: '第三步，找到能执行这个 Handler 的 HandlerAdapter，然后依次执行拦截器的 <code>preHandle</code>。第四步，HandlerAdapter 调用参数解析器，把请求里的路径变量、查询参数、请求体、请求头绑定成方法参数，再通过反射调用 Controller 方法。' },
-      { p: '参数解析由一组 HandlerMethodArgumentResolver 完成：@PathVariable、@RequestParam、@RequestBody、@ModelAttribute 各有一个解析器。你也可以实现自己的解析器，把登录用户从 Token 直接注入方法参数，这就是很多项目里“当前用户”参数的来源。' },
-      { p: '自定义参数解析器要注册到 WebMvcConfigurer 的 addArgumentResolvers 里。写之前先确认内置解析器是否已经覆盖，比如 @RequestAttribute、@SessionAttribute 都是现成的，重复造轮子容易和框架行为冲突。' },
-      { p: '第五步，Controller 返回一个对象或 <code>ResponseEntity</code>。如果方法带 <code>@ResponseBody</code>（<code>@RestController</code> 已包含），返回值交给 HttpMessageConverter 序列化成 JSON 写入响应体；否则被当成视图名，交给 ViewResolver 渲染页面。' },
-      { p: '第六步，执行拦截器的 <code>postHandle</code>，再执行 <code>afterCompletion</code>。如果过程中抛了异常，会先交给 HandlerExceptionResolver 处理，处理完仍然会走 afterCompletion 做资源清理。' },
-      { p: '如果方法返回 Callable 或 DeferredResult，DispatcherServlet 会释放 Tomcat 线程，等结果就绪再继续处理。这在调用慢下游时能显著提高吞吐，但也会让异常处理和拦截器行为变得不一样，用之前先读清楚文档。' },
-      { p: '异步请求期间，拦截器的 preHandle 和 postHandle 在不同线程执行，ThreadLocal 里的用户信息可能拿不到。需要在异步线程里重新设置上下文，或者干脆把需要的参数在进入异步前取出来。' },
-
-      { h: '3.4 九个组件，各管一段' },
+      { h: '3.3 九个组件，各管一段' },
       { p: 'DispatcherServlet 本身不干活，它把职责分给九个策略组件。初学不用背全，但要知道每个组件大概负责什么，排查时才知道该看哪里。' },
       { table: { head: ['组件', '职责', '出问题时表现为'], rows: [
         ['HandlerMapping', '根据请求找到处理方法', '404，方法根本没被匹配到'],
@@ -364,9 +353,20 @@
         ['FlashMapManager', '重定向时传递一次性数据', '重定向后提示信息丢失']
       ] } },
       { p: '在注解驱动的项目里，最常用的是前五个。HandlerMapping 的具体实现是 <code>RequestMappingHandlerMapping</code>，它在启动时扫描所有 <code>@RequestMapping</code> 方法，建立“路径 + 方法 + 条件”到处理器的映射表。' },
-      { p: '@GetMapping、@PostMapping 都是 @RequestMapping 的派生注解，等价于指定 method。用派生注解可读性更好，也能让 IDE 和文档工具正确识别方法类型。混用两种写法没问题，但一个项目里最好统一。' },
-      { p: '路径设计也有约定：资源用名词复数，动作用 HTTP 方法表达，层级不要超过三层。比如按用户查订单写成 /users/1/orders，比 /getOrdersByUserId 更符合 REST 习惯，也更容易被网关和文档工具识别。' },
-      { p: '这也解释了一个启动期现象：如果两个方法映射到完全相同的路径和方法，启动时会直接报“Ambiguous mapping”，而不是等到请求进来才出错。映射表在启动时就建好了。' },
+
+      { h: '3.4 一次请求的完整旅程' },
+      { p: '下面这条链路是本章的主干。建议顺着流程走一遍，把每个组件的职责记成一句话。' },
+      { flow: ['HTTP 请求', 'Filter 链', 'DispatcherServlet', 'HandlerMapping 找方法', 'HandlerAdapter 绑定参数', 'Controller 执行业务', '返回值处理', 'HttpMessageConverter 序列化', 'HTTP 响应'] },
+      { p: '第一步，请求先经过 Filter 链。Filter 属于 Servlet 规范，能改写请求、做编码设置、记录耗时、做鉴权。它工作在 DispatcherServlet 之前，此时还没有“Controller 方法”这个概念。' },
+      { p: '映射注册发生在启动阶段。如果两个方法写了同样的路径和方法类型，启动会直接报 Ambiguous mapping，而不是等到请求进来才冲突。看到这个错，去搜报错里列出的两个方法名，改掉其中一个的路径即可。' },
+      { p: '第二步，DispatcherServlet 的 <code>doDispatch</code> 方法开始工作。它先调用 HandlerMapping，根据 URL、HTTP 方法、请求头匹配到一个 Handler（通常是一个 Controller 方法加上拦截器链）。' },
+      { p: '第三步，找到能执行这个 Handler 的 HandlerAdapter，然后依次执行拦截器的 <code>preHandle</code>。第四步，HandlerAdapter 调用参数解析器，把请求里的路径变量、查询参数、请求体、请求头绑定成方法参数，再通过反射调用 Controller 方法。' },
+      { p: '参数解析由一组 HandlerMethodArgumentResolver 完成：@PathVariable、@RequestParam、@RequestBody、@ModelAttribute 各有一个解析器。你也可以实现自己的解析器，把登录用户从 Token 直接注入方法参数，这就是很多项目里“当前用户”参数的来源。' },
+      { p: '自定义参数解析器要注册到 WebMvcConfigurer 的 addArgumentResolvers 里。写之前先确认内置解析器是否已经覆盖，比如 @RequestAttribute、@SessionAttribute 都是现成的，重复造轮子容易和框架行为冲突。' },
+      { p: '第五步，Controller 返回一个对象或 <code>ResponseEntity</code>。如果方法带 <code>@ResponseBody</code>（<code>@RestController</code> 已包含），返回值交给 HttpMessageConverter 序列化成 JSON 写入响应体；否则被当成视图名，交给 ViewResolver 渲染页面。' },
+      { p: '第六步，执行拦截器的 <code>postHandle</code>，再执行 <code>afterCompletion</code>。如果过程中抛了异常，会先交给 HandlerExceptionResolver 处理，处理完仍然会走 afterCompletion 做资源清理。' },
+      { p: '如果方法返回 Callable 或 DeferredResult，DispatcherServlet 会释放 Tomcat 线程，等结果就绪再继续处理。这在调用慢下游时能显著提高吞吐，但也会让异常处理和拦截器行为变得不一样，用之前先读清楚文档。' },
+      { p: '异步请求期间，拦截器的 preHandle 和 postHandle 在不同线程执行，ThreadLocal 里的用户信息可能拿不到。需要在异步线程里重新设置上下文，或者干脆把需要的参数在进入异步前取出来。' },
 
       { h: '3.5 第一个 Controller' },
       { p: '下面这个类覆盖了最常见的四种操作：按 id 查询、按条件分页查询、创建、更新。注意类上的 <code>@RestController</code> 和 <code>@RequestMapping</code> 前缀。' },
@@ -377,6 +377,8 @@
       { p: '同一个方法既想返回页面又想返回 JSON，通常说明职责没拆开。页面请求和接口请求的缓存策略、错误格式、鉴权方式都不同，混在一个方法里，最后往往两边都做不好。' },
       { p: '判断标准可以更简单：这个接口会不会被浏览器直接打开？会，就考虑页面；只在代码或前端里调用，就只返回数据。别为了“省一个方法”把两种消费者塞进同一条链路。' },
       { p: '类上的 <code>@RequestMapping("/api/users")</code> 是前缀，方法上的路径会拼在它后面。因此 <code>GET /api/users/1</code> 命中 get 方法，<code>GET /api/users?page=0</code> 命中 list 方法。' },
+      { p: '@GetMapping、@PostMapping 都是 @RequestMapping 的派生注解，等价于指定 method。用派生注解可读性更好，也能让 IDE 和文档工具正确识别方法类型。混用两种写法没问题，但一个项目里最好统一。' },
+      { p: '路径设计也有约定：资源用名词复数，动作用 HTTP 方法表达，层级不要超过三层。比如按用户查订单写成 /users/1/orders，比 /getOrdersByUserId 更符合 REST 习惯，也更容易被网关和文档工具识别。' },
 
       { h: '3.6 参数从哪来：四类注解' },
       { p: 'HTTP 请求里的信息分布在四个位置：URL 路径、查询字符串、请求体、请求头。Spring MVC 用不同的注解把它们绑定到方法参数，用错位置就会得到 null 或 400。' },
@@ -489,6 +491,7 @@
   T['mybatis-jpa'] = {
     meta: '本章约 10800 字 · 建议 45 分钟 · 含 2 张表、1 张流程图与 8 段代码',
     blocks: [
+
       { h: '4.1 为什么学数据访问层' },
       { p: '几乎所有业务系统都绕不开数据库。登录要查用户，下单要写订单，报表要聚合统计。Java 访问数据库的标准接口是 JDBC，但直接手写 JDBC 代码非常啰嗦：拿连接、拼 SQL、设参数、执行、遍历结果集、处理异常、关闭资源，七步里有五步是重复劳动。' },
       { p: 'Spring 的 JdbcTemplate 把七步压缩成三步：定义 SQL、传参数、取结果。连接获取、异常转换、资源关闭都由模板完成。它不是 ORM，不理解对象和表的映射，但足以应付小工具和报表场景，也是理解 MyBatis 底层的好起点。' },
@@ -541,8 +544,7 @@
       { p: 'JPA 是规范，Hibernate 是最常用的实现。它的思路与 MyBatis 相反：你定义实体类，用注解描述它和表的对应关系；框架根据实体状态自动生成 SQL，你不再手写增删改查。' },
       { p: 'JPA 的实体有四种状态：新建、托管、游离、删除。只有托管状态的对象才会被脏检查跟踪，事务提交时自动生成 UPDATE。把实体查出事务后继续改，再 save，看起来也能更新，但那是 merge 的语义，和脏检查不是一回事。' },
       { code: '@Entity\n@Table(name = "users")\npublic class User {\n\n    @Id\n    @GeneratedValue(strategy = GenerationType.IDENTITY)\n    private Long id;\n\n    @Column(nullable = false, length = 20)\n    private String name;\n\n    private Integer age;\n\n    // JPA 要求无参构造器\n    protected User() {}\n\n    public User(String name, Integer age) {\n        this.name = name;\n        this.age = age;\n    }\n\n    // getter / setter 省略\n}', title: 'User.java' },
-      { p: '实体类必须有无参构造器（可以是 protected），因为框架要通过反射创建实例；字段不能是 final；主键要标注生成策略。这些约束经常被忽略，表现是启动或保存时报“no default constructor”。' },
-      { p: '实体必须有可访问的无参构造器，因为框架要靠反射创建实例；同时不要用 Lombok 的 @Data 生成 equals 和 hashCode，它会把所有字段算进去，导致实体在集合里行为异常。用业务主键或 id 实现，或者干脆不重写。' },
+      { p: '实体类必须有无参构造器（可以是 protected），因为框架要通过反射创建实例；字段不能是 final；主键要标注生成策略。这些约束经常被忽略，表现是启动或保存时报“no default constructor”。另外不要用 Lombok 的 <code>@Data</code> 生成 equals 和 hashCode，它会把所有字段算进去，实体放进集合或参与比对时行为会异常；需要时用业务主键或 id 实现，或者干脆不重写。' },
       { code: 'public interface UserRepository extends JpaRepository<User, Long> {\n\n    // 方法名派生查询：WHERE name = ?\n    List<User> findByName(String name);\n\n    // WHERE age > ? ORDER BY age DESC\n    List<User> findByAgeGreaterThanOrderByAgeDesc(int age);\n\n    // 复杂查询用 JPQL\n    @Query("SELECT u FROM User u WHERE u.name LIKE %:kw%")\n    List<User> search(@Param("kw") String keyword);\n\n    // 原生 SQL\n    @Query(value = "SELECT * FROM users WHERE age > ?1", nativeQuery = true)\n    List<User> findOlderThan(int age);\n}', title: 'UserRepository.java' },
       { out: 'Hibernate: select u1_0.id,u1_0.age,u1_0.name from users u1_0 where u1_0.id=?\nUser{id=1, name=张三, age=28}' },
       { p: '继承 <code>JpaRepository</code> 就自带了 save、findById、findAll、delete、count 等方法，连实现都不用写。方法名派生查询支持 And、Or、GreaterThan、Like、OrderBy 等关键字，简单查询几乎零成本。' },
@@ -553,12 +555,10 @@
       { h: '4.7 持久化上下文、懒加载与 N+1' },
       { p: 'JPA 有一个 MyBatis 没有的概念：持久化上下文（Persistence Context）。在同一个事务里，通过 find 查出的实体被缓存起来，第二次 find 不会再发 SQL；修改实体字段后不需要调用 update，事务提交时框架会自动比对快照并生成 UPDATE，这叫脏检查。' },
       { p: 'MyBatis 的一级缓存默认开启，作用域是同一个 SqlSession；Spring 集成后，一次事务内多次相同查询可能只发一次 SQL。二级缓存跨 Session，但需要手动开启并处理失效，分布式环境下很容易读到旧数据，生产环境慎用。' },
-      { p: '这也带来一个陷阱：实体在事务外变成游离态，此时访问未加载的懒加载关联会抛 LazyInitializationException。常见的解决方式是在事务内完成数据组装，或用 DTO 投影，而不是把实体直接丢给前端。' },
-      { p: '懒加载返回的是代理对象，只有在会话打开时才能触发查询。事务结束后再访问关联属性，就会抛 LazyInitializationException。解决办法不是把会话开得更久，而是在需要的地方用 JOIN FETCH 或 EntityGraph 一次取回。' },
+      { p: '这也带来一个陷阱：实体在事务外变成游离态，此时访问未加载的懒加载关联会抛 LazyInitializationException。解决办法不是把会话开得更久，而是在事务内完成数据组装、用 DTO 投影（不要把实体直接丢给前端），或者在需要的地方用 <code>JOIN FETCH</code> / <code>EntityGraph</code> 一次取回关联。' },
       { p: '另一个高频性能问题是 N+1 查询：查出一百个订单，再循环访问每个订单的用户，JPA 会额外发一百条 SQL。用 <code>@EntityGraph</code> 或 JPQL 的 <code>JOIN FETCH</code> 可以一次取回关联数据。' },
       { code: '// N+1：每次循环都查一次用户\nList<Order> orders = orderRepository.findAll();\nfor (Order o : orders) {\n    System.out.println(o.getUser().getName());\n}\n\n// 优化：一次 JOIN FETCH 取回\n@Query("SELECT o FROM Order o JOIN FETCH o.user")\nList<Order> findAllWithUser();', title: 'N+1 与 JOIN FETCH' },
       { p: 'MyBatis 没有这个问题，因为关联数据要不要查、怎么查，完全由你的 SQL 决定。这也是很多团队在复杂查询场景偏爱 MyBatis 的原因：性能表现更可预测。' },
-      { p: 'MyBatis 分页常用 PageHelper 或 MyBatis-Plus 的分页插件，原理是拦截 SQL 自动加 count 和 limit。JPA 则用 Pageable，返回 Page 对象。分页要注意 count 查询可能很慢，大表上先优化 count 或改用“是否有下一页”的判断。' },
 
       { h: '4.8 MyBatis 与 JPA 对比' },
       { table: { head: ['维度', 'MyBatis', 'JPA / Hibernate'], rows: [
@@ -599,6 +599,7 @@
       { p: '无论用哪种框架，底层都是 JDBC 连接。连接的创建成本很高，所以必须用连接池。Spring Boot 默认使用 HikariCP，核心参数是最大连接数、最小空闲连接、连接超时。最大连接数不是越大越好，超过数据库承载能力反而会拖慢整体。' },
       { p: '连接池的核心参数是最大连接数、最小空闲、获取超时、空闲检测。最大连接数要按数据库上限和实例数倒推，不是拍脑袋写 100。连接泄漏的表现是“跑一段时间后全部超时”，要配合泄漏检测排查。' },
       { p: 'MyBatis 分页常用 PageHelper 插件，它会拦截 SQL 自动加 LIMIT 和 count 查询；JPA 用 <code>Pageable</code> 参数，返回 <code>Page&lt;T&gt;</code> 对象，自带总数和总页数。两者都要注意深分页问题：limit 100000, 20 会扫描大量行，应该改用游标或基于 id 的范围查询。' },
+      { p: 'JPA 这边用 <code>Pageable</code> 参数，返回 <code>Page</code> 对象，Spring Data 自动拼 limit 和 count。分页要注意 count 查询可能很慢，大表上先优化 count 或改用“是否有下一页”的判断。' },
       { p: '深分页（比如跳过十万行再取二十行）会扫描前十万行再丢弃，越翻越慢。优化方式是按 id 游标（where id > lastId order by id limit 20），或者先查主键再回表。业务上限制最大页数也是常见做法。' },
       { p: '批量插入时，逐条 insert 会产生大量网络往返。MyBatis 用 foreach 拼多值 INSERT，JPA 开启 <code>hibernate.jdbc.batch_size</code> 并避免逐条 flush。批量操作要控制单批大小，几百到一千条比较稳妥。' },
       { p: '批量操作要和事务配合：一个事务里插入一万条，锁和 undo 日志都会膨胀。分批提交、每批几百条，既控制内存也缩短锁持有时间。批量和事务不是越多越好，要看数据库的承受能力。' },
@@ -645,6 +646,7 @@
   T['deploy'] = {
     meta: '本章约 10000 字 · 建议 45 分钟 · 含 3 张表、1 张流程图与 7 段代码',
     blocks: [
+
       { h: '5.1 为什么学部署：代码写完只是开始' },
       { p: '在本地跑通一个项目，和在服务器上稳定运行一个项目，是两件难度完全不同的事。本地只有你一个用户、一个进程、一份配置；服务器上有并发、有网络抖动、有磁盘写满、有内存限制，还有随时可能出现的线上告警。' },
       { p: '“在我机器上是好的”是最典型的部署问题：开发机装了三套 JDK、本地 MySQL 版本和测试环境不同、系统时区是北京时间而服务器是 UTC。这些问题不会在代码评审里暴露，只会在上线那一刻集中出现。把运行环境标准化，本质上是把这类不确定性提前消灭。' },
@@ -730,7 +732,16 @@
       { p: 'compose 里的网络要注意服务名解析：应用配置里的数据库地址写服务名 mysql，而不是 localhost。数据用命名卷持久化，否则容器删了数据也没了。环境变量可以放在 .env 文件里，但不要提交到仓库。' },
       { p: '<code>depends_on</code> 配合 <code>condition: service_healthy</code> 能保证数据库真正可用后再启动应用，否则应用先启动、连不上库直接退出，是本地部署最常见的一类失败。' },
 
-      { h: '5.9 一次完整的发布流程' },
+      { h: '5.9 可观测性：日志、指标、健康检查' },
+      { p: '线上出问题时，你需要三样东西：日志告诉你“发生了什么”，指标告诉你“影响多大”，健康检查告诉运维“这个实例还能不能接流量”。' },
+      { code: '# application.yml\nmanagement:\n  endpoints:\n    web:\n      exposure:\n        include: health,info,metrics,prometheus\n  endpoint:\n    health:\n      show-details: when-authorized\n      probes:\n        enabled: true\n  health:\n    livenessstate:\n      enabled: true\n    readinessstate:\n      enabled: true', title: 'Actuator 配置' },
+      { p: 'Actuator 的 health 端点会聚合数据库、磁盘、Redis 等检查项。liveness 探针判断进程是否需要重启，readiness 探针判断是否可以接收流量。两者分开，才能做到“启动慢但不重启”和“依赖挂了先摘流量”。' },
+      { p: '探针配置要留足启动时间：initialDelaySeconds 太短会让慢启动应用被反复重启，failureThreshold 太小会被一次抖动误杀。就绪探针检查依赖（数据库、下游），存活探针只检查进程本身，两者职责不要混。' },
+      { p: '指标方面，Micrometer 把 JVM 内存、GC、HTTP 请求耗时、连接池状态暴露成统一格式，再接 Prometheus 和 Grafana 做面板与告警。日志量大时，用 Filebeat 或 Fluent Bit 采集到 Elasticsearch，按 traceId 串起一次请求的全部日志。' },
+      { p: 'traceId 要在入口生成：网关或 Filter 里取请求头，没有就生成一个，放进 MDC，响应头也带回去。这样用户报障时提供一个 id，就能把整条链路的日志捞出来，不用靠时间范围大海捞针。' },
+      { p: 'Actuator 默认只暴露 health 和 info，开启其他端点时要配合鉴权或只在内网端口暴露。生产环境至少把 env、heapdump、threaddump 保护起来，它们能读到配置甚至导出内存快照，泄露的后果比想象中严重。' },
+
+      { h: '5.10 一次完整的发布流程' },
       { p: '真正的上线不是“把 jar 传上去”这么简单，而是一条可重复、可回滚的流水线。下面这条是大多数团队的最小实践。' },
       { flow: ['提交代码', 'CI 构建与测试', '打出 jar', '构建镜像', '推送镜像仓库', '部署到目标环境', '健康检查', '观察日志与指标', '必要时回滚'] },
       { p: '提交代码后，CI 拉取代码、跑单元测试、执行打包。测试不通过就不产出制品，这是第一道闸门；跳过测试直接打包，等于把风险推迟到线上。' },
@@ -738,16 +749,6 @@
       { p: '部署完成后先做健康检查：进程是否活着、端口是否监听、<code>/actuator/health</code> 是否返回 UP、关键接口能否跑通。健康检查通过再把流量切过来，失败就立即回滚到上一个版本。' },
       { p: '流量切换有几种做法：蓝绿部署准备两套环境，切 DNS 或网关权重；灰度发布先放 1% 流量，观察错误率和耗时再逐步放大；滚动发布则逐个替换实例。无论哪种，回滚都必须是“一条命令”，而不是重新走一遍发布流程。' },
       { p: '最后是观察期。发布后的前十分钟最容易出问题，重点看错误日志、接口耗时、数据库连接数、GC 频率。没有问题再离开，不要部署完就关电脑。' },
-
-      { h: '5.10 可观测性：日志、指标、健康检查' },
-      { p: '线上出问题时，你需要三样东西：日志告诉你“发生了什么”，指标告诉你“影响多大”，健康检查告诉运维“这个实例还能不能接流量”。' },
-      { code: '# application.yml\nmanagement:\n  endpoints:\n    web:\n      exposure:\n        include: health,info,metrics,prometheus\n  endpoint:\n    health:\n      show-details: when-authorized\n      probes:\n        enabled: true\n  health:\n    livenessstate:\n      enabled: true\n    readinessstate:\n      enabled: true', title: 'Actuator 配置' },
-      { p: 'Actuator 的 health 端点会聚合数据库、磁盘、Redis 等检查项。liveness 探针判断进程是否需要重启，readiness 探针判断是否可以接收流量。两者分开，才能做到“启动慢但不重启”和“依赖挂了先摘流量”。' },
-      { p: '探针配置要留足启动时间：initialDelaySeconds 太短会让慢启动应用被反复重启，failureThreshold 太小会被一次抖动误杀。就绪探针检查依赖（数据库、下游），存活探针只检查进程本身，两者职责不要混。' },
-      { p: '指标方面，Micrometer 把 JVM 内存、GC、HTTP 请求耗时、连接池状态暴露成统一格式，再接 Prometheus 和 Grafana 做面板与告警。日志量大时，用 Filebeat 或 Fluent Bit 采集到 Elasticsearch，按 traceId 串起一次请求的全部日志。' },
-      { p: 'traceId 要在入口生成：网关或 Filter 里取请求头，没有就生成一个，放进 MDC，响应头也带回去。这样用户报障时提供一个 id，就能把整条链路的日志捞出来，不用靠时间范围大海捞针。' },
-      { p: '安全上要特别注意：Actuator 端点默认只暴露 health 和 info，不要为了图方便把 env、heapdump 全部开放到公网，这些端点能读到配置甚至导出内存。' },
-      { p: 'Actuator 默认只暴露 health，开启其他端点时要配合鉴权或只在内网端口暴露。生产环境至少把 env、heapdump、threaddump 保护起来，它们能读到配置甚至导出内存快照，泄露的后果比想象中严重。' },
 
       { h: '5.11 上线后最常见的六个问题' },
       { table: { head: ['现象', '常见原因', '排查方向'], rows: [
@@ -760,8 +761,7 @@
       ] } },
       { p: '排查顺序建议固定下来：先看进程在不在，再看端口通不通，再看日志有没有异常，最后看资源和依赖。按这个顺序走，比一上来就重启服务有效得多。' },
       { p: '告警阈值要基于历史数据设定，而不是拍脑袋。CPU 80% 持续五分钟、错误率超过 1%、P99 超过 500 毫秒，这些阈值要随业务变化定期校准。告警太多会让人麻木，太少又会漏掉真问题。' },
-      { p: '另外养成两个习惯：任何一次发布都记录版本号和变更内容；任何一次线上问题都留下复盘记录。部署能力不是靠一次成功建立的，而是靠每次失败后补上的检查项积累起来的。' },
-      { p: '每次线上问题处理完，都应该留下三样东西：一条可检索的日志、一个监控指标、一条写入发布检查清单的规则。下次同类问题发生时，至少能更快发现、更快定位。这比写一份没人看的复盘文档有用得多。' },
+      { p: '部署能力不是靠一次成功建立的，而是靠每次失败后补上的检查项积累起来的。所以每次发布都记录版本号和变更内容；每次线上问题处理完，都应该留下三样东西：一条可检索的日志、一个监控指标、一条写入发布检查清单的规则。下次同类问题发生时，至少能更快发现、更快定位。这比写一份没人看的复盘文档有用得多。' },
 
       { h: '5.12 本章小结' },
       { list: [
