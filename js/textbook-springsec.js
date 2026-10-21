@@ -162,15 +162,19 @@
       ] },
 
       { h: '1.14 常见追问' },
-      { p: '<b>问：AOP 和装饰器模式什么关系？</b>装饰器是手动包装，每个类写一个装饰类；AOP 是框架按切点自动生成包装。思想同源，工程代价不同。' },
-      { p: '<b>问：为什么 Spring AOP 只支持方法级连接点？</b>因为它基于代理，而代理能插入逻辑的最小单位就是方法调用。想拦字段访问或构造器，需要 AspectJ 的织入能力。' },
-      { p: '<b>问：切面影响性能吗？</b>每次调用多一次转发和通知执行，量级是纳秒到微秒。真正拖慢的通常不是代理，而是通知里做了数据库查询或同步日志。' },
+      { list: [
+        '<b>问：AOP 和装饰器模式什么关系？</b><br>答：思想同源，代价不同。装饰器是手动包装：想给一个接口加日志，就写一个装饰类持有原对象，在调用前后插代码，客户端要改成用装饰类。AOP 把「哪些方法要插什么逻辑」写成切点和通知，由框架在运行期统一生成代理，业务类完全不知道自己被包了一层，新增一个切面不用改任何调用点。手动包装可读性最好、调试最直观，切面胜在横切逻辑集中、不会漏掉某个类，适合日志、事务、鉴权这种到处都要的东西。',
+        '<b>问：为什么 Spring AOP 只支持方法级连接点？</b><br>答：因为它基于代理。代理能拦截的最小单位就是一次方法调用，字段读写、构造器执行、静态初始化这些根本没有可以让代理插入的入口。想拦字段访问或构造器，只能靠 AspectJ 在编译期或类加载期做字节码织入。这也是 Spring 文档把「方法执行」列为唯一受支持连接点的原因，写切面时把切点定义在方法签名上就够了，别指望能监听对象内部的状态变化。',
+        '<b>问：切面影响性能吗？</b><br>答：代理本身的成本很小，一次调用多一次转发和若干通知执行，量级在纳秒到微秒，业务方法里只要有一次数据库访问就被完全淹没。真正拖慢系统的是通知里做的事：在环绕通知里查库、打同步日志、序列化大对象，或者把本来可以批量执行的逻辑拆成逐条调用。要做的是给切面加条件，比如只对慢请求记录、按包名收窄切点，并用压测确认切面带来的增量，而不是凭感觉砍掉切面。',
+        '<b>问：多个切面作用在同一方法上，谁先执行？</b><br>答：默认顺序不确定，必须显式指定。实现 <code>Ordered</code> 接口或加 <code>@Order</code>，数值小的在外层、先进后出：进入时从小到大，退出时从大到小，像套娃一样。这一点对事务很关键：事务切面必须包住业务和日志，否则日志在事务外提交、回滚时就留下了误导性的记录。生产上给每个切面固定一个编号区间，别依赖类名或声明顺序。',
+        '<b>问：切面里能改参数和返回值吗？</b><br>答：能，但要非常克制。环绕通知拿到的 <code>ProceedingJoinPoint</code> 可以传新参数数组给 <code>proceed</code>，也可以丢弃原始返回值换成自己的，甚至不调 proceed 直接短路。这正是权限切面能「不满足就抛异常」的原理。风险在于修改是隐式的：业务方看到的是被改过的参数和返回值，排错时完全想不到。除了鉴权、脱敏、统一包装这类明确意图，不要在切面里悄悄改数据。'
+      ] },
 
       { h: '1.15 自测与练习' },
       { ol: [
-        '写一个切面统计 Service 方法耗时，超过 500 毫秒才打印，并说明切点为什么这样写。',
-        '用手写 JDK 动态代理实现权限检查：不是管理员就直接抛异常，不调用目标方法。',
-        '构造自调用失效的例子，用日志证明注解没生效，再用“拆到另一个 Bean”修复；并解释 <code>@Transactional</code> 方法 catch 住异常后为什么仍会提交。'
+        '写一个切面统计 Service 方法耗时，超过 500 毫秒才打印，并说明切点为什么这样写。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：调用快方法时控制台没有输出，调用一个故意 sleep 800 毫秒的方法时打出一行「方法名 800ms」，日志里带类名与方法名。<b>为什么</b>：耗时只能在方法执行前后各记一次时间戳，所以必须用环绕通知；阈值判断放在通知内部而不是切点表达式里，切点只管「拦哪些方法」，条件判断交给出逻辑。<b>要点</b>：<code>@Around("execution(* com.demo.service..*.*(..))")</code>，取 <code>System.nanoTime()</code> 差值换成毫秒，<code>finally</code> 里也要记录异常路径；切点收窄到 service 包，避免拦到 controller 重复计时。</div></details>',
+        '用手写 JDK 动态代理实现权限检查：不是管理员就直接抛异常，不调用目标方法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：管理员身份调用时目标方法正常执行并返回结果；普通用户调用时立刻抛出自定义的权限异常，目标方法里的打印语句一次都没出现。<b>为什么</b>：代理在 <code>invoke</code> 里先判断身份，不满足条件就不调 <code>method.invoke(target, args)</code>，目标方法根本没有执行的机会，这正是「短路」的含义。<b>要点</b>：<code>Proxy.newProxyInstance(loader, target.getClass().getInterfaces(), handler)</code>；JDK 代理要求目标实现接口，没有接口要用 CGLIB；异常类型要能被全局异常处理器识别，返回统一错误码。</div></details>',
+        '构造自调用失效的例子，用日志证明注解没生效，再用「拆到另一个 Bean」修复；并解释 <code>@Transactional</code> 方法 catch 住异常后为什么仍会提交。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同类内部直接调 <code>this.b()</code> 时，b 上的日志切面和事务注解都不生效，异常发生后数据已落库；把 b 拆到另一个 Bean 注入后，日志出现、异常时数据回滚。<b>为什么</b>：调用走的是 this 引用而不是代理对象，代理拿不到这次调用，自然没有通知；<code>@Transactional</code> 的提交由代理在方法正常返回后触发，catch 住异常等于告诉代理「一切正常」。<b>要点</b>：修复用拆 Bean、注入自身代理或 <code>AopContext.currentProxy()</code>；要回滚就在 catch 里 <code>TransactionAspectSupport.currentTransactionStatus().setRollbackOnly()</code> 或重新抛出。</div></details>'
       ] }
     ]
   };
@@ -331,16 +335,20 @@
       ] },
 
       { h: '2.15 常见追问' },
-      { p: '<b>问：认证和授权哪个先？</b>先认证再授权。没有身份谈不上权限：未登录访问受限接口返回 401，登录了但角色不够返回 403。' },
-      { p: '<b>问：关掉 CSRF 会不会带来越权？</b>不会，也不会减少越权。CSRF 防的是“浏览器自动带上 Cookie 发请求”，越权防的是“这个人能不能动这条数据”。关掉 CSRF 之后，路径规则、方法级注解和数据级校验一条都不能少。' },
-      { p: '<b>问：路径规则和方法级注解，哪个更可靠？</b>两个都要。路径规则按 URL 一刀切，通配符写错就整片放开；注解贴着代码，但漏写没人兜。兜底写拒绝、两层都留、数据级再判一次，才是可维护的组合。' },
+      { list: [
+        '<b>问：认证和授权哪个先？</b><br>答：先认证再授权，顺序不能反。认证回答「你是谁」，授权回答「你能做什么」，没有身份就无从判断权限。落到响应码上：未登录访问受限接口返回 401，客户端据此引导去登录；登录了但角色不够返回 403，客户端不该重复登录。把两者混在一个 403 里，前端只能瞎猜，用户也会被反复弹登录框。过滤器链里认证过滤器排在授权之前，就是要保证进入授权判断时 SecurityContext 里已经有身份。',
+        '<b>问：关掉 CSRF 会不会带来越权？</b><br>答：不会，也不会减少越权，因为它俩防的根本不是同一件事。CSRF 防的是「浏览器自动带上 Cookie 帮别人发请求」，越权防的是「这个人能不能动这条数据」。关掉 CSRF 之后，路径规则、方法级注解、数据级归属校验一条都不能少，尤其数据级校验：只按主键查而不带 user_id 条件，越权照样发生。前后端分离用 Token 放请求头时关掉 CSRF 是合理的，因为它本来就不是靠 Cookie 认证的。',
+        '<b>问：路径规则和方法级注解，哪个更可靠？</b><br>答：两个都要，谁也不能单独靠。路径规则按 URL 一刀切，通配符写错一位就可能整片放开，而且新增接口容易忘记加规则；注解贴着代码，改接口时不容易漏，但漏写就没人兜底，默认还是放行。可维护的组合是：兜底规则写 <code>anyRequest().authenticated()</code>，路径规则管粗粒度分区，注解管具体方法的角色，数据级再判一次归属。任何一层单独存在都有盲区。',
+        '<b>问：为什么密码要用 BCrypt 而不是 MD5 加盐？</b><br>答：差别在「验证一次要多久」。MD5 这类通用哈希设计目标是快，加盐只能挡住彩虹表，挡不住离线暴力破解，一张显卡每秒能算几十亿次。BCrypt 故意把成本做高，内置盐值并带一个强度因子，验证一次要几十毫秒，攻击者能试的次数被压到极低，而正常登录完全感受不到。强度因子还要随硬件提升而调高，这样老库在下次登录时也能平滑升级。',
+        '<b>问：JWT 登出真的做不到吗？</b><br>答：严格意义上做不到即时失效，因为它无状态、签发后服务端不再持有任何记录。最常用的组合是短 TTL 加 refresh token：访问令牌只活十几分钟，登出时删掉 refresh token，之后无法再续期，代价是登出后的十几分钟内旧令牌仍可用。确实需要「立即失效」时才上更重的机制：把 jti 塞进 Redis 黑名单直到过期，代价是每次请求多一次查询，等于部分放弃了无状态；或者给用户维护一个 token 版本号，改密码、强制下线时递增，旧版本一律拒绝。这几种都是工程惯例，没有唯一正确答案，按业务对失效时效与额外开销的容忍度取舍。'
+      ] },
 
       { h: '2.16 自测与练习' },
       { ol: [
-        '配置 <code>SecurityFilterChain</code>：<code>/public/**</code> 放行，<code>/admin/**</code> 需要管理员，其余需登录，并说明顺序理由。',
-        '实现 <code>UserDetailsService</code>，把数据库中的密文密码交给 Spring 校验，解释为什么不能在这里再加密。',
-        '编写 JWT 签发与解析工具，处理过期与签名错误，说明无效 token 为什么不直接抛全局。',
-        '给接口同时加路径规则和 <code>@PreAuthorize</code>，构造 401 与 403 并写出排查步骤。'
+        '配置 <code>SecurityFilterChain</code>：<code>/public/**</code> 放行，<code>/admin/**</code> 需要管理员，其余需登录，并说明顺序理由。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：匿名访问 <code>/public/x</code> 返回 200；匿名访问 <code>/admin/x</code> 返回 401，普通用户返回 403；匿名访问其他接口返回 401，登录后正常。<b>为什么</b>：规则按声明顺序匹配，一旦命中后面不再判断，所以最具体的放行要写在前面，兜底的 <code>anyRequest()</code> 必须最后。<b>要点</b>：<code>http.authorizeHttpRequests(a -&gt; a.requestMatchers("/public/**").permitAll().requestMatchers("/admin/**").hasRole("ADMIN").anyRequest().authenticated())</code>；记得 <code>hasRole</code> 会自动补 <code>ROLE_</code> 前缀，权限库里不要重复写。</div></details>',
+        '实现 <code>UserDetailsService</code>，把数据库中的密文密码交给 Spring 校验，解释为什么不能在这里再加密。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：正确密码登录成功，错误密码返回 401；如果一时手快在 <code>loadUserByUsername</code> 里对密码又做了 <code>encode</code>，正确密码也会登录失败。<b>为什么</b>：BCrypt 校验是把用户输入用库里的盐重新算一遍再比对，所以必须传库里原封不动的密文；再加密一次等于把密文当明文，永远匹配不上。<b>要点</b>：<code>return new org.springframework.security.core.userdetails.User(username, user.getPassword(), authorities)</code>；密码列用 <code>{bcrypt}</code> 前缀可让 DelegatingPasswordEncoder 自动识别；登录失败信息统一，别暴露「用户名不存在」。</div></details>',
+        '编写 JWT 签发与解析工具，处理过期与签名错误，说明无效 token 为什么不直接抛全局。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：签发后能解析出 subject 与过期时间；把有效期设为负数后解析抛 <code>ExpiredJwtException</code>；换一把密钥解析抛 <code>SignatureException</code>；两种情况最终都返回 401 且响应体格式与其他接口一致。<b>为什么</b>：过滤器里抛异常会跳过 Spring MVC 的异常处理，直接变成 500 或容器错误页，客户端无法区分「没登录」和「服务端故障」。<b>要点</b>：<code>Jwts.parser().verifyWith(key).build().parseSignedClaims(token)</code>；在过滤器里捕获异常后清空上下文并交给 <code>AuthenticationEntryPoint</code>；密钥从配置中心读取，别硬编码。</div></details>',
+        '给接口同时加路径规则和 <code>@PreAuthorize</code>，构造 401 与 403 并写出排查步骤。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不带 token 请求返回 401 且响应头没有 WWW-Authenticate 之外的线索；带普通用户 token 返回 403，日志里能看到权限不足的拒绝记录；两者响应体里的 code 不同。<b>为什么</b>：401 表示身份缺失或无效，在认证过滤器阶段就结束；403 表示身份有效但权限不足，发生在授权阶段，说明认证已经通过。<b>要点</b>：排查按顺序看——token 是否带、是否过期、解析出的权限列表、路径规则是否被更早的规则命中、<code>@EnableMethodSecurity</code> 是否开启；开启 debug 日志 <code>logging.level.org.springframework.security=DEBUG</code> 能直接看到拒绝原因。</div></details>'
       ] }
     ]
   };

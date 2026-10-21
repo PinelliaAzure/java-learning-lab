@@ -126,9 +126,21 @@
       { h: '本章小结' },
       { list: ['print 不换行，println 换行，printf 按格式输出。', 'nextLine 读整行，next 读单词，nextInt 读整数。', 'nextInt 后接 nextLine 要先清换行。', '输入必须校验，异常要捕获并给用户明确提示。'] },
       { h: '常见追问' },
-      { list: ['Scanner 需要 import 吗？需要，java.util.Scanner。', '多个 Scanner 能读同一个 System.in 吗？不建议，缓冲区会互相抢。', 'nextLine 会读空格吗？会，整行包括空格；next 遇空格就停。', '输入中文会乱码吗？控制台编码与源文件编码不一致时可能乱码，统一 UTF-8。', 'Scanner 关闭后还能再 new 一个吗？可以，但关闭 System.in 后可能影响其他读取。'] },
+      { list: [
+        '<b>问：Scanner 一定要 import 吗？</b><br>答：要，Scanner 在 java.util 包里，文件开头必须写 <code>import java.util.Scanner;</code>，不写就编译报「找不到符号」。它是唯一一个几乎每段入门代码都要用的包外类，所以别为了省事写 import java.util.*，通配符会掩盖真实依赖，读代码的人不知道你到底用了哪几个类。另外 Scanner 不是线程安全的，它有自己的输入缓冲，多线程共用一个实例会读到半截数据。',
+        '<b>问：两个 Scanner 能读同一个 System.in 吗？</b><br>答：不建议。每个 Scanner 都在自己的内部缓冲里预读数据，两个实例会互相抢字符：一个读走了整行，另一个读到的是半行或 EOF，表现为「第二次输入直接被跳过」。正确做法是全程序只 new 一个 Scanner，把它当参数传给需要输入的类；如果一定要两个，就让后一个拿前一个读好的字符串，构造 <code>new Scanner(line)</code>，而不是再包一层 System.in。',
+        '<b>问：nextLine 会把空格一起读进来吗？为什么 nextInt 之后读到空串？</b><br>答：nextLine 会把整行连空格一起读走，这正是读姓名（有人叫「李 明」）时最需要的行为。但 nextInt 只消费数字本身，行尾的换行符仍留在缓冲里，紧接着的 nextLine 立刻读到空串。修法有两种：在 nextInt 之后补一句 nextLine 吃掉这个换行，或者干脆全程用 nextLine 读成字符串再自行解析，输入格式再怪也不会卡住。',
+        '<b>问：输入中文变乱码怎么办？</b><br>答：根因是两端编码不一致：终端用 GBK，JVM 却按 UTF-8 解码，字节就被解成了问号或方块。排查看三处：javac 加 <code>-encoding UTF-8</code>，运行加 <code>-Dfile.encoding=UTF-8</code>，Windows 终端先 <code>chcp 65001</code>。JDK 18 起默认字符集已是 UTF-8，但控制台、重定向文件和 IDE 的运行窗口可能仍是别的编码，必要时显式 new Scanner(System.in, Charset.forName("UTF-8"))。',
+        '<b>问：Scanner 调了 close 之后还能再 new 一个吗？</b><br>答：能 new，但一读就抛 IllegalStateException: Scanner closed。因为 close 关掉的是共享的 System.in，不只关掉这个 Scanner，后续任何读操作都会失败。try-with-resources 本身是好习惯，但把 System.in 包进 Scanner 再自动 close，会连带关掉标准输入，后续任何读 System.in 的地方都会抛 IllegalStateException；这种全局标准流要么不 close，要么由进程退出时释放。规则很简单：包装 System.in 的 Scanner 不要关；包装文件或字符串的 Scanner 用 try-with-resources 关掉，本章文件读取的例子就是这么写的。看到「流已关闭」的异常，先找有没有多关了一次。',
+      ] },
       { h: '自测与练习' },
-      { ol: ['写一个程序读取姓名（可能含空格）、年龄、身高，用 printf 输出一行简介。', '复现 nextInt 后 nextLine 读到空串的问题，并用两种方式修复。', '给计算器增加“求余数”和“幂运算”，处理非法输入。', '用 hasNextInt 实现“输入非数字时提示并重试”。'] }
+      { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
+      { ol: [
+        '写一个程序读取姓名（可能含空格）、年龄、身高，用 printf 输出一行简介。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入「李 明」、18、175.5 三行后，输出类似 姓名=李 明, 年龄=18, 身高=175.5 的一行；姓名中的空格被完整保留。<b>为什么</b>：读姓名必须用 nextLine，它读到行尾才停；年龄用 nextInt，身高用 nextDouble，printf 的 %s、%d、%.1f 分别对应字符串、整数、保留一位的浮点。<b>要点</b>：<code>String name = sc.nextLine();</code> 要放在最前面，读年龄后如果还要读字符串，记得补一句 nextLine 清掉换行。</div></details>',
+        '复现 nextInt 后 nextLine 读到空串的问题，并用两种方式修复。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 25 回车、再输入 Tom 回车，程序打印的姓名却是空的，第二行输入像是被吞了。<b>为什么</b>：nextInt 只取走数字 25，行尾的 \\n 还在缓冲里，nextLine 立刻读到这个空行并返回空串。<b>要点</b>：修法一是 nextInt 后加一句 <code>sc.nextLine();</code> 消耗换行；修法二是全用 nextLine 读字符串，再 <code>Integer.parseInt(s.trim())</code> 转换，转换失败还能自己给提示。</div></details>',
+        '给计算器增加「求余数」和「幂运算」，处理非法输入。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：正常输入时 7 % 3 得 1、2 ^ 10 得 1024；输入运算符写成 mod 或除数为 0 时，程序给出提示而不是抛异常崩掉。<b>为什么</b>：幂运算必须用 Math.pow（返回 double，整数结果要转回 long 再打印），余数用 %，而除数或模数为 0 时整除和取余都会抛 ArithmeticException。<b>要点</b>：用 switch 分发运算符，default 分支提示「不支持的运算符」，算之前先判断除数是否为 0，输出统一用 printf 控制小数位。</div></details>',
+        '用 hasNextInt 实现「输入非数字时提示并重试」。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：先输入 abc，程序提示「请输入整数」并再次询问；输入 42 后正常返回，不会进入死循环狂刷提示。<b>为什么</b>：hasNextInt 只判断下一个词能否解析成整数，不消费输入；判断失败后必须手动把这段非法内容读走，否则下一次循环还在看同一段字符。<b>要点</b>：失败分支里调 <code>sc.next()</code> 丢弃该 token，再用 while 包住整体逻辑；配一个最大重试次数，避免用户一直乱输时卡死。</div></details>'
+      ] }
     ]
   };
 
@@ -276,9 +288,21 @@
       { h: '本章小结' },
       { list: ['if 从上到下命中即停；switch 适合等值多选。', 'for 已知次数，while 未知次数，do-while 至少一次。', '数组长度固定、下标从 0 开始，越界抛异常。', '循环三要素：初始值、条件、更新，缺一不可。'] },
       { h: '常见追问' },
-      { list: ['for 和 while 能互相改写吗？能，for 只是把初始化、条件、更新集中写了。', 'switch 能判断区间吗？不能，区间用 if。', '数组能存对象吗？能，存的是引用；对象数组的每个元素默认 null。', '增强 for 能改数组元素吗？改元素副本无效，改对象字段有效。', 'break 能跳出 if 吗？不能，break 只作用于循环或 switch。'] },
+      { list: [
+        '<b>问：for 和 while 能互相改写吗？</b><br>答：能，两者语义等价：for 只是把初始化、条件、更新三件事写在一行里。for (int i = 0; i < n; i++) 改写成先 int i = 0，再 while (i < n) { ...; i++; } 完全一样。差别在作用域和可读性：for 里的 i 出了循环就不可见，能减少变量污染；循环次数已知或需要下标时用 for，条件驱动、次数不定（读到 EOF、等到标志位）时用 while，写成 for 会让人误以为有确定的终止次数。',
+        '<b>问：switch 能判断区间吗？</b><br>答：传统 switch 只做等值匹配，case 后面必须是常量，写 case 0-59: 编译不过，区间判断得用 if-else。JDK 14 起可以用箭头语法避免贯穿，JDK 21 的模式匹配还能按类型分支并用 when 加守卫条件，但守卫里写范围仍是 <code>case Integer i when i >= 0 &amp;&amp; i &lt; 60</code> 这种布尔表达式。所以成绩分档这类判断，用 if 或按十位整除后再 switch，比硬凑 case 更清楚。',
+        '<b>问：数组能存对象吗？</b><br>答：数组能存引用，但 new Dog[3] 只创建了三个 null 槽位，并没有创建任何 Dog 对象，直接调用 dogs[0].bark() 会抛 NullPointerException。必须逐个 new 出来赋进去，或者用循环初始化。这也是数组和集合的共同点：数组的长度固定、元素类型在编译期检查；想动态扩容得换 ArrayList，它本质上就是内部维护一个会自动增长的数组。',
+        '<b>问：增强 for 循环能修改数组元素吗？</b><br>答：不能通过增强 for 的循环变量改数组元素：变量拿到的是元素的副本，给变量赋新值不会写回数组。但如果元素是对象，改它内部的字段是生效的，因为副本里存的是同一个引用。想按下标改值只能用传统 for 循环。同理在集合里用增强 for 遍历时调用 remove 会抛 ConcurrentModificationException，删元素要用 Iterator 的 remove 或 removeIf。',
+        '<b>问：break 能跳出 if 吗？</b><br>答：不能。break 只作用于它所在的那一层循环或 switch，写在 if 里只是跳出 if 之外的最近一层循环，if 本身不是可中断的语句。要从两层嵌套里一次跳出，可以给外层循环加标签 <code>outer:</code> 再写 break outer，或者干脆把内层逻辑抽成方法用 return 提前返回，后者通常更好读，也更容易单独测试。',
+      ] },
       { h: '自测与练习' },
-      { ol: ['用数组保存 5 个成绩，输出总分、平均分、最高分和最低分。', '用 switch 根据月份输出季节，处理非法月份。', '打印九九乘法表，思考内外层循环的边界。', '用冒泡排序对数组排序，再用 Arrays.sort 验证结果一致。'] }
+      { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
+      { ol: [
+        '用数组保存 5 个成绩，输出总分、平均分、最高分和最低分。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 78 92 65 88 95，输出总分 418、平均分 83.6、最高分 95、最低分 65，平均分带一位小数。<b>为什么</b>：一趟循环里同时累加求和、用 Math.max 与 Math.min 更新极值即可；总和是 int，平均分要转成 double 再除，否则 418 / 5 得 83。<b>要点</b>：极值初始值取数组第一个元素而不是 0，否则全是负分时会算错；平均分写 <code>(double) sum / scores.length</code>。</div></details>',
+        '用 switch 根据月份输出季节，处理非法月份。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 3 输出「春季」，输入 12 输出「冬季」，输入 13 或 0 输出「月份不合法」而不是什么都不打印。<b>为什么</b>：3 到 5 月是春季，6 到 8 月夏季，9 到 11 月秋季，12、1、2 月冬季；传统 switch 靠多个 case 共用一段代码实现分组，default 兜住越界值。<b>要点</b>：写成 <code>case 3: case 4: case 5: System.out.println("春季"); break;</code>，每个分支结尾别漏 break，否则会贯穿到下一个季节。</div></details>',
+        '打印九九乘法表，思考内外层循环的边界。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出 9 行，第 i 行有 i 个算式，从 1x1=1 到 9x9=81，左下三角形状，每行结束换行。<b>为什么</b>：外层 i 控制行、从 1 到 9；内层 j 的上界是 i 而不是 9，这才形成左下三角；内层循环结束后必须换行，否则所有算式挤在一行。写成固定 9 行就变成矩形，第 i 行多出的算式会破坏对齐。<b>要点</b>：<code>for (int i = 1; i &lt;= 9; i++) { for (int j = 1; j &lt;= i; j++) System.out.printf("%dx%d=%-4d", j, i, i * j); System.out.println(); }</code>，用 %-4d 左对齐占四列。想做成 n 行的通用版本，把两个 9 换成参数即可，但 n 小于 1 时一行都不输出，要单独处理。循环里别用 += 拼行字符串，JDK 9 以后虽然靠 invokedynamic 优化，嵌套循环下仍是 printf 更直接。</div></details>',
+        '用冒泡排序对数组排序，再用 Arrays.sort 验证结果一致。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 5 3 8 1 9 后，自己排的结果是 1 3 5 8 9，用 Arrays.copyOf 复制一份交给 Arrays.sort 排序后，用 Arrays.equals 比较返回 true。<b>为什么</b>：冒泡排序每轮把未排序部分的最大值冒到尾部，所以内层上界应写成 n-1-i，比每轮都跑满 n 更省比较；Arrays.sort 对基本类型用双轴快排，结果稳定可复现。<b>要点</b>：交换前先复制数组再排序，否则原数组被排好就验证不出自己算法的对错了；比较用 Arrays.equals，不要用 ==。</div></details>'
+      ] }
     ]
   };
 })();

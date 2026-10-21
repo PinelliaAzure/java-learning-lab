@@ -128,21 +128,22 @@
 
       { h: '1.13 常见追问' },
       { list: [
-        '<b>单例和静态类有什么区别？</b>静态类不能实现接口、不能被注入替换、无法延迟初始化；单例是对象，可以传参、可以 mock，更适合需要面向接口的场景。',
-        '<b>Spring 的 singleton Bean 是单例模式吗？</b>是“容器内单例”：每个容器每个 Bean 名一个实例，但类本身没有私有构造器，你仍可以自己 new。',
-        '<b>为什么不用 synchronized 修饰整个方法？</b>能用，但每次调用都加锁；DCL 的价值是创建完成后不再加锁，属于性能优化，不是正确性必需。',
-        '<b>工厂和策略有什么区别？</b>工厂关注“造出来”，策略关注“用哪个算法”。策略的对象通常也由工厂创建，两者常配合出现。',
-        '<b>建造者一定要静态内部类吗？</b>不一定。独立 Builder 类也可以，但静态内部类能访问外部类私有构造器，封装更彻底。',
-        '<b>这些模式在真实项目里用得多吗？</b>单例和建造者非常常见，工厂更多以“注册表 + 反射”或“依赖注入容器”的形式出现，思想一致。'
+        '<b>问：单例和静态类有什么区别？</b><br>答：静态类不能实现接口、不能被注入替换，也没法延迟初始化，所有状态都得挂在静态字段上，测试时无法换成假实现；单例是对象，能实现接口、能传参、能被容器管理或被 mock，需要面向接口、需要多态的地方只有它可用。反过来说，纯粹的工具方法用静态类更直接，因为根本没有状态需要维护。判断标准就两条：有没有状态、要不要在测试里替换实现。',
+        '<b>问：Spring 的 singleton Bean 是单例模式吗？</b><br>答：是「容器内单例」，不是类意义上的单例：每个容器的每个 Bean 名只有一个实例，作用域限定在容器生命周期里；类本身没有私有构造器，你仍然可以自己 new 出第二个对象，容器也管不住。所以别把业务状态放进 Bean 的实例字段，那等于整个应用共享一份；多实例部署时更是每个进程各有一份。真要全局唯一，得靠数据库唯一约束或分布式锁。',
+        '<b>问：为什么不用 synchronized 修饰整个方法？</b><br>答：能用，正确性上没有问题，代价是每次读取都要抢锁，哪怕对象早就创建好了。双重检查锁的价值就在于把加锁挪进「实例为空」这一个分支，创建完成之后走无锁快路径，它属于性能优化，不是正确性的必需。既然只是优化，就不要为了它牺牲可读性：不确定的话，饿汉式或枚举单例更简单，也天然线程安全。',
+        '<b>问：工厂和策略有什么区别？</b><br>答：工厂关注「怎么造出来」，策略关注「用哪个算法」。工厂的入参通常是类型标识或配置，出参是对象；策略的入参是业务数据，出参是计算结果。实际项目里两者经常一起出现：策略接口定义能力，工厂或 Map 注册表按类型挑一个策略实例返回。分清的好处是职责不混——工厂里不该出现业务计算，策略里也不该出现对象组装。',
+        '<b>问：建造者一定要静态内部类吗？</b><br>答：不一定。独立的 Builder 类、甚至外部工具类都能实现同样的链式调用；静态内部类的优势是能访问外部类的私有构造器，把「只能通过 Builder 创建」这件事强制住，封装更彻底，也不必在包里多暴露一个类。字段很多、必填项和可选项混在一起时，Builder 比一串重载构造器好读得多，代价是多写几十行样板代码。',
+        '<b>问：这些模式在真实项目里用得多吗？</b><br>答：单例和建造者非常常见：前者的现代形态是容器管理的无状态 Bean，后者出现在任何参数超过四五个的配置类上。工厂更多以「注册表 + 反射」或依赖注入容器的形式出现，思想一致但名字消失了。原型模式在日常业务里少见，主要用在复制成本高的场景。学模式的价值在于认出用法，而不是在代码里凑齐那些名字。'
       ] },
 
       { h: '1.14 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '手写一个饿汉式单例和一个枚举单例，比较两者的代码量和线程安全性。',
-        '把本章的 DCL 代码去掉 volatile，说明在什么情况下会出错，出错的现象是什么。',
-        '为支付场景写一个简单工厂，再改写成工厂方法，统计新增一种渠道分别要改几个文件。',
-        '给一个含 8 个字段（3 个必填、5 个可选）的类写 Builder，并在 build() 中校验金额不能为负。',
-        '解释为什么单例在多实例部署时不再是“全局唯一”，以及如何用外部存储解决。'
+        '手写一个饿汉式单例和一个枚举单例，比较两者的代码量和线程安全性。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个类的 getInstance() 多次调用返回同一个引用，打印地址相同；饿汉式在类加载时就完成实例化，枚举写法只有一行常量，反射和反序列化都破不开它。<b>为什么</b>：饿汉式的线程安全由类加载机制保证，代价是启动即创建、用不上也占内存；枚举的实例由 JVM 在类初始化时创建，天然单例并自带序列化保护。<b>要点</b>：饿汉式写 <code>private static final Hungry INSTANCE = new Hungry();</code> 配私有构造器；枚举写 <code>enum E { INSTANCE; }</code>；比较时重点看代码行数、能否延迟加载、能否被反射破坏这三点。</div></details>',
+        '把本章的 DCL 代码去掉 volatile，说明在什么情况下会出错，出错的现象是什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：代码通常照样能跑，测一百次都正常；但在高并发下偶发拿到「构造未完成」的对象，表现为某个字段是 null 或 0，随后空指针或数据错乱，重跑不复现。<b>为什么</b>：<code>instance = new Singleton()</code> 分三步——分配内存、初始化字段、把引用赋给变量，没有 volatile 时后两步可能被重排序，别的线程看到引用非空就直接返回。<b>要点</b>：给实例字段加 <code>volatile</code> 禁止重排序；验证只能靠压测和理论分析，因为单线程下这个窗口几乎不存在。</div></details>',
+        '为支付场景写一个简单工厂，再改写成工厂方法，统计新增一种渠道分别要改几个文件。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：简单工厂里新增渠道必须改那个 if/switch（改动 1 个已有文件）；工厂方法里新增渠道只要加一个实现类并在注册处登记（1 个新文件加 1 处登记），已有实现类一行不动。<b>为什么</b>：简单工厂把选择集中在一个方法里，所有变化都落在那里；工厂方法把选择下放给具体工厂，扩展靠新增而不是修改。<b>要点</b>：简单工厂写 <code>PayChannel create(String type)</code> 里按 type 分支；工厂方法定义 <code>PayChannelFactory</code> 接口，每个渠道一个实现；统计时数改动的文件数与要重跑的测试数。</div></details>',
+        '给一个含 8 个字段（3 个必填、5 个可选）的类写 Builder，并在 build() 中校验金额不能为负。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：必填项走 Builder 构造器，漏填编译不过；金额传负数时 build() 抛 IllegalArgumentException 并带明确消息；链式调用顺序不影响结果。<b>为什么</b>：必填放构造器、可选走链式 setter，能把「忘了赋值」提前到编译期；校验放 build() 是因为那是对象真正成型的唯一时刻。<b>要点</b>：外部类私有构造器接收 Builder，内部写 <code>if (amount &lt; 0) throw new IllegalArgumentException("金额不能为负");</code> 再 <code>return new Order(this);</code>；可选字段给默认值，省掉后续到处判空。</div></details>',
+        '解释为什么单例在多实例部署时不再是「全局唯一」，以及如何用外部存储解决。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：本地只有一个实例时计数正常；部署两台机器后，同一个计数在两边各自累加，用户刷新时看到的数值来回跳。<b>为什么</b>：JVM 级单例的作用域只是一个进程，多实例、多容器、甚至热部署后的新旧类加载器都各有自己的一份，进程之间不共享内存。<b>要点</b>：把需要全局唯一的计数、锁、状态搬到外部——数据库唯一约束加乐观锁版本号、Redis 的 <code>INCR</code> 或分布式锁；本地单例只保留无状态工具或进程内缓存，并明确它的边界。</div></details>'
       ] }
     ]
   };
@@ -266,21 +267,22 @@
 
       { h: '2.15 常见追问' },
       { list: [
-        '<b>策略模式和简单工厂有什么区别？</b>工厂负责创建对象，策略负责选择算法；工厂常用来生产策略实例，两者是配合关系。',
-        '<b>观察者模式和发布订阅一样吗？</b>不完全一样。观察者里主题直接持有观察者，发布订阅通过消息中间件解耦，发布者不知道订阅者存在。',
-        '<b>JDK 动态代理为什么必须基于接口？</b>生成的代理类已经继承了 <code>Proxy</code>，Java 单继承，无法再继承目标类，只能实现接口。',
-        '<b>CGLIB 为什么不能代理 final 方法？</b>它靠生成子类并覆盖方法实现增强，final 方法不允许覆盖，调用会直接走父类原逻辑。',
-        '<b>Spring 事务在什么情况下会失效？</b>方法非 public、自调用、异常被吞、异常类型不在 rollbackFor 范围内、类没被容器管理，都会导致事务不生效。',
-        '<b>什么时候不该用观察者？</b>只有一两个固定后续动作、且顺序要求严格时，直接调用更简单可读；观察者适合数量会增长的场景。'
+        '<b>问：策略模式和简单工厂有什么区别？</b><br>答：工厂负责创建对象，策略负责选择算法；工厂常用来生产策略实例，两者是配合关系，不是替代关系。判断代码里是哪一个：方法签名收的是类型标识、返回的是对象，那是工厂；收的是业务数据、返回的是计算结果，那是策略。混在一起的典型写法是一个 switch 里既 new 对象又算金额，把它拆成工厂挑策略、策略算金额，两边都能单独测。',
+        '<b>问：观察者模式和发布订阅一样吗？</b><br>答：不完全一样。观察者里主题直接持有观察者列表并同步调用，主题和观察者互相知道接口，是进程内的耦合；发布订阅中间隔着消息中间件或事件总线，发布者不知道谁在听，能做到跨进程、能削峰、能以异步方式投递。观察者实现简单、顺序可控；发布订阅解耦更彻底，代价是要自己处理重复投递、顺序与事务一致性。',
+        '<b>问：JDK 动态代理为什么必须基于接口？</b><br>答：因为生成的代理类已经继承了 <code>Proxy</code>，而 Java 是单继承，一个类只能有一个父类，所以没法再继承你的目标类，只能实现它的接口。这也解释了目标类没实现任何接口时为什么代理会失败。要代理没有接口的类，就得换成 CGLIB 这类生成子类的方案，或者让目标类至少实现一个接口。',
+        '<b>问：CGLIB 为什么不能代理 final 方法？</b><br>答：CGLIB 的原理是生成目标类的子类并覆盖方法，在覆盖方法里织入增强；final 方法不允许被覆盖，private 方法对子类不可见，这两类调用都会直接走父类原逻辑，增强静默失效——注意是失效而不是报错，这是排查时最容易误判的地方。同理 final 类根本无法被继承，整个类都代理不了。',
+        '<b>问：Spring 事务在什么情况下会失效？</b><br>答：常见五种：方法不是 public，代理不拦；同类内部自调用，不走代理；异常被 try/catch 吞掉，代理看不到；异常类型不在 rollbackFor 范围内，默认只回滚 RuntimeException；类没被容器管理，自己 new 出来的没有代理。另外数据库引擎不支持事务、多数据源没配事务管理器也会失效。排查顺序是先确认调用经过代理，再看异常有没有抛到代理边界。',
+        '<b>问：什么时候不该用观察者？</b><br>答：只有一两个固定后续动作、且顺序要求严格时，直接调用更简单可读：一个方法里两行代码，比注册两个监听器加一个事件类清楚得多。观察者适合订阅者数量会增长、或者需要运行时增删的场景。如果动作之间有严格的先后和事务一致性要求，也别用异步事件，同步的事件总线同样会把调用栈拉长、把异常传播变复杂。'
       ] },
 
       { h: '2.16 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '把一个含 5 个分支的优惠计算改写成策略模式，统计改动前后新增规则需要改几个文件。',
-        '给策略加一个 Map 注册表，要求未知类型抛出带类型的异常，并写单元测试覆盖。',
-        '实现一个观察者，要求某个监听器抛异常时其他监听器仍能收到通知，并说明为什么用 CopyOnWriteArrayList。',
-        '手写一个静态代理记录方法耗时，再改写成 JDK 动态代理，比较代码量。',
-        '解释为什么在 Service 内部调用自己的另一个方法时，@Transactional 不生效，并给出两种修复方案。'
+        '把一个含 5 个分支的优惠计算改写成策略模式，统计改动前后新增规则需要改几个文件。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改写前新增一种优惠要动那个 if-else 方法；改写后只需新增一个策略实现类并在注册表登记，原有分支一行不动，回归测试也只跑新规则。<b>为什么</b>：if-else 的分支都挤在一个方法里，改一次就要重新验证全部分支；策略把每个算法隔离成独立类，改动面收窄到新增文件。<b>要点</b>：定义 <code>DiscountStrategy { BigDecimal apply(BigDecimal amount); }</code>，每个规则一个实现；用 <code>Map&lt;String, DiscountStrategy&gt;</code> 注册；统计时对比改动的文件数与需要重跑的测试数。</div></details>',
+        '给策略加一个 Map 注册表，要求未知类型抛出带类型的异常，并写单元测试覆盖。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：已知类型返回对应策略，未知类型抛异常且消息里带类型字符串；测试里用未知类型断言异常，用已知类型断言计算金额正确。<b>为什么</b>：注册表把「选择」从 if 链变成一次查表，新增类型只要注册；未知类型必须显式失败，否则静默返回 null，问题会推迟到调用处才暴露。<b>要点</b>：<code>Map&lt;String, DiscountStrategy&gt; map</code> 在静态块或构造器里 put；取值后判空抛 IllegalArgumentException，别用 getOrDefault 兜底；测试用 <code>assertThrows</code> 覆盖未知分支。</div></details>',
+        '实现一个观察者，要求某个监听器抛异常时其他监听器仍能收到通知，并说明为什么用 CopyOnWriteArrayList。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：第一个监听器抛异常时，后面的监听器照样收到事件，异常被记进日志而不是让整轮通知中断。<b>为什么</b>：直接遍历普通 ArrayList 时一个异常就会跳出循环；监听器在回调里注册或注销自己还会抛 ConcurrentModificationException，CopyOnWriteArrayList 迭代时用快照，天然避开这两个问题。<b>要点</b>：每个回调包一层 try/catch 记录日志；存监听器用 <code>CopyOnWriteArrayList</code>，只在写少读多时划算；注意快照语义——本轮通知中新加的监听器收不到当前事件。</div></details>',
+        '手写一个静态代理记录方法耗时，再改写成 JDK 动态代理，比较代码量。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：静态代理要为每个接口写一个代理类，方法里都是计时加转发的样板；动态代理只需要一个 <code>InvocationHandler</code>，所有接口共用同一段增强逻辑。<b>为什么</b>：静态代理的转发在编译期写死，接口新增方法就得同步改代理类；动态代理在运行时生成字节码，转发逻辑只写一次。<b>要点</b>：<code>Proxy.newProxyInstance(cl, new Class[]{Svc.class}, handler)</code>；handler 里记 <code>System.nanoTime()</code> 后 <code>method.invoke(target, args)</code>，再把受检异常还原成真实异常抛出。</div></details>',
+        '解释为什么在 Service 内部调用自己的另一个方法时，@Transactional 不生效，并给出两种修复方案。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：外部调用带事务的方法能回滚，同类内部 <code>this.other()</code> 调同一个注解方法却不回滚，日志里也看不到事务开始。<b>为什么</b>：事务增强织在代理对象上，内部调用走的是 <code>this</code>，也就是原始对象，压根没经过代理，注解等于不存在。<b>要点</b>：方案一把内层方法挪到另一个 Bean，通过注入的代理调用；方案二注入自身代理或用 <code>AopContext.currentProxy()</code>；最省事的是把事务边界上移到唯一入口方法，内部只做纯计算。</div></details>'
       ] }
     ]
   };
@@ -372,21 +374,22 @@
 
       { h: '3.12 常见追问' },
       { list: [
-        '<b>JDBC 和 MyBatis 是什么关系？</b>MyBatis 封装了 JDBC：帮你管理连接、设置参数、把 ResultSet 映射成对象，底层仍然是 JDBC。',
-        '<b>为什么推荐 PreparedStatement 而不是 Statement？</b>参数化防注入、可预编译复用执行计划、类型处理更安全，还能避免拼接引号带来的转义问题。',
-        '<b>ResultSet 能不能回头再读一遍？</b>默认只能向前、只读；需要滚动要在创建 Statement 时指定 <code>TYPE_SCROLL_INSENSITIVE</code>，但通常应把数据读到集合里。',
-        '<b>close() 之后池里的连接还能被别人用？</b>从池里拿到的 Connection 是包装对象，close() 只是归还并重置状态，物理连接没断，所以下一个借用者接手的是同一条 TCP 连接。',
-        '<b>批量插入 1 万条，addBatch/executeBatch 与逐条相比差在哪？什么时候必须关自动提交？</b>逐条是 1 万次往返加 1 万次提交，攒批是一次往返一次提交；多表、互为前提的写入必须 setAutoCommit(false)，否则中途失败留下半条数据，BatchUpdateException 的 updateCounts 只覆盖已成功的部分。',
-        '<b>数据库连接池越大越好吗？</b>不是。连接数受数据库最大连接数、CPU 核数、磁盘 IO 限制，过大反而增加上下文切换和锁竞争。'
+        '<b>问：JDBC 和 MyBatis 是什么关系？</b><br>答：MyBatis 封装了 JDBC：帮你管理连接与资源、设置参数、把 ResultSet 映射成对象，底层仍然是 JDBC 那五步。所以 JDBC 的常识在 MyBatis 里照样成立：连接关闭其实是归还连接池、占位符参数化才是防注入的关键、批量与事务边界仍由你决定。遇到 MyBatis 报错看不懂时，把 SQL 日志打开看它实际执行的语句和参数，问题往往就落在 JDBC 那一层。',
+        '<b>问：为什么推荐 PreparedStatement 而不是 Statement？</b><br>答：参数化防注入是首要原因：SQL 结构先编译、值后绑定，用户输入永远只是数据，不会被当成语法；其次是类型处理更安全，日期、NULL、二进制都不用自己拼引号，可预编译复用执行计划，也免去了转义地狱。Statement 现在只在执行 DDL 或确实没有参数的固定语句时才用得上，业务查询里基本没有它的位置。',
+        '<b>问：ResultSet 能不能回头再读一遍？</b><br>答：默认只能向前、只读，游标走过就回不去了。要滚动必须在创建 Statement 时指定 <code>TYPE_SCROLL_INSENSITIVE</code> 和 <code>CONCUR_READ_ONLY</code>，但这会把结果集整体缓存到客户端，大结果集会撑爆内存。正确做法是遍历一次就映射成对象或集合，后续在内存里处理；需要多轮扫描就查两次，或者一次查全再在集合里分组。',
+        '<b>问：close() 之后池里的连接还能被别人用？</b><br>答：从池里拿到的 Connection 是包装对象，close() 只是把连接归还并重置状态（回滚未提交事务、清理会话变量），物理 TCP 连接并没有断，所以下一个借用者接手的确实是同一条连接。这解释了两件事：为什么忘了 close 会把池借空并在池满时报等待超时，以及为什么不能在连接上留未提交事务或临时表状态。',
+        '<b>问：批量插入 1 万条，addBatch/executeBatch 与逐条相比差在哪？</b><br>答：差在网络往返和事务提交的次数：自动提交下逐条插入是 1 万次往返 + 1 万次提交（每次都刷盘）；整批包进一个事务后提交只剩 1 次，瓶颈变成 1 万次往返与日志写入，这才需要 addBatch/rewriteBatchedStatements 把往返也压下来，通常快一个数量级。必须关掉自动提交的场景是多表、互为前提的写入——中途失败不会留下半条数据，而 BatchUpdateException 的 updateCounts 只覆盖已成功的部分，需要自己判断补偿。批量也要分批提交，一次几十万条会把日志和内存顶爆。',
+        '<b>问：数据库连接池越大越好吗？</b><br>答：不是。连接数受数据库最大连接数、CPU 核数、磁盘 IO 共同限制，连接过多反而增加上下文切换、锁竞争和内存占用，数据库端的活跃会话排队也会变长。经验起点是个位数到十几，再按压测中的等待时间调整，同时把超时、最大生命周期和泄漏检测配好。真正的瓶颈通常在某条慢 SQL，而不是池太小。'
       ] },
 
       { h: '3.13 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '用 <code>DriverManager</code> 从零跑通五步：取 Connection、prepareStatement、setXxx 绑参、executeQuery、遍历 ResultSet，并从结果集里取出三列打印。',
-        '把连接来源换成 HikariCP 连接池，同一段代码各跑一百次，把建连耗时打印出来对比；再故意漏掉 close()，观察池被借空时报的错。',
-        '用 JDBC 完成一次带条件的查询，要求用 try-with-resources 关闭资源，并打印结果。',
-        '开事务做两表写入：A 表插主记录、B 表插明细，第二步故意抛异常，验证 rollback 后两张表都没留数据；再改成手动 commit 验证成功路径。',
-        '用 addBatch/executeBatch 插一万条，与逐条插入比耗时；再把一组互为前提的 SQL 关掉自动提交后批量执行，确认中途失败时 updateCounts 只覆盖已成功的部分。'
+        '用 <code>DriverManager</code> 从零跑通五步：取 Connection、prepareStatement、setXxx 绑参、executeQuery、遍历 ResultSet，并从结果集里取出三列打印。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：控制台按行打印三列，中文不乱码；把 URL 里的库名写错时在 getConnection 处就抛异常，而不是等遍历时才报空。<b>为什么</b>：五步是固定骨架，任何一步对象没拿到后面都无从谈起；中文乱码多半是 URL 没带字符集或客户端编码不一致。<b>要点</b>：<code>DriverManager.getConnection(url, user, pwd)</code> 之后 <code>prepareStatement(sql)</code>、<code>setInt(1, 10)</code>、<code>executeQuery()</code>，循环 <code>while (rs.next())</code> 用列名取值而不是下标。</div></details>',
+        '把连接来源换成 HikariCP 连接池，同一段代码各跑一百次，把建连耗时打印出来对比；再故意漏掉 close()，观察池被借空时报的错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：直连一百次总耗时明显更高且抖动大，单次毫秒级偏上；换池后单次降到毫秒以内并稳定。漏掉 close 后，跑到池上限（例如 10）就卡住，随后抛获取连接超时。<b>为什么</b>：直连每次都要 TCP 握手加认证，池化把这些成本摊销掉；池容量是硬上限，借出不还就再也借不到。<b>要点</b>：配 <code>maximumPoolSize=10</code>、<code>connectionTimeout=3000</code> 让失败快速暴露；用 <code>try (Connection c = ds.getConnection())</code> 保证归还；打开泄漏检测日志看是哪段代码漏关。</div></details>',
+        '用 JDBC 完成一次带条件的查询，要求用 try-with-resources 关闭资源，并打印结果。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：参数不同结果不同，条件换成不存在的值时返回空结果而不是异常，跑完没有连接泄漏告警。<b>为什么</b>：try-with-resources 按声明的逆序关闭，异常路径同样会关，比 finally 里手写 close 更不容易漏；空结果集是正常业务状态，不该当成错误。<b>要点</b>：Connection、PreparedStatement、ResultSet 全写进 try 的括号里；条件用占位符 <code>WHERE price BETWEEN ? AND ?</code>，绝不拼字符串；遍历时先判 <code>rs.next()</code> 再取值。</div></details>',
+        '开事务做两表写入：A 表插主记录、B 表插明细，第二步故意抛异常，验证 rollback 后两张表都没留数据；再改成手动 commit 验证成功路径。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：关掉自动提交后，异常路径下两张表都查不到新数据；成功路径下两张表都有数据，且要等 commit 之后其他会话才看得见。<b>为什么</b>：两条 INSERT 必须在同一事务里，中途失败要整体撤销，否则主记录变成没有明细的孤儿数据；提交之前其他连接看不到未提交的写入。<b>要点</b>：<code>setAutoCommit(false)</code> 后两条 INSERT 再 <code>commit()</code>；catch 里 <code>rollback()</code> 并把原异常抛出去；finally 里恢复 <code>setAutoCommit(true)</code> 再关闭，别把脏状态还给连接池。</div></details>',
+        '用 addBatch/executeBatch 插一万条，与逐条插入比耗时；再把一组互为前提的 SQL 关掉自动提交后批量执行，确认中途失败时 updateCounts 只覆盖已成功的部分。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：分批插入比逐条快一个数量级；故意让某一条违反唯一约束，捕获 BatchUpdateException 后 <code>getUpdateCounts()</code> 的长度小于总条数，前面的记录在回滚前确实存在。<b>为什么</b>：批量把多次往返合成一次；某条失败后驱动不再执行剩余语句，返回的计数只反映已执行的语句。<b>要点</b>：循环里 <code>addBatch()</code>，每 1000 条 <code>executeBatch()</code> 并清空；整批包在事务里，失败时 rollback；用 <code>SUCCESS_NO_INFO</code> 判断驱动是否返回真实行数。</div></details>'
       ] }
     ]
   };
@@ -532,21 +535,22 @@
 
       { h: '4.15 常见追问' },
       { list: [
-        '<b>PreparedStatement 比 Statement 快吗？</b>不一定。它的首要价值是安全和类型处理；能否复用执行计划取决于驱动和数据库配置。',
-        '<b>为什么 MySQL 默认隔离级别是 REPEATABLE READ？</b>配合 MVCC 可以在较少锁的情况下提供较好的一致性，主从复制在早期版本中也依赖它。',
-        '<b>rollback 之后连接还能用吗？</b>通常可以，事务被撤销但连接仍在；如果回滚本身失败，说明连接可能已损坏，应关闭重建。',
-        '<b>事务和锁是什么关系？</b>事务是逻辑单位，锁是实现隔离的手段；事务持锁到提交或回滚，持锁越久并发越差。',
-        '<b>Spring 的 @Transactional 和手写 JDBC 事务冲突吗？</b>不要混用。框架已经管理了连接和提交，再手动 setAutoCommit 会破坏其行为。',
-        '<b>分布式事务怎么办？</b>单库事务解决不了跨服务一致性，需要 TCC、Saga、本地消息表等方案，按业务容忍度选择，不要盲目上强一致。'
+        '<b>问：PreparedStatement 比 Statement 快吗？</b><br>答：不一定。它的首要价值是安全与类型处理，性能只是附带好处：能否复用执行计划取决于驱动和数据库配置，服务端预编译在某些连接池参数下会被关掉，甚至可能更慢。真正稳定变快的地方在批量——同一语句绑不同参数连续执行，省掉的是解析与往返。所以选它别拿性能当理由，理由是参数化防注入和不必手写转义。',
+        '<b>问：为什么 MySQL 默认隔离级别是 REPEATABLE READ？</b><br>答：因为 InnoDB 的 MVCC 在这个级别上表现最好：同一事务内多次读的结果一致，读不加锁，写只锁必要的行，读多写少的业务几乎不用为一致性付锁的代价。常见解释是早期 STATEMENT 格式 binlog 依赖 RR 的加锁行为保证从库重放一致，这个理由在 5.7 之后已弱化；现在更实际的理由是 InnoDB 的 MVCC 在 RR 下给出稳定快照读，与行锁/间隙锁配合能挡住大部分并发异常，MySQL 也就一直没改默认值。代价是范围查询会加间隙锁，更容易死锁，所以高并发写入的场景常被建议降到 READ COMMITTED。',
+        '<b>问：rollback 之后连接还能用吗？</b><br>答：通常可以：事务被撤销，连接本身仍然有效，可以继续执行新语句，池化环境下归还时也会自动回滚。但如果回滚本身失败、或者异常属于通信类错误（连接被重置、服务端断开），说明连接可能已经损坏，必须关闭重建，别放回池里。判断方法是看异常类型：业务异常回滚后继续用，IO 类或 SQLState 以 08 开头的错误直接丢弃连接。',
+        '<b>问：事务和锁是什么关系？</b><br>答：事务是逻辑单位，锁是实现隔离的手段。事务在读写行时按隔离级别加锁，并持锁到提交或回滚，持锁时间越长，其他会话等待越久、死锁概率越高。所以优化事务的第一步永远是缩短它：把远程调用、文件操作、用户交互挪到事务外面，只包住必须原子的那几条 SQL。锁是结果，不是目的。',
+        '<b>问：Spring 的 @Transactional 和手写 JDBC 事务冲突吗？</b><br>答：不要混用。框架已经通过代理接管了连接的获取、提交与回滚，方法里再 <code>setAutoCommit(false)</code> 或手动 commit 会破坏它的状态机：可能出现外层以为提交了、内层其实没有，或者连接归还时还带着未提交事务。要么统一交给 @Transactional，要么整段手写，别在同一个调用链里两套并用；确需细粒度控制就用 TransactionTemplate。',
+        '<b>问：分布式事务怎么办？</b><br>答：单库事务解决不了跨服务一致性。按业务容忍度选方案：能接受最终一致就用本地消息表或事务消息加幂等消费；需要较强一致且流程短可用 TCC，但要写 Try/Confirm/Cancel 三套逻辑和补偿；长流程用 Saga，把每一步的补偿动作定义清楚。两阶段提交强一致但性能和可用性代价大，很少作为首选。关键是幂等与补偿，不是选一个听起来最强的名词。'
       ] },
 
       { h: '4.16 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '写一段存在 SQL 注入漏洞的登录代码，构造输入绕过它，再用 PreparedStatement 修复并验证。',
-        '实现转账事务：任一步失败都回滚，余额不足时抛业务异常，并用两个线程验证不会超扣。',
-        '把一千条插入改成批量执行，比较耗时；再包上事务，验证中途失败时数据不会残留。',
-        '设置不同的隔离级别，用两个连接复现脏读、不可重复读，记录各自的现象。',
-        '解释为什么“先 SELECT 判断余额再 UPDATE”在并发下不安全，并给出两种修复写法。'
+        '写一段存在 SQL 注入漏洞的登录代码，构造输入绕过它，再用 PreparedStatement 修复并验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：拼接写法下输入 <code>a\' OR \'1\'=\'1</code> 就能登录成功，日志里能看到拼出来的语句；换成占位符后同样的输入只被当成普通字符串，查不到用户、登录失败。<b>为什么</b>：拼接让用户输入变成了 SQL 语法的一部分；占位符的语句结构先编译固定，输入只作为值绑定，永远不参与语法解析。<b>要点</b>：漏洞写法是 <code>"... where name=\'" + name + "\'"</code>；修复写 <code>WHERE name = ? AND pwd = ?</code> 再 <code>setString(1, name)</code>；两种输入各跑一次，对比日志里最终执行的 SQL。</div></details>',
+        '实现转账事务：任一步失败都回滚，余额不足时抛业务异常，并用两个线程验证不会超扣。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：余额不足时两边余额都不变，并抛出业务异常；两个线程并发转账后总额守恒，不会出现两边都扣、或都加一次的情况。<b>为什么</b>：扣款与加款必须同属一个事务；并发下「先查余额再更新」会被两个线程读到同一个旧值，必须靠行锁或条件更新兜住。<b>要点</b>：<code>setAutoCommit(false)</code> 后执行两条 UPDATE，catch 里 rollback；余额判断用 <code>UPDATE acct SET bal = bal - ? WHERE id = ? AND bal &gt;= ?</code> 看影响行数，而不是先 SELECT 再判断；需要多行时按 id 排序加锁避免死锁。</div></details>',
+        '把一千条插入改成批量执行，比较耗时；再包上事务，验证中途失败时数据不会残留。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：批量加事务比逐条快一个数量级以上；故意让中间某条违反约束时，回滚后整批都没有残留，而不是只留下前一半。<b>为什么</b>：批量减少网络往返，事务补上「要么全成要么全不成」的语义；只批量不开事务时，前面的插入已各自提交，回滚无从谈起。<b>要点</b>：<code>setAutoCommit(false)</code> 后每 1000 条 <code>executeBatch()</code>，最后统一 commit；失败时 rollback 并检查 <code>getUpdateCounts()</code>；耗时用 <code>System.nanoTime()</code> 包住整段，跑三次取中位数。</div></details>',
+        '设置不同的隔离级别，用两个连接复现脏读、不可重复读，记录各自的现象。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：READ UNCOMMITTED 下连接 B 能读到 A 未提交的值，A 回滚后这份数据凭空消失；READ COMMITTED 下同一事务内两次读同一行结果不同；REPEATABLE READ 下快照读（普通 SELECT）读的是事务开始时的快照，同一事务里重复读不会出现幻读；当前读（SELECT … FOR UPDATE / UPDATE / DELETE）走最新数据 + next-key lock/间隙锁，靠锁抑制幻读；降到 RC 才需要应用层兜。<b>为什么</b>：隔离级别决定读操作看到哪个版本的数据、以及读是否加锁，级别越低并发越高、异常越多。<b>要点</b>：两个连接分别 <code>setTransactionIsolation</code>，A 先 <code>setAutoCommit(false)</code> 再 UPDATE 但不提交，B 在中间查询；把每次读到的值和隔离级别记成一张表，再把级别调高一档复现一次。</div></details>',
+        '解释为什么“先 SELECT 判断余额再 UPDATE”在并发下不安全，并给出两种修复写法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个线程同时判断余额充足后各自扣款，最终余额变成负数，或者两笔都成功但总额超支；日志里两条 UPDATE 的影响行数都是 1。<b>为什么</b>：SELECT 与 UPDATE 之间存在窗口，判断和修改不是原子的，没有锁时两个事务都基于同一个旧值做决策。<b>要点</b>：写法一是条件更新 <code>UPDATE acct SET bal = bal - ? WHERE id = ? AND bal &gt;= ?</code>，只有影响行数为 1 才算成功；写法二是 <code>SELECT bal FROM acct WHERE id = ? FOR UPDATE</code> 先锁行再判断；两种都要配合事务边界与失败重试。</div></details>'
       ] }
     ]
   };
@@ -686,21 +690,22 @@
 
       { h: '5.16 常见追问' },
       { list: [
-        '<b>Servlet 和 Spring MVC 的 Controller 是什么关系？</b>DispatcherServlet 是唯一的 Servlet，它把请求分发给 Controller；Controller 是普通对象，由 Spring 管理。',
-        '<b>forward 和 redirect 怎么选？</b>需要保留请求数据、URL 不变用 forward；需要改变 URL、避免刷新重复提交用 redirect。',
-        '<b>Session 和 Token 哪个好？</b>Session 服务端可主动失效、实现简单；Token 天然适合分布式和跨端，但注销和续期要额外设计。',
-        '<b>为什么 Servlet 不设计成每次请求一个新实例？</b>创建对象有成本，单例更省内存；线程安全问题通过“不共享可变状态”来规避。',
-        '<b>Filter 和 Interceptor 的区别？</b>Filter 属于 Servlet 规范，能拦所有请求；Interceptor 属于 Spring MVC，能拿到 Handler 信息，粒度更细。',
-        '<b>Tomcat 和 Servlet 是什么关系？</b>Tomcat 是 Servlet 容器的一种实现，负责解析 HTTP、管理 Servlet 生命周期；Jetty、Undertow 也是容器。'
+        '<b>问：Servlet 和 Spring MVC 的 Controller 是什么关系？</b><br>答：DispatcherServlet 是业务请求的唯一入口 Servlet：容器里仍可额外注册别的 Servlet（监控/健康检查端点、Prometheus 抓取），只是业务 URL 都交给 DispatcherServlet 分发；它接住业务请求，再按 URL 找 HandlerMapping 挑出 Controller 方法；Controller 只是被 Spring 管理的普通对象，本身不是 Servlet，没有 init/service/destroy 那套生命周期。理解这层之后很多现象就顺了：Filter 一定在 DispatcherServlet 之前，Interceptor 在 DispatcherServlet 内部、还能拿到 Handler 信息。',
+        '<b>问：forward 和 redirect 怎么选？</b><br>答：需要保留请求属性、地址栏不变、由服务端继续处理，用 forward：一次请求一次响应，request 域里的数据还在，但刷新会重复提交。需要改变地址栏、避免刷新重复提交、或者要跳到别的系统，用 redirect：浏览器发起第二次请求，request 域数据丢失，传值只能靠 session 或查询参数。表单提交成功后跳结果页，标准答案就是 redirect。',
+        '<b>问：Session 和 Token 哪个好？</b><br>答：Session 存在服务端，可以主动失效、实现简单，但多实例部署要做共享存储，扩容和迁移都受牵制；Token 把状态放在客户端，天然适合分布式和跨端，服务端只需验签，代价是注销与续期要额外设计——签发出去的凭证在过期前默认一直有效，得配合黑名单或短有效期加刷新令牌。选哪个，先问自己要不要「立即踢人下线」。',
+        '<b>问：为什么 Servlet 不设计成每次请求一个新实例？</b><br>答：创建对象有成本，一个请求一个实例会让高并发下的对象分配与 GC 压力陡增，而 Servlet 大多数时候是无状态的，复用一个实例足够。代价是线程安全要自己保证：不能把请求相关的数据放进实例字段，需要时用局部变量、request 属性或 ThreadLocal，并且 ThreadLocal 用完必须 remove。',
+        '<b>问：Filter 和 Interceptor 的区别？</b><br>答：Filter 属于 Servlet 规范，在 DispatcherServlet 之前执行，能拦所有请求（包括静态资源），拿到的是 ServletRequest，改请求体或响应头都方便；Interceptor 属于 Spring MVC，在 DispatcherServlet 内部执行，能拿到 HandlerMethod，可以读到方法上的注解，粒度更细。需要跨框架的粗粒度处理用 Filter，需要按注解做权限用 Interceptor。',
+        '<b>问：Tomcat 和 Servlet 是什么关系？</b><br>答：Servlet 是规范，是一组接口；Tomcat 是这套规范的实现之一，负责解析 HTTP、把字节流变成 HttpServletRequest、按 url-pattern 分发、管理 Servlet 的生命周期与线程池，Jetty、Undertow 也是同类容器。所以代码只依赖 Servlet API，换容器不用改业务代码，这也是 Servlet API 在 Maven 里用 provided 范围的原因。'
       ] },
 
       { h: '5.17 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '用浏览器开发者工具抓一次登录请求，抄下请求行、三个请求头和响应状态码。',
-        '写一个 Servlet，接收 name 参数并返回 JSON；分别用 GET 和 POST 访问，观察参数位置差异。',
-        '实现一个编码 Filter，统一设置请求和响应的 UTF-8，验证去掉它之后中文是否乱码。',
-        '做一个登录 + 注销流程，要求未登录访问受保护页面时跳转登录页，注销后 Session 立即失效。',
-        '故意在 Servlet 实例字段里存用户名，用两个浏览器并发访问，观察数据串号，再改成局部变量修复。'
+        '用浏览器开发者工具抓一次登录请求，抄下请求行、三个请求头和响应状态码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：Network 面板里出现一条 POST 请求，请求行形如 <code>POST /login HTTP/1.1</code>，请求头至少有 Host、Content-Type、Cookie，响应状态码是 302 或 200。<b>为什么</b>：看懂这一条请求，就能把「表单为什么没带上参数」「跳转后为什么还是未登录」这类问题定位到具体字段，而不是靠猜。<b>要点</b>：勾选 Preserve log 再登录；重点抄 <code>Content-Type: application/x-www-form-urlencoded</code>、<code>Cookie: JSESSIONID=...</code>，以及响应里的 <code>Set-Cookie</code> 与 <code>Location</code>，写进笔记备用。</div></details>',
+        '写一个 Servlet，接收 name 参数并返回 JSON；分别用 GET 和 POST 访问，观察参数位置差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：GET 把参数拼在 URL 问号后面，POST 放在请求体里；两种方式 <code>getParameter("name")</code> 都能取到值，但 POST 必须先设字符编码，否则中文乱码。<b>为什么</b>：参数来源不同——查询串与请求体——容器会把它们合并到同一个参数表，前提是编码在第一次读参数之前就设好。<b>要点</b>：<code>resp.setContentType("application/json;charset=UTF-8")</code>，再用 <code>resp.getWriter()</code> 输出；POST 表单要确认 Content-Type 是 form-urlencoded，否则 getParameter 拿不到值。</div></details>',
+        '实现一个编码 Filter，统一设置请求和响应的 UTF-8，验证去掉它之后中文是否乱码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：加上 Filter 后 POST 中文参数与响应中文都正常；把编码那两行注释掉后，中文变成问号或方块，GET 可能还正常（容器默认按 URI 编码解析）。<b>为什么</b>：请求体的解码发生在第一次读参数时，编码必须在那之前设好；响应字符集也要在拿到 Writer 之前设置，之后再设无效。<b>要点</b>：Filter 里先 <code>request.setCharacterEncoding("UTF-8")</code> 与 <code>response.setCharacterEncoding("UTF-8")</code>，再 <code>chain.doFilter(req, resp)</code>；用 <code>@WebFilter("/*")</code> 或 web.xml 注册，注意多个 Filter 的顺序。</div></details>',
+        '做一个登录 + 注销流程，要求未登录访问受保护页面时跳转登录页，注销后 Session 立即失效。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：未登录直接访问 /profile 被 302 到 /login；登录后能访问；注销后再次访问又被跳回登录页，旧 JSESSIONID 对应的数据取不到。<b>为什么</b>：登录状态存在 Session 里，保护逻辑放在 Filter 里统一拦截；注销必须调用 invalidate() 而不只是移除某个属性，否则会话里其他数据仍然在。<b>要点</b>：登录成功 <code>getSession().setAttribute("user", u)</code>；Filter 判空后 <code>sendRedirect(ctx + "/login")</code> 并立即 return；注销用 <code>session.invalidate()</code>。</div></details>',
+        '故意在 Servlet 实例字段里存用户名，用两个浏览器并发访问，观察数据串号，再改成局部变量修复。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个浏览器几乎同时请求时，A 的页面显示出 B 的用户名；把字段改成方法内局部变量后，无论怎么并发都不串。<b>为什么</b>：容器对同一个 Servlet 只创建一个实例，所有请求共用它的实例字段，两个线程写同一个变量就形成竞态。<b>要点</b>：用户信息放局部变量或 request 属性；确实需要线程内共享时用 ThreadLocal 并在 finally 里 remove；排查时用两个标签页加 <code>Thread.sleep</code> 放大时间窗，问题几乎必现。</div></details>'
       ] }
     ]
   };
@@ -851,21 +856,22 @@
 
       { h: '6.16 常见追问' },
       { list: [
-        '<b>mvn package 和 mvn install 的区别？</b>package 只把产物打到 target；install 还会复制到本地仓库，供其他项目依赖。',
-        '<b>为什么 Servlet API 用 provided？</b>运行时由 Tomcat 提供，打进 war 会重复甚至版本冲突。',
-        '<b>依赖冲突怎么快速定位？</b>先 mvn dependency:tree 找重复 artifact，再用 exclusion 或 dependencyManagement 统一版本。',
-        '<b>单元测试和集成测试怎么分？</b>单元测试隔离外部依赖、毫秒级；集成测试验证真实组件协作，如数据库、HTTP，通常更慢。',
-        '<b>Mock 和 Stub 的区别？</b>Stub 只提供返回值，Mock 还能验证交互（调用次数、参数）；实践中常统称 mock。',
-        '<b>覆盖率要求多少合适？</b>没有统一标准，核心模块可要求较高，整体看趋势；不要为数字写无断言的测试。'
+        '<b>问：mvn package 和 mvn install 的区别？</b><br>答：package 只把产物打到 target 目录，供本机直接运行或部署；install 在 package 之后多做一步，把产物复制进本地仓库，让同机的其他项目能按坐标依赖它。多模块工程里，install 还是让 reactor 之外的模块拿到最新版本的前提。日常开发用 package 就够，联调多个工程时才需要 install，注意它会污染本地仓库，发布前记得 clean。',
+        '<b>问：为什么 Servlet API 用 provided？</b><br>答：因为运行时由 Tomcat 提供，容器自己的类加载器里已经有这套类。打进 war 就会重复甚至版本冲突：应用带着 4.0 的 API 跑在只支持 3.1 的容器上，启动时直接抛 NoSuchMethodError 或 LinkageError。provided 的含义正是「编译和测试时需要，打包和运行时不带」。lombok 是编译期注解处理器，作用域常写 provided 或 optional，取决于构建工具约定，别把它和「容器提供」的 Servlet API 并列成同一类原因。',
+        '<b>问：依赖冲突怎么快速定位？</b><br>答：先 <code>mvn dependency:tree -Dverbose</code> 找出同一个 groupId:artifactId 出现两次以上、版本不同的位置，看它从哪条路径被传进来；再按优先级处理——直接声明覆盖传递依赖、用 <code>exclusion</code> 切断来源、或者在 <code>dependencyManagement</code> 里统一版本。定位到具体路径再改，比一个个试版本快得多。',
+        '<b>问：单元测试和集成测试怎么分？</b><br>答：单元测试隔离所有外部依赖（数据库、HTTP、文件系统），毫秒级，失败时能直接指向一段逻辑；集成测试验证真实组件之间的协作，比如 DAO 打真库、Controller 起容器，慢但能抓出配置和 SQL 的问题。分界的实际意义在反馈速度：单元测试每次提交都跑，集成测试放在流水线后段。用命名和目录区分，别混在一个测试类里。',
+        '<b>问：Mock 和 Stub 的区别？</b><br>答：Stub 只提供预设返回值，让被测代码能走下去；Mock 额外记录交互，可以断言「这个方法被调了几次、参数是什么」。严格区分只在写测试时有用：需要验证副作用，比如发了通知、写了审计，就用 Mock 的验证能力；只需要让依赖返回数据，用 Stub，后者更不容易让测试和实现细节绑死。实践里常统称 mock，但要清楚自己在断言什么。',
+        '<b>问：覆盖率要求多少合适？</b><br>答：没有通用数字。行覆盖率 80% 在一些团队是门禁，在另一些团队毫无意义，因为它只说明代码被执行过，不说明断言有效。更该关注核心模块的分支覆盖和关键路径：金额计算、权限判断、状态流转这类地方值得逼到接近全覆盖，DTO 和 getter 不必。把覆盖率当趋势看——突然下降说明新代码没测；不要为了数字写没有断言的测试。'
       ] },
 
       { h: '6.17 自测与练习' },
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
       { ol: [
-        '新建一个 Maven 项目，写出包含 junit-jupiter（test scope）的 pom，执行 mvn clean package 并找到 target 下的 jar。',
-        '故意引入两个版本的同一依赖，用 dependency:tree 找出冲突，再用 exclusion 解决并验证。',
-        '把同一个项目改造成 Gradle 工程，用 ./gradlew build 构建，比较两份构建脚本的差异。',
-        '为一个包含“余额不足”“账户不存在”“正常扣款”三种分支的提现方法写测试，覆盖异常与正常路径。',
-        '用 Mockito 为依赖 Repository 的 Service 写测试，验证保存时状态被正确设置，并说明哪些东西不该 mock。'
+        '新建一个 Maven 项目，写出包含 junit-jupiter（test scope）的 pom，执行 mvn clean package 并找到 target 下的 jar。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>mvn clean package</code> 输出 BUILD SUCCESS，target 下出现「项目名-版本.jar」；测试类被执行并打印用例数，没有测试时输出 No tests to run。<b>为什么</b>：Maven 的约定目录决定它去哪找源码和测试代码，test 范围让 junit 只出现在编译测试和跑测试的 classpath 上，不会被打进产物。<b>要点</b>：源码放 <code>src/main/java</code>、测试放 <code>src/test/java</code>；依赖写 <code>junit-jupiter</code> 加 <code>&lt;scope&gt;test&lt;/scope&gt;</code>；用 <code>mvn -q package</code> 看精简输出，<code>-X</code> 排查依赖问题。</div></details>',
+        '故意引入两个版本的同一依赖，用 dependency:tree 找出冲突，再用 exclusion 解决并验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：树里同一个 artifact 出现两次不同版本，其中一个标着 omitted for conflict；加 exclusion 之后树里只剩一个版本，运行时行为随之改变。<b>为什么</b>：传递依赖会带进各自声明的版本，Maven 按「路径最近优先、同深度先声明优先」选一个，选错就可能在运行时抛 NoSuchMethodError。<b>要点</b>：<code>mvn dependency:tree -Dverbose -Dincludes=groupId:artifactId</code> 精确定位；在引入方加 <code>&lt;exclusions&gt;</code>，或直接在 <code>dependencyManagement</code> 里钉死版本；改完再跑一次树确认。</div></details>',
+        '把同一个项目改造成 Gradle 工程，用 ./gradlew build 构建，比较两份构建脚本的差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>./gradlew build</code> 输出 BUILD SUCCESSFUL，产物在 build/libs 下（Maven 是 target）；同一份依赖在 Gradle 里写成 testImplementation 而不是 scope，源码目录可以完全不动。<b>为什么</b>：两者遵循同一套目录约定，差异在描述方式与任务模型——Gradle 用增量任务图和脚本，Maven 用固定生命周期加插件。<b>要点</b>：<code>plugins { id "java" }</code>，依赖写 <code>testImplementation(...)</code>，<code>test { useJUnitPlatform() }</code>；用 <code>gradle wrapper</code> 生成 gradlew，保证团队版本一致。</div></details>',
+        '为一个包含“余额不足”“账户不存在”“正常扣款”三种分支的提现方法写测试，覆盖异常与正常路径。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个测试分别验证正常扣款后余额减少、余额不足抛业务异常且余额不变、账户不存在抛异常；全绿之后故意改坏一行判断逻辑，至少有一个测试变红。<b>为什么</b>：测试的价值在于「改坏能被发现」，三个分支各有一条断言才形成有效保护；只测正常路径的测试，改坏边界逻辑时依然全绿。<b>要点</b>：每条用例先构造初始余额，再用 <code>assertThrows(BizException.class, ...)</code>，最后断言余额未变；组合多时用 <code>@ParameterizedTest</code> 加 <code>@CsvSource</code> 把余额与金额写成表格。</div></details>',
+        '用 Mockito 为依赖 Repository 的 Service 写测试，验证保存时状态被正确设置，并说明哪些东西不该 mock。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：Repository 返回预设实体，Service 处理后 save 被调用一次，用 ArgumentCaptor 抓到的对象状态是「已支付」；整个测试不连数据库，几十毫秒跑完。<b>为什么</b>：替换掉外部依赖，失败才只可能来自被测逻辑；mock 掉值对象或 JDK 集合毫无意义，只会让测试变脆、和实现细节绑死。<b>要点</b>：<code>@Mock</code> 配 <code>@InjectMocks</code>，<code>when(repo.findById(1L)).thenReturn(Optional.of(e))</code>，<code>verify(repo).save(captor.capture())</code>；别 mock 实体、枚举、String 和 List。</div></details>'
       ] }
     ]
   };

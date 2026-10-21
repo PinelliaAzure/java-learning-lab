@@ -13,7 +13,7 @@
         id: 'modern-lts', title: 'Java 21–25 语言演进与 LTS 迁移', minutes: 40, level: '进阶',
         intro: '2026 年写 Java，版本判断已经从“用 8 还是用 17”变成“21 还是 25”。这一课把 21 到 25 之间真正会写进业务代码的语言变化挑出来，并给出 8/11/17/21 四条旧版本的升级路径。',
         points: [
-          { t: 'LTS 节奏', d: 'LTS 每两年一个：17（2021-09）、21（2023-09）、25（2025-09），下一个是 27（2027-09）；中间的功能版本每半年一个，只有 6 个月支持。' },
+          { t: 'LTS 节奏', d: 'LTS 每两年一个：17（2021-09）、21（2023-09）、25（2025-09），下一个是 29（2027-09）；中间的 26（2026-03）、27（2026-09）已发布，都只是非 LTS 的特性版本，功能版本每半年一个，只有 6 个月支持。' },
           { t: '模式匹配转正', d: 'record 模式（JEP 440）与 switch 模式匹配（JEP 441）在 21 转正，配合 sealed 接口可以做穷尽性的类型分派。' },
           { t: '未命名变量 _', d: 'JEP 456（22 转正）：catch 变量、lambda 参数、for-each 变量、record 解构里用不到的成分都可以写成 <code>_</code>，表达“我知道它存在，但不用”。' },
           { t: 'Gatherers', d: 'JEP 485（24 转正）：<code>Stream.gather()</code> 让自定义中间操作成为一等公民，滑动窗口、去重保序、分批这类需求不必再绕道 collector。' },
@@ -28,7 +28,7 @@
           homework: ['把项目里一处 instanceof 强制转换链改写成 switch 模式匹配，并用 sealed 接口保证穷尽。', '用 jdeps 扫一遍依赖，列出升级到 25 之前必须换掉的库（javax.*、老版本 ASM/CGLIB、字节码增强类框架）。']
         },
         quiz: [
-          { q: '2026 年当前的 Java LTS 版本是？', options: ['Java 21', 'Java 23', 'Java 25', 'Java 27'], answer: 2, explain: '25 于 2025-09 发布成为 LTS；21 是上一代 LTS，下一个 LTS 是 2027-09 的 27。' },
+          { q: '2026 年当前的 Java LTS 版本是？', options: ['Java 21', 'Java 23', 'Java 25', 'Java 27'], answer: 2, explain: '25 于 2025-09 发布成为 LTS；21 是上一代 LTS，下一个 LTS 是 2027-09 的 29；26（2026-03）、27（2026-09）已发布，但都是非 LTS。' },
           { q: 'Stream Gatherers（JEP 485）解决的是哪类问题？', options: ['并行流的线程调度', '自定义 Stream 中间操作', 'HTTP 客户端连接池', '模块化打包'], answer: 1, explain: 'Gatherers 通过 Stream.gather() 支持有状态、可短路的自定义中间操作，如滑动窗口与去重保序。' },
           { q: 'FFM API（JEP 454）主要用于替代？', options: ['JNI', 'JDBC', 'JMX', 'JMS'], answer: 0, explain: 'java.lang.foreign 提供纯 Java 的本地函数调用与内存访问，替代需要写 C 胶水的 JNI。' }
         ]

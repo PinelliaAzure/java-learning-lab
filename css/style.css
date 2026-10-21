@@ -2679,3 +2679,61 @@ label.btn { cursor: pointer; display: inline-flex; align-items: center; justify-
   .fab-panel { width: min(264px, calc(100vw - 28px)); }
   .tools-reset { flex-wrap: wrap; }
 }
+
+/* ---------- 自测与练习：参考答案折叠 ---------- */
+.tb-ans {
+  margin: 9px 0 2px;
+}
+
+.tb-ans > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 3px 11px 3px 9px;
+  border: 1px solid var(--amber-line);
+  border-radius: 999px;
+  background: var(--amber-soft);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+}
+
+.tb-ans > summary::-webkit-details-marker { display: none; }
+
+.tb-ans > summary::before {
+  content: "▸";
+  font-size: 9px;
+  transition: transform 0.18s ease;
+}
+
+.tb-ans[open] > summary::before { transform: rotate(90deg); }
+
+.tb-ans[open] > summary {
+  background: rgba(242, 166, 90, 0.2);
+  color: var(--text);
+}
+
+.tb-ans > .ans-body {
+  margin-top: 8px;
+  padding: 11px 14px;
+  border-left: 2px solid var(--amber-line);
+  border-radius: 0 9px 9px 0;
+  background: rgba(255, 255, 255, 0.028);
+  font-size: 12.5px;
+  line-height: 1.92;
+  color: var(--text-soft);
+}
+
+.tb-ans > .ans-body b { color: var(--amber); font-weight: 600; }
+.tb-ans > .ans-body p { margin: 0 0 8px; }
+.tb-ans > .ans-body p:last-child { margin-bottom: 0; }
+.tb-ans > .ans-body code { color: var(--teal); }
+
+@media print {
+  .tb-ans > .ans-body { display: block; }
+}
+

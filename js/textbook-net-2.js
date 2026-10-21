@@ -146,17 +146,16 @@
 
       { h: '1.16 常见追问' },
       { list: [
-        '<b>NIO 一定比阻塞 IO 快吗？</b>不一定。连接少时阻塞 IO 更简单也更快；NIO 的优势在高并发连接下的线程利用率。',
-        '<b>堆内存 Buffer 和直接内存 Buffer 怎么选？</b>直接内存少一次拷贝、适合长期复用的网络缓冲，但分配和回收贵；文件读写和临时数据用堆内存即可。',
-        '<b>select、poll、epoll 有什么区别？</b>select 有文件描述符数量上限且每次全量拷贝；poll 去掉了上限；epoll 用事件回调，只返回就绪的，连接多时更高效。',
-        '<b>为什么 FileChannel 不能注册 Selector？</b>文件总是“就绪”的，不存在等待事件；它也不是 SelectableChannel，没有非阻塞模式。'
+        '<b>问：NIO 一定比阻塞 IO 快吗？</b><br>答：不一定。它优化的不是单次读写速度，而是「一个线程能盯住多少个连接」。连接少、请求密集时，阻塞 IO 一个连接一个线程，代码简单、也没有事件循环的复杂度，往往更快。NIO 的价值出现在连接上千、每个连接大部分时间都在等数据的场景：线程数从一万降到几个，上下文切换和栈内存都省下来。反过来，如果事件循环里塞进慢 SQL 或别的阻塞调用，一个连接就能拖死所有连接。',
+        '<b>问：堆内存 Buffer 和直接内存 Buffer 怎么选？</b><br>答：<code>allocateDirect</code> 分配和释放都贵，但读写不经过 JVM 堆，通道可以把这块内存直接交给操作系统做 DMA，少一次拷贝，适合长期复用、反复读写的网络缓冲。堆内存 Buffer 分配便宜、由 GC 管，适合临时数据和文件读写。<b>要点</b>：直接内存不受 <code>-Xmx</code> 限制，用多了会抛 <code>OutOfMemoryError: Direct buffer memory</code>，所以必须池化复用。',
+        '<b>问：select、poll、epoll 有什么区别？</b><br>答：select 有文件描述符数量上限（通常 1024），每次调用都要把整个集合从用户态拷进内核，返回后还得自己遍历找就绪项；poll 用数组去掉了上限，但仍然是全量拷贝加全量扫描；epoll 在内核里维护一棵登记关注事件的红黑树，就绪的放进链表，调用只返回真正就绪的那些，连接多而活跃少时优势明显。Java 的 <code>Selector</code> 在 Linux 上就是 epoll 的封装。',
+        '<b>问：为什么 FileChannel 不能注册 Selector？</b><br>答：Selector 等的「就绪」含义是内核能告诉你「现在读这个 fd 不会阻塞」。普通文件永远就绪，可读性由文件长度决定，内核并没有对应的事件机制，它压根不参与 epoll。另外 <code>FileChannel</code> 也不是 <code>SelectableChannel</code>，没有 <code>configureBlocking</code> 这些方法。想让文件 IO 不阻塞线程，只能交给独立线程池，或者用异步文件通道。'
       ] },
-
       { h: '1.17 自测与练习' },
       { ol: [
-        '不运行代码，写出 <code>ByteBuffer.allocate(10)</code> 写入 6 字节后 flip 再读 2 字节，此时 position、limit、remaining 各是多少。',
-        '用 FileChannel 复制一个文件，要求使用 compact，并说明为什么不能用 clear。',
-        '给 SelectorEcho 加一个超时：<code>select(1000)</code> 返回 0 时打印“空闲”，观察输出。'
+        '不运行代码，写出 <code>ByteBuffer.allocate(10)</code> 写入 6 字节后 flip 再读 2 字节，此时 position、limit、remaining 各是多少。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：写完 6 字节时 position=6、limit=10、remaining=4；<code>flip</code> 之后 position=0、limit=6、remaining=6；读掉 2 字节后 position=2、limit 仍是 6、remaining=4。<b>为什么</b>：写模式下 limit 就是容量；<code>flip</code> 把 limit 设成当前 position、position 归零，等于翻到读模式；读操作只推进 position，不再改 limit，所以 remaining 一直是 limit 减 position。<b>要点</b>：想从头重读用 <code>rewind</code>（position 归零、limit 不变）；想把没读完的残留数据挪到开头接着写，用 <code>compact</code>，它会先搬移再改 position 与 limit。JDK 9 起 flip、clear 返回具体类型可以链式调用，Java 8 上返回的是 Buffer，链式写法要强转。position 已经等于 limit 还调 get，抛的是 <code>BufferUnderflowException</code>。</div></details>',
+        '用 FileChannel 复制一个文件，要求使用 compact，并说明为什么不能用 clear。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：循环里 flip、write、compact 时，目标文件字节数和源文件完全一致；换成 <code>clear</code> 后，最后一次读只填了一半，写的时候会把缓冲区里残留的旧数据一起写出去，目标文件偏大或内容被污染。<b>为什么</b>：<code>clear</code> 只把 position 归零、limit 设为容量，并不擦掉数据；上一轮没读走的字节还在，写入时就当成有效内容。<code>compact</code> 先把未读部分挪到开头，再让 position 接在后面，保证写出的只有有效数据。<b>要点</b>：复制文件其实用 <code>transferTo</code> 更省事，内核直接拷，连缓冲区都不用自己管。</div></details>',
+        '给 SelectorEcho 加一个超时：<code>select(1000)</code> 返回 0 时打印「空闲」，观察输出。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：没有连接时大约每秒打印一行「空闲」；一旦有客户端连上，那一秒就不再打印空闲行，因为 <code>select</code> 立刻返回了。<b>为什么</b>：<code>select(timeout)</code> 会阻塞等待就绪事件，超时返回 0 表示这一轮什么都没有；返回大于 0 表示有事件，需要遍历 <code>selectedKeys</code> 处理。<b>要点</b>：每处理一个 key 都要 <code>iterator.remove()</code>，否则下一轮还会看到它；返回 0 时别去读空集合；事件循环里绝不能做阻塞操作。</div></details>'
       ] },
     ]
   };
@@ -308,19 +307,18 @@
 
       { h: '2.15 常见追问' },
       { list: [
-        '<b>哈希能解密吗？</b>不能。所谓“破解”是用字典或暴力枚举去撞，撞出相同摘要就反推出原文，本质是猜。',
-        '<b>盐需要保密吗？</b>不需要，它和摘要一起存。盐的作用是让预计算失效，不是增加秘密。',
-        '<b>为什么 bcrypt 比 SHA-256 安全？</b>因为它故意慢，还能调成本；SHA-256 太快，适合校验文件，不适合存密码。',
-        '<b>已经用 HTTPS 了，密码还需要哈希吗？</b>需要。HTTPS 保护传输，哈希保护存储；数据库泄露时 HTTPS 帮不上忙。'
+        '<b>问：哈希能解密吗？</b><br>答：不能。哈希是单向的压缩映射，输出长度固定，信息在数学上已经丢失，不存在逆运算。所谓「破解」是用字典或暴力枚举把候选原文一个个算一遍，撞出相同摘要就反推出原文，本质上是猜而不是解。因此密码哈希的安全性取决于两件事：原文的熵足够高、哈希本身足够慢。这也解释了为什么弱口令即使套上 SHA-256，照样能被现成的彩虹表打出来。',
+        '<b>问：盐需要保密吗？</b><br>答：不需要。盐和摘要一起存在数据库里，攻击者拿到也没用。它的作用是让预计算失效：同一个密码配上不同盐会算出完全不同的摘要，彩虹表立刻报废；同时它把「撞出一个哈希就拿下所有同密码用户」变成逐个破解。要求是每个用户唯一、长度足够、用密码学随机数生成，但完全不必保密。',
+        '<b>问：为什么 bcrypt 比 SHA-256 安全？</b><br>答：因为它故意慢。SHA-256 是为吞吐量设计的，一块 GPU 每秒能算几十亿次，配上字典几乎等于明文；bcrypt 和 PBKDF2、scrypt、Argon2 一样带成本参数，可以调到一次校验花 100 毫秒，同一块卡每秒只能试十几次，暴力破解就从分钟级变成年级。代价是每次登录都要付这 100 毫秒，所以成本参数必须可配置，硬件变快了就调高。',
+        '<b>问：已经用 HTTPS 了，密码还需要哈希吗？</b><br>答：需要，两者保护的是不同环节。HTTPS 保护密码在传输路上不被窃听和篡改；哈希保护它在存储层，数据库被拖走、备份泄露、DBA 顺手查一条时都用不上。没有哈希，一次库泄露就等于全体用户明文密码泄露，而这些用户往往还拿同一个密码去登别家。正确做法是：走 HTTPS 传输，服务端用加盐慢哈希存储。'
       ] },
-
       { h: '2.16 自测与练习' },
       { ol: [
-        '把 <code>"hello"</code> 分别做 Base64 编码和 SHA-256 哈希，说明为什么一个能还原、一个不能。',
-        '用同一个密码和两个不同盐各算一次 PBKDF2，比较结果，并解释数据库里需要存哪些字段。',
-        '把 <code>URLEncoder.encode("a b/c?d", UTF_8)</code> 的结果写出来，再解释哪些字符被转义、为什么。',
-        '写一个方法，用 SecureRandom 生成 32 字节令牌并做 URL 安全的 Base64 编码。',
-        '列出你见过的三个“把编码当加密”的写法，并说明正确做法。'
+        '把 <code>"hello"</code> 分别做 Base64 编码和 SHA-256 哈希，说明为什么一个能还原、一个不能。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：Base64 得到 <code>aGVsbG8=</code>，解码回来还是 hello；SHA-256 得到 64 个十六进制字符（<code>2cf24dba...</code>），而且无论怎么算都回不到 hello。<b>为什么</b>：Base64 只是把每 3 个字节重新打包成 4 个可打印字符，规则完全可逆，是编码；SHA-256 是单向摘要，输出只有 256 位，不同输入可能落到同一输出，信息已被不可逆地压缩掉。<b>要点</b>：编码解决传输兼容，加密要密钥且可逆，哈希单向、用于校验和存密码，三者目的不同，别混着用。</div></details>',
+        '用同一个密码和两个不同盐各算一次 PBKDF2，比较结果，并解释数据库里需要存哪些字段。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两次算出的 Base64 结果长度一样但内容完全不同，肉眼找不出任何相似之处；数据库里每个用户要存盐、算法与迭代次数、摘要三样。<b>为什么</b>：PBKDF2 把密码和盐一起做上千轮 HMAC，盐一变整条结果全变，这正是每次都有唯一指纹的原因。<b>要点</b>：盐用 <code>SecureRandom</code> 生成 16 字节并按原样存；迭代次数要落库，将来调高才能兼容老数据；比对用 <code>MessageDigest.isEqual</code> 这类常量时间比较，别用 equals。</div></details>',
+        '把 <code>URLEncoder.encode("a b/c?d", UTF_8)</code> 的结果写出来，再解释哪些字符被转义、为什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出 <code>a+b%2Fc%3Fd</code>，空格变成了加号；如果按 RFC 3986 的路径规则编码，空格应当是 <code>%20</code>，斜杠反倒不必转义。<b>为什么</b>：<code>URLEncoder</code> 实现的是表单编码（application/x-www-form-urlencoded），空格在那里映射成 <code>+</code>；而 <code>/</code> 和 <code>?</code> 在查询值里有分隔含义，必须转成 <code>%2F</code>、<code>%3F</code> 才不会改变结构。<b>要点</b>：拼路径段要用 <code>URI</code> 或按 RFC 3986 自己编码，别拿 URLEncoder 拼 URL；解码用 <code>URLDecoder.decode(s, UTF_8)</code>。</div></details>',
+        '写一个方法，用 SecureRandom 生成 32 字节令牌并做 URL 安全的 Base64 编码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：每次运行得到 43 个字符的字符串，只含 A-Z、a-z、0-9、<code>-</code>、<code>_</code>，可以直接塞进 URL 或 Cookie，不用再做一次转义。<b>为什么</b>：32 字节是 256 位熵，暴力猜中的概率可以忽略；URL 安全的 Base64 把 <code>+</code> 换成 <code>-</code>、<code>/</code> 换成 <code>_</code>，再去掉 <code>=</code> 填充，所以在 URL 里是安全的。<b>要点</b>：用 <code>new SecureRandom().nextBytes(buf)</code>，不要用 <code>Random</code>（可预测）；<code>Base64.getUrlEncoder().withoutPadding()</code> 才是 URL 安全；令牌入库时存哈希，泄露也无法反推。</div></details>',
+        '列出你见过的三个「把编码当加密」的写法，并说明正确做法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：最常见的三类是把密码做 Base64 存库、用 URLEncoder 处理「敏感参数」当加密、以及自己写字符位移或「MD5 拼固定盐」当加密。<b>为什么</b>：编码没有密钥、算法公开且可逆；固定盐等于全局只有一个盐，彩虹表一次预计算就能全破；MD5 的碰撞已被工程化，早已不该用在任何安全场景。<b>要点</b>：正确做法分别是密码用 bcrypt 或 PBKDF2 配每用户随机盐、敏感参数靠 HTTPS 保护或 AES-GCM 并管好密钥、校验用 SHA-256 但别当签名。判断标准就一条：没有密钥的东西不是加密。</div></details>'
       ] },
     ]
   };

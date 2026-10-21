@@ -115,22 +115,23 @@
       ] },
       { h: '1.13 常见追问' },
       { list: [
-        '数组和 List 怎么选？长度固定、追求极致性能用数组；需要增删、丰富 API、泛型约束用 List。',
-        'List 能存 null 吗？能，ArrayList 和 LinkedList 都允许，但 List.of 不允许。',
-        '为什么 <code>List&lt;int&gt;</code> 编译不过？泛型参数必须是引用类型，用 Integer 代替。',
-        'ArrayList 的容量和 size 有什么区别？容量是底层数组长度，size 是实际元素个数。',
-        '为什么增强 for 里删除元素会抛异常？集合的 modCount 与迭代器期望值不一致，触发 fail-fast。',
-        '三个 List 实现怎么选？默认 ArrayList；头尾频繁增删或当队列用 ArrayDeque；遗留系统才考虑 Vector。'
+        '<b>问：数组和 List 该怎么选？</b><br>答：看长度是否在创建时就确定，以及是否需要频繁增删。长度固定、元素是基本类型、追求零对象开销和极致访问速度时用数组，它没有包装、没有边界检查之外的开销，也方便与原生接口交换数据。需要不定长扩容、丰富的查找与视图 API、泛型带来的类型安全时用 List。经验做法是内部实现用数组换性能，对外暴露接口时用 List 换便利。',
+        '<b>问：List 能存 null 吗？</b><br>答：ArrayList 与 LinkedList 都允许存 null，甚至能存多个，<code>contains(null)</code> 返回 true，<code>remove(null)</code> 删掉第一个出现的 null。真正的限制来自实现类：<code>List.of</code> 与 <code>Arrays.asList</code> 之后的结构性修改都会失败，前者连 null 元素本身都不接受，会直接抛 NullPointerException。团队里更该关心的是语义：能存 null 不等于该存 null，可空引用会让调用方到处判空。',
+        '<b>问：为什么 <code>List&lt;int&gt;</code> 编译不过？</b><br>答：泛型参数必须是引用类型，基本类型没有对应的类，所以只能写 <code>List&lt;Integer&gt;</code>。这不只是语法限制：泛型在实现上做了类型擦除，运行期元素都当 Object 存，基本类型无法作为 Object 引用。代价是每次读写都可能发生装箱与拆箱，循环里往 <code>List&lt;Integer&gt;</code> 反复累加时，这个开销会被放大，数量级大时要考虑 primitive 专用容器或直接改用数组。',
+        '<b>问：ArrayList 的容量和 size 有什么区别？</b><br>答：容量是底层数组的长度，size 是实际存了多少个元素；容量总是大于等于 size。无参构造时容量为 0，第一次 add 才分配成默认的 10，所以「默认容量 10」其实是首次写入时才落地的。容量只影响扩容时机，不影响遍历和下标范围，越界判断用的始终是 size。想减少扩容就把预估数量传给构造器，传多了只是占内存，不会影响正确性。',
+        '<b>问：为什么增强 for 里删除元素会抛异常？</b><br>答：增强 for 会被编译成迭代器遍历，集合内部维护一个 modCount，每次结构性修改都加一；迭代器在每次取元素前后比对期望值与实际值，发现不一致就抛 ConcurrentModificationException。真正的问题不是「多线程」，而是遍历期间绕过了迭代器去改结构。<b>要点</b>是改用 <code>iterator.remove()</code> 或直接 <code>list.removeIf(...)</code>，它们会同步更新 modCount。',
+        '<b>问：ArrayList、LinkedList、Vector 三个实现怎么选？</b><br>答：默认选 ArrayList，随机访问快、内存连续、扩容策略温和，绝大多数场景它都是最优解。需要频繁在头部或尾部增删、或者当队列用时选 ArrayDeque，它比 LinkedList 更快也更省内存，LinkedList 只在需要同时从两端大量插入、且几乎不按下标访问时才有位置。Vector 的方法全是同步的，每次操作都有锁开销，属于历史遗留，新代码不该再用，需要并发就用 CopyOnWriteArrayList 或加显式锁。'
       ] },
+
       { h: '1.14 自测与练习' },
-      { p: '做练习时建议打开 IDE 的调试器，在 add、remove、subList 这几行打断点，观察 size、底层数组长度和 modCount 的变化。很多“想不通”的行为，看一眼变量就明白了。每道题做完后，再故意改一个边界条件，比如把下标改成 size、把空列表传给方法，看看异常从哪里抛出，这比只看正确结果更能建立边界感。' },
       { ol: [
-        '创建 <code>List&lt;Integer&gt;</code>，依次加入 10、20、30，分别用 remove(1) 和 remove(Integer.valueOf(20)) 删除，打印结果并解释差异。',
-        '用四种方式遍历同一个列表，统计每种写法输出的元素个数。',
-        '构造一个包含 6 个元素的列表，取 subList(1, 4)，修改视图的第一个元素，再打印原列表。',
-        '把 <code>Arrays.asList("a", "b")</code> 赋给 List，尝试 add 和 set，记录各自的异常。',
-        '自定义一个 Student 类（姓名、分数），放进 List，分别按分数升序和姓名降序排序。'
+        '创建 <code>List&lt;Integer&gt;</code>，依次加入 10、20、30，分别用 remove(1) 和 remove(Integer.valueOf(20)) 删除，打印两次结果。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：先 remove(1) 后列表变成 [10, 30]；再用 remove(Integer.valueOf(20)) 时列表里已没有 20，返回 false，列表仍是 [10, 30]。<b>为什么</b>：重载决议在编译期确定，传 int 字面量命中 <code>remove(int index)</code> 按下标删，传 Integer 命中 <code>remove(Object)</code> 按值删；两个重载长得一样，是这类 bug 的源头。<b>要点</b>：按下标删就显式写 <code>remove(1)</code>，按值删写 <code>remove(Integer.valueOf(20))</code>；打印返回值能直接看出走的是哪个重载。</div></details>',
+        '用四种方式遍历同一个列表，统计每种写法输出的元素个数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：普通 for、增强 for、迭代器、<code>forEach</code> 四种写法输出个数都等于 size；把循环条件写成 <code>i &lt;= list.size()</code> 时最后一种抛 IndexOutOfBoundsException。<b>为什么</b>：四种写法遍历的是同一份数据，个数天然相同；差别在能否在遍历中修改结构，以及按下标访问对 LinkedList 是 O(n)。<b>要点</b>：普通 for 用 <code>i &lt; size()</code>；增强 for 与 forEach 不能删元素；需要边遍历边删只用迭代器的 remove。</div></details>',
+        '构造一个包含 6 个元素的列表，取 <code>subList(1, 4)</code>，修改视图的第一个元素，再打印原列表。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原列表下标 1 的元素被改成了新值，其余不变；再对视图调用 add 会抛 UnsupportedOperationException（ArrayList 的 subList 视图不支持结构性修改）。<b>为什么</b>：subList 返回的是原列表的视图而不是副本，读写都映射回原列表的对应区间，区间是左闭右开。<b>要点</b>：要独立副本用 <code>new ArrayList&lt;&gt;(list.subList(1, 4))</code>；视图只在原列表未被结构性修改期间有效，原列表一 add 就会 ConcurrentModificationException。</div></details>',
+        '把 <code>Arrays.asList("a", "b")</code> 赋给 List，尝试 add 和 set，记录各自的异常。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：add 抛 UnsupportedOperationException；set(0, "z") 成功且改变了原数组的第一个元素。<b>为什么</b>：asList 返回定长视图，长度由数组决定，结构修改一律拒绝；元素替换不改长度，直接写回原数组。<b>要点</b>：要可变的独立列表写 <code>new ArrayList&lt;&gt;(Arrays.asList(arr))</code>；要只读列表用 <code>List.of(arr)</code>，它连 set 也不允许，而且不接受 null 元素。</div></details>',
+        '自定义一个 Student 类（姓名、分数），放进 List，分别按分数升序和姓名降序排序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：按分数升序时分数从低到高；按姓名降序时按字典序反过来；同分学生的相对顺序保持不变。<b>为什么</b>：<code>List.sort</code> 底层对对象数组用稳定的归并类算法，比较规则由 Comparator 提供，返回负数表示前者排在前面。<b>要点</b>：<code>list.sort(Comparator.comparingInt(Student::getScore))</code>，姓名降序写 <code>Comparator.comparing(Student::getName).reversed()</code>；不要用 <code>a.getScore() - b.getScore()</code>，溢出会破坏排序契约。</div></details>'
       ] },
+      { note: '<b>练习建议：</b>做练习时打开调试器，在 add、remove、subList 这几行打断点，观察 size、底层数组长度和 modCount 的变化，比只盯正确结果更能建立边界感。' }
     ]
   };
 
@@ -237,23 +238,23 @@ T['arraylist-linkedlist'] = {
       { p: '还有一个常被忽略的实践：不要在循环条件里反复调用 list.size() 以外的高开销方法。size() 本身是 O(1)，但如果你写的是 list.contains(x) 放在循环条件里，每次都是 O(n)，嵌套起来就是 O(n²)。把与循环变量无关的结果提前算好，是比换容器更通用的优化手段。' },
       { h: '2.13 常见追问' },
       { list: [
-        'ArrayList 的默认容量是多少？10。但无参构造时并不分配，第一次 add 才分配。',
-        '扩容为什么是 1.5 倍不是 2 倍？在扩容次数和空间浪费之间折中，2 倍浪费更明显。',
-        'ArrayList 能存 null 吗？能，而且可以存多个，remove(null) 删除第一个 null。',
-        'LinkedList 的 get 为什么是 O(n)？节点地址不连续，只能从头或尾逐个走。',
-        '为什么说 LinkedList 插入是 O(1)？指已经定位到节点后改引用；按下标插入仍是 O(n)。',
-        'ArrayList 线程安全吗？不安全，多线程写要用 CopyOnWriteArrayList 或加锁。',
-        '遍历时 set 会触发 fail-fast 吗？不会，set 不改变 modCount，但会改变元素内容。'
+        '<b>问：ArrayList 的默认容量到底是多少？</b><br>答：字段上的默认常量是 10，但无参构造并不立刻分配数组，而是共享一个空数组，直到第一次 add 才把它换成容量为 10 的数组。所以「默认容量 10」是首次写入之后才成立的事实。用 <code>new ArrayList&lt;&gt;(n)</code> 指定容量时则立刻分配 n 个位置，适合已知规模的批量导入，能省掉前面几次扩容和数组复制。',
+        '<b>问：扩容为什么选 1.5 倍而不是 2 倍？</b><br>答：这是扩容次数与空间浪费的折中。倍数越大，达到目标规模所需的复制次数越少，但平均闲置空间越多；2 倍时数组往往有一半位置空着，1.5 倍在同样次数下闲置更少，还能让释放掉的旧数组有机会被后续分配复用，这一点对长期运行的服务很重要。代价是需要更多次复制，不过复制总成本仍然保持线性，可以接受。',
+        '<b>问：ArrayList 能存 null 吗？</b><br>答：能，而且可以存多个。<code>contains(null)</code> 返回 true，<code>remove(null)</code> 只删掉第一个 null，<code>indexOf(null)</code> 返回第一个 null 的位置。允许存 null 是历史设计，不代表该用；业务代码里存进 null，后续每次取值都要判空，容易漏。真正依赖「不允许 null」的语义时用 <code>List.of</code>，它在写入时就抛 NullPointerException，把约定提前暴露。',
+        '<b>问：为什么说 LinkedList 插入是 O(1)？</b><br>答：前提是「已经站在那个节点上」。LinkedList 的 add 只是改几个引用，不涉及复制，所以是常数时间；但按下标插入要先从头部或尾部走一遍找位置，这段是 O(n)，中间位置平均要走一半长度。同时按下标取值也是 O(n)，因为它必须顺着链表逐个跳。所以用 LinkedList 时应当通过迭代器或首尾方法操作，绝不要在循环里写 get(i)。',
+        '<b>问：ArrayList 线程安全吗？</b><br>答：不安全。多线程同时 add 可能让两个线程读到同一个 size，都往同一个下标写，结果是元素丢失；扩容期间一个线程还可能继续往已被替换的旧数组里写。要并发写用 CopyOnWriteArrayList（写时复制，适合读多写少），或者用 <code>Collections.synchronizedList</code> 包一层并在遍历时手动加锁，也可以干脆换成线程私有列表最后合并。',
+        '<b>问：遍历时 set 会触发 fail-fast 吗？</b><br>答：不会。fail-fast 的判断依据是 modCount，它只在结构性修改（增、删、扩容引起的变化）时递增；<code>set</code> 只是替换某个位置的值，长度不变，因此 modCount 不变，迭代继续进行。但要注意这并不意味着安全：替换会改变元素内容，依赖快照语义的逻辑仍可能算出错误结果，多线程下还可能出现读到半成品对象的情况。'
       ] },
+
       { h: '2.14 自测与练习' },
-      { p: '做本章练习时，建议同时打开 JDK 源码对照：ArrayList 的 grow、add、remove，LinkedList 的 linkLast、node、unlink。源码里大量使用私有小方法，读起来比想象中简单。不要试图一次读完，按“add 一个元素发生了什么”这条线追踪，遇到不认识的字段再查，效率最高。' },
       { ol: [
-        '分别用 ArrayList 和 LinkedList 存 10 万个整数，用增强 for 求和，比较耗时并解释差异来源。',
-        '用普通 for + get 遍历一个 5 万元素的 LinkedList，记录耗时，再改成迭代器对比。',
-        '给 MiniArrayList 增加 add(index, e) 方法，要求正确处理边界和元素后移。',
-        '写代码验证：在增强 for 中删除元素会抛异常，而 iterator.remove 不会。',
-        '设计一个“最近浏览记录”功能，最多保留 20 条，新记录加到头部，超出删尾部，选择合适的容器并说明理由。'
+        '分别用 ArrayList 和 LinkedList 存 10 万个整数，用增强 for 求和，比较耗时并解释差异来源。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两者都在几十毫秒量级，ArrayList 通常更快一些，但差距远小于「按下标随机访问」的对比。<b>为什么</b>：增强 for 走迭代器顺序访问，LinkedList 每次只需跳到下一个节点，不涉及下标寻址，所以它最怕的 O(n) 场景没有出现；差距来自节点对象分散在堆上、缓存局部性差。<b>要点</b>：测量要用同一个 JVM 内多轮预热后取中位数；把遍历改成 <code>for (int i = 0; i &lt; list.size(); i++) list.get(i)</code> 后，LinkedList 会慢几个数量级。</div></details>',
+        '用普通 for + get 遍历一个 5 万元素的 LinkedList，记录耗时，再改成迭代器对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：普通 for 版本耗时随元素数呈平方增长，5 万个元素可能要数秒甚至更久；迭代器版本只需毫秒级。<b>为什么</b>：<code>get(i)</code> 每次都要从头节点走 i 步，总步数约为 n²/2；迭代器持有当前节点引用，next 只走一步。<b>要点</b>：改为 <code>for (Integer v : list)</code> 或显式 Iterator；判断一段代码是否踩了这个坑，只需在循环体里 grep 是否有 <code>get(i)</code>。</div></details>',
+        '给 MiniArrayList 增加 add(index, e) 方法，要求正确处理边界和元素后移。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：在 0 位置插入后原元素整体后移一位；在 size 位置插入等价于追加；index 为负或大于 size 时抛 IndexOutOfBoundsException。<b>为什么</b>：数组插入必须把 [index, size) 区间整体后移一格，且只能从尾部往前搬，否则前一个元素会覆盖后一个的值；<code>System.arraycopy</code> 是本地方法，一次完成搬移，比手写 for 循环快。<b>要点</b>：<code>if (index &lt; 0 || index &gt; size) throw new IndexOutOfBoundsException(); ensureCapacity(); System.arraycopy(data, index, data, index + 1, size - index); data[index] = e; size++;</code>。index 等于 size 时 arraycopy 长度为 0，等价于追加，不用特判；但扩容必须放在搬移之前，否则会越界。异常消息里带上 index 与 size 便于定位。</div></details>',
+        '写代码验证：在增强 for 中删除元素会抛异常，而 iterator.remove 不会。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：增强 for 里调用 <code>list.remove(x)</code> 抛 ConcurrentModificationException，通常在下一次取元素时抛出；改用 <code>it.remove()</code> 正常结束，元素被正确删除。<b>为什么</b>：集合的 remove 让 modCount 自增，而迭代器保存了创建时的期望值，两者不一致就失败；迭代器自己的 remove 会同时更新期望值。<b>要点</b>：删除用 <code>Iterator&lt;String&gt; it = list.iterator(); while (it.hasNext()) if (cond) it.remove();</code>，或直接用 <code>list.removeIf(s -&gt; cond)</code>。</div></details>',
+        '设计一个「最近浏览记录」功能，最多保留 20 条，新记录加到头部，超出删尾部，选择合适的容器并说明理由。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：连续记录 25 条后 size 恒为 20，最新的在最前，最旧的被挤出；同一商品重复浏览时会被移到头部而不是重复出现。<b>为什么</b>：操作集中在头部插入和尾部删除，ArrayDeque 的 addFirst 与 removeLast 都是均摊 O(1)，且连续数组比链表缓存友好。<b>要点</b>：<code>Deque&lt;String&gt; dq = new ArrayDeque&lt;&gt;(); dq.remove(id); dq.addFirst(id); if (dq.size() &gt; 20) dq.removeLast();</code>；需要并发时换成加锁或 CopyOnWriteArray 结构。</div></details>'
       ] },
+      { note: '<b>练习建议：</b>同时打开 JDK 源码对照 ArrayList 的 grow、add、remove 与 LinkedList 的 linkLast、node、unlink，按「add 一个元素发生了什么」这条线追踪，比从头通读高效得多。' }
     ]
   };
 
@@ -399,24 +400,23 @@ T['hashmap'] = {
       ] },
       { h: '3.14 常见追问' },
       { list: [
-        '为什么容量必须是 2 的幂？让 (n-1) & hash 等价于取模，且分布均匀、扩容可用高低位拆分。',
-        '负载因子为什么是 0.75？空间与冲突概率的折中，基于泊松分布，8 个冲突的概率极低。',
-        '链表长度到 8 一定树化吗？不一定，还要 table 长度达到 64，否则只扩容。',
-        '为什么树化阈值是 8、退化是 6？留缓冲避免边界反复转换，8 也是统计上的罕见值。',
-        'JDK 7 和 JDK 8 的 HashMap 有什么区别？头插改尾插、引入红黑树、扩容用高低位拆分。',
-        'HashMap 允许 null 键吗？允许一个，hash 固定为 0，落在下标 0。',
-        'put 的返回值是什么？键已存在时返回旧值，新增时返回 null。',
-        'HashMap 和 Hashtable 的区别？Hashtable 方法加 synchronized、不允许 null、已不推荐使用。'
+        '<b>问：链表长度到 8 就一定会树化吗？为什么阈值是 8、退化又是 6？</b><br>答：不一定。树化要同时满足两个条件：某个桶里的链表长度达到 8，并且 table 的长度已经达到 64；不满足后者时只做扩容，先把元素摊开，因为扩容往往就能把冲突化解掉。选 8 是因为统计上在 0.75 负载因子下桶内达到 8 个元素的概率极低，链表的平均查找代价还可以接受；退化成 6 而不是 8，是留出缓冲带，避免元素在 7、8 之间来回增删时反复树化与还原，那两次转换的代价远高于多挂一两个节点。',
+        '<b>问：负载因子为什么是 0.75？</b><br>答：这是空间占用与冲突概率的折中。取更大的值（比如 1.0）能把数组用得更满、省内存，但桶内元素变多，链表变长，查询和扩容都变慢；取更小的值冲突少、查得快，可数组空着一大片，内存和扩容频率都上升。0.75 是 JDK 文档给出的经验值，配合泊松分布的估算，此时单个桶里出现 8 个元素的概率约为千万分之六，所以树化只是极端情况的兜底，而不是常态。',
+        '<b>问：JDK 7 和 JDK 8 的 HashMap 有什么本质区别？</b><br>答：三点。插入方式从头插改成尾插，因为头插在并发扩容时可能让两个节点互相指向，形成环形链表，此后 get 会死循环；结构上引入了红黑树，桶里元素多时从链表退化成树，最坏查找由 O(n) 变成 O(log n)；扩容从重新计算每个键的下标改成用高位与长度做与运算，把一条链拆成低位和高位两条，位置要么不动要么移到原下标加旧容量处。这也是为什么容量必须是 2 的幂。',
+        '<b>问：HashMap 允许 null 键和 null 值吗？</b><br>答：都允许，而且 null 键只有一个。null 的 hash 被固定成 0，因此永远落在下标 0 的桶里，重复 put null 会覆盖同一个位置。null 键能存在只是因为它绕过了<code>hashCode()</code>调用，代价是取值前要判空，遍历时也要考虑这个特殊键。ConcurrentHashMap 则完全拒绝 null 键和 null 值，因为并发场景下无法区分「没有这个键」和「值是 null」。',
+        '<b>问：put 的返回值是什么？常见的误用是什么？</b><br>答：键原本存在时返回被覆盖的旧值，键不存在时返回 null。看起来像「是否新增」的判据，其实不是：如果旧值本身就是 null，两种情况返回值一样，判断就失效了。要区分是否新增用 <code>putIfAbsent</code>，或先 <code>containsKey</code> 再 put，也可以直接用 <code>computeIfAbsent</code> 把「取不到就建」写成一个原子操作，省掉一次查找。',
+        '<b>问：HashMap 和 Hashtable 到底差在哪？</b><br>答：Hashtable 的每个公开方法都加了 synchronized，靠一把对象锁保证线程安全，因此单线程性能明显更差；它不允许 null 键和 null 值；迭代时用的 Enumeration 是弱一致的老接口，没有 fail-fast 的现代语义。它是 JDK 1.0 的遗留类，新代码不该再用。需要并发就选 ConcurrentHashMap，它用分段或桶级 CAS 加锁，读几乎无锁，迭代器弱一致但不会抛异常。'
       ] },
+
       { h: '3.15 自测与练习' },
       { ol: [
-        '手写一个 Person 类作为 HashMap 的键，只重写 equals，验证 get 失败；再补上 hashCode 验证成功。',
-        '用反射打印 HashMap 的 table 长度和阈值，分别用 new HashMap<>() 和 new HashMap<>(100) 观察差异。',
-        '构造 20 个 hashCode 相同的键，观察链表长度、树化时机以及扩容后的变化。',
-        '统计一段英文文本的词频，分别用 get 判空和 merge 实现，比较代码量与可读性。',
-        '写一个方法，接收预期元素个数，返回建议的初始容量，并解释为什么这样算。',
-        '用两个线程各向同一个 HashMap 写入十万条数据，观察最终 size，再换成 ConcurrentHashMap 对比。'
-      ] },
+        '手写一个 Person 类作为 HashMap 的键，只重写 equals，验证 get 失败；再补上 hashCode 验证成功。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：只重写 equals 时，用相同字段的新对象 get 返回 null，但 <code>map.containsKey(new Person("a"))</code> 也是 false；补上 hashCode 后两者都能命中。<b>为什么</b>：put 时先用 hashCode 定位桶，再用 equals 比较；两个逻辑相等的对象若哈希不同，会落在不同桶里，根本走不到 equals 那一步。<b>要点</b>：equals 与 hashCode 必须成对重写，字段集合一致；用 IDE 或 <code>Objects.hash(name, age)</code> 生成，别手写容易漏字段。</div></details>',
+        '用反射打印 HashMap 的 table 长度和阈值，分别用 new HashMap&lt;&gt;() 和 new HashMap&lt;&gt;(100) 观察差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：无参构造时 table 为 null、threshold 为 0，第一次 put 后 table 长度 16、阈值 12；传 100 时第一次 put 后 table 长度 128、阈值 96。<b>为什么</b>：构造器只记录期望容量，第一次 put 时才分配；容量被向上取整到不小于期望值的最小 2 的幂，100 变 128，阈值等于容量的 0.75 倍。<b>要点</b>：反射取 <code>table</code> 与 <code>threshold</code> 字段需 <code>setAccessible(true)</code>；JDK 9 以后模块化会拦反射，可加 <code>--add-opens java.base/java.util=ALL-UNNAMED</code>。</div></details>',
+        '构造 20 个 hashCode 相同的键，观察链表长度、树化时机以及扩容后的变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：前 8 个元素进同一个桶且仍是链表；到第 9 个时若 table 长度还是 16，会先扩容到 32 而不是树化；容量达到 64 后同一桶元素超过 8 个才会变成红黑树节点。<b>为什么</b>：树化条件除了链长 8 还要求容量至少 64，否则优先扩容把冲突摊开；元素键实现了 Comparable 时树内按它排序，否则按插入顺序兜底。<b>要点</b>：观察 <code>map.getClass()</code> 无用，需反射看桶节点类型是否为 TreeNode；扩容后同一桶里的元素会按高位拆到两个下标。</div></details>',
+        '统计一段英文文本的词频，分别用 get 判空和 merge 实现，比较代码量与可读性。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两种写法输出完全一致的词频表；merge 版只有一行循环体，get 版需要三到四行的判空分支。<b>为什么</b>：<code>merge(k, 1, Integer::sum)</code> 把「不存在就放初值、存在就合并」封装成一次调用，查找与更新只做一次，而 get 版是「先查再放」，逻辑重复。<b>要点</b>：<code>freq.merge(word, 1, Integer::sum);</code> 统计；取最大值可用 <code>merge(w, 1, Math::max)</code>；注意 key 先做小写化与去标点，否则同一个词会被拆成多个键。</div></details>',
+        '写一个方法，接收预期元素个数，返回建议的初始容量，并解释为什么这样算。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：传入 100 返回 128（或 134 附近的上取整结果），传入 7 返回 16，传入 0 返回 1 或 16。<b>为什么</b>：HashMap 只在容量乘以 0.75 达到元素数时才不扩容，所以初始容量要大于 元素数/0.75；又因为容量会被向上取整到 2 的幂，直接写公式让 JDK 去取整最省事。<b>要点</b>：<code>return (int) Math.ceil(n / 0.75) + 1;</code> 然后交给 <code>new HashMap&lt;&gt;(cap)</code>；千万不要自己算成 2 的幂，重复计算容易出错，交给构造器更稳。</div></details>',
+        '用两个线程各向同一个 HashMap 写入十万条数据，观察最终 size，再换成 ConcurrentHashMap 对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：HashMap 的 size 往往小于二十万，偶尔还会抛并发修改异常或在扩容时短暂卡住；ConcurrentHashMap 稳定得到二十万。<b>为什么</b>：HashMap 的 put 先读后写，两个线程可能读到同一个空桶位置，后写的覆盖先写的；扩容时表头引用被替换，另一个线程仍在改旧表，写入就丢了。<b>要点</b>：并发容器用 <code>ConcurrentHashMap&lt;&gt;</code>，复合操作必须用 <code>merge</code> 或 <code>computeIfAbsent</code> 保证原子；统计不要用 ConcurrentHashMap 的 size 做累加，改用 LongAdder。</div></details>'
+      ] }
     ]
   };
 
@@ -554,25 +554,24 @@ T['set-comparator'] = {
       { p: '还有一个细节：TreeSet 的 first()、last()、pollFirst()、pollLast() 都是 O(log n)，其中 poll 会把元素取出来并删除。做排行榜时常用 pollLast 取最高分并移除，比先 last 再 remove 少一次查找，语义也更清楚。' },
       { h: '4.13 常见追问' },
       { list: [
-        'HashSet 和 HashMap 有什么关系？HashSet 内部持有一个 HashMap，元素是键，值是常量。',
-        'HashSet 为什么无序？按桶下标遍历，下标由 hash 决定，与插入顺序无关。',
-        'TreeSet 怎么判断重复？compare 或 compareTo 返回 0 即视为重复。',
-        'Comparable 和 Comparator 怎么选？类有唯一自然顺序用 Comparable，需要多种规则用 Comparator。',
-        'TreeSet 能存 null 吗？自然顺序下不能，会抛 NullPointerException。',
-        'LinkedHashSet 的插入顺序会被覆盖操作打乱吗？不会，重复加入不改变原有位置。',
-        'Set 的 equals 怎么判断？大小相同且互相包含，与顺序和实现类无关。',
-        '并发场景用什么 Set？ConcurrentHashMap.newKeySet()，或加锁的 synchronizedSet。'
+        '<b>问：HashSet 为什么是无序的？</b><br>答：因为它内部就是一个 HashMap，元素当键存放，遍历时按底层数组的桶下标顺序走，而下标由元素的 hashCode 经过扰动与取模得到，与插入的先后毫无关系。所以只要元素的哈希值稳定，同一个集合的遍历顺序在同一 JDK 版本下是稳定的，但它既不等于插入顺序，也不等于大小顺序。需要顺序时用 LinkedHashSet 保留插入顺序，或用 TreeSet 按比较器排序。',
+        '<b>问：Comparable 和 Comparator 该怎么选？</b><br>答：类只有一个「天然就该这样排」的顺序时，让它实现 Comparable，把规则写在 compareTo 里，好处是 TreeSet、TreeMap、<code>Collections.sort</code>、<code>max</code> 等都能直接用。同一个类需要多种排法、或者根本改不了它的源码时，用 Comparator 外部传入，还可以用 <code>comparing</code>、<code>thenComparing</code> 组合出多级规则。两者可以共存：Comparable 给默认顺序，Comparator 给临时规则，显式传入的 Comparator 优先。',
+        '<b>问：TreeSet 能存 null 吗？</b><br>答：不能。TreeSet 依靠比较来定位元素，第一个元素为 null 时后续要调用 <code>null.compareTo(e)</code>，第二个元素为 null 时比较器也要拿 null 参与，无论哪种情况都会抛 NullPointerException。这与 HashSet、LinkedHashSet 都不同——它们只看哈希，null 有固定哈希值，所以能存一个。要允许空值就用 HashSet 并单独处理，或把 null 换成哨兵对象。',
+        '<b>问：LinkedHashSet 中重复加入会打乱原有顺序吗？</b><br>答：不会。重复加入时 add 返回 false，元素本身没有被替换，它在双向链表中的位置保持原样，因此顺序仍然是「首次插入的顺序」。但要注意它判重的依据依然是 equals 与 hashCode：如果你放入一个字段相同的新对象，旧对象保留、新对象被丢弃，取出来的是先放进去的那个实例，这一点在可变对象上尤其容易踩坑。',
+        '<b>问：Set 的 equals 是怎么判断相等的？</b><br>答：按接口契约，两个集合相等当且仅当大小相同、且其中一个的每个元素都被另一个包含，也就是纯粹看元素集合，与实现类无关、与顺序无关。所以一个 HashSet 和一个 LinkedHashSet 只要元素相同就相等。代价是这个判断是 O(n) 次查找；另外 Set 的 hashCode 被定义为所有元素哈希之和，这也是有些团队不建议把大集合放进另一个哈希容器的原因。',
+        '<b>问：并发场景下该用什么 Set？</b><br>答：优先 <code>ConcurrentHashMap.newKeySet()</code>，它返回一个基于并发哈希表的 Set，add、remove、contains 都是线程安全的，且读操作几乎无锁。它没有 CopyOnWriteArraySet 那种「写时复制整份数组」的开销，适合写也不少见的场景；后者的优势只在于迭代时不需要加锁、且迭代器看到的是快照，适合监听器列表这类读多写极少的结构。<code>Collections.synchronizedSet</code> 则是整表一把锁，只在低并发时够用。'
       ] },
+
       { h: '4.14 自测与练习' },
-      { p: '练习时建议用 JShell 或单元测试快速验证：add 的返回值、size 的变化、contains 的结果，都能立刻观察。遇到“为什么没去重”“为什么顺序不对”，先打印 size 和元素，再回头检查 equals、hashCode 或比较器，比盯着代码猜有效得多。' },
       { ol: [
-        '定义一个 Book 类（isbn、title），正确实现 equals 和 hashCode，用 HashSet 验证同一 isbn 只保留一本。',
-        '用 LinkedHashSet 统计一段文字中出现过的单词，按首次出现顺序输出。',
-        '让 Person 实现 Comparable 按年龄排序，再用 Comparator 改成按姓名长度、再按年龄排序。',
-        '构造一个只按长度比较的 TreeSet，观察 size 和 contains 的结果，解释原因。',
-        '用 TreeSet 实现一个分数段查询：给定 60 到 80，输出区间内的所有分数。',
-        '对比 HashSet 和 TreeSet 插入 10 万个随机整数的时间，并解释差异。'
+        '定义一个 Book 类（isbn、title），正确实现 equals 和 hashCode，用 HashSet 验证同一 isbn 只保留一本。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两次加入 isbn 相同、title 不同的两本书后 size 为 1，且保留的是先加入的那本，title 没有被替换。<b>为什么</b>：判重先比 hashCode 再比 equals，isbn 相同的两个对象哈希相同、equals 为 true，第二次 add 直接返回 false，集合里原有实例不会被替换；这就是 HashSet 的 add 不像 Map.put 那样覆盖旧值的原因。<b>要点</b>：equals 用 <code>Objects.equals(isbn, o.isbn)</code>，先做 <code>this == o</code> 与 instanceof 判断再强转；hashCode 用 <code>Objects.hash(isbn)</code>，只取参与 equals 的字段，多放一个 title 就会让两本同 isbn 的书进集合两次。若换成 TreeSet，判重走 compareTo 或 Comparator，返回 0 即视为重复，equals 完全不参与。</div></details>',
+        '用 LinkedHashSet 统计一段文字中出现过的单词，按首次出现顺序输出。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出顺序与单词在原文中首次出现的顺序一致，重复单词只出现一次。<b>为什么</b>：LinkedHashSet 在哈希表之外维护一条双向链表，记录插入顺序；重复元素不改变链表位置，所以顺序天然是首次出现序。<b>要点</b>：先 <code>text.toLowerCase().split("[^a-z]+")</code> 切词，跳过空串后 <code>set.add(w)</code>，最后直接遍历 set；不要用 HashSet 再转 List 排序，那会变成字典序。</div></details>',
+        '让 Person 实现 Comparable 按年龄排序，再用 Comparator 改成按姓名长度、再按年龄排序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：默认排序按年龄升序；传入比较器后排成先短名后长名、同长度按年龄升序。<b>为什么</b>：TreeSet 与 sort 都会优先使用显式传入的 Comparator，没有时才回落到 compareTo，所以两套规则可以共存互不干扰。<b>要点</b>：实现写成 <code>return Integer.compare(this.age, o.age)</code>；组合比较器写 <code>Comparator.comparingInt((Person p) -&gt; p.getName().length()).thenComparingInt(Person::getAge)</code>，注意显式写类型避免推断失败。</div></details>',
+        '构造一个只按长度比较的 TreeSet，观察 size 和 contains 的结果，解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：加入 "ab"、"cd"、"ef" 三个长度都是 2 的字符串，size 为 1；<code>contains("xy")</code> 返回 true，即使集合里没有这个字符串。<b>为什么</b>：TreeSet 判重只看比较器返回值，长度相同即视为同一元素，与 equals 无关，这就是「比较器与 equals 不一致」的典型后果。<b>要点</b>：比较器规则要和业务上的相等保持一致，长度相同时再比内容：<code>comparingInt(String::length).thenComparing(Comparator.naturalOrder())</code>。</div></details>',
+        '用 TreeSet 实现一个分数段查询：给定 60 到 80，输出区间内的所有分数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：集合里有 55、60、72、80、91 时，查询 60 到 80 输出 60、72、80（闭区间）。<b>为什么</b>：TreeSet 实现了 NavigableSet，<code>subSet</code> 走的是红黑树的区间定位，复杂度与输出规模相关，不需要全量扫描过滤。<b>要点</b>：<code>set.subSet(60, true, 80, true)</code>，两个布尔值控制是否包含端点；结果是视图，改动会写回原集合，需要快照就复制一份。</div></details>',
+        '对比 HashSet 和 TreeSet 插入 10 万个随机整数的时间，并解释差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：HashSet 通常比 TreeSet 快数倍，差距随数据量增大而扩大；TreeSet 的遍历结果天然有序。<b>为什么</b>：HashSet 插入是算哈希加一次定位，均摊 O(1)；TreeSet 每次插入都要沿红黑树比较下沉并做平衡旋转，O(log n)，常数也更大。<b>要点</b>：需要有序或范围查询才选 TreeSet；既要有序又要快，可以先入 HashSet 再用 <code>new TreeSet&lt;&gt;(hashSet)</code> 一次性建树；测量要在热身之后取多次中位数。</div></details>'
       ] },
+      { note: '<b>练习建议：</b>用 JShell 或单元测试快速验证 add 的返回值、size 的变化与 contains 的结果；遇到「为什么没去重」「为什么顺序不对」，先打印 size 和元素，再回头检查 equals、hashCode 或比较器。' }
     ]
   };
 
@@ -708,24 +707,23 @@ T['iterator-queue'] = {
       { p: '补充一点：ArrayDeque 的 size 上限是 2 的 30 次方，超过会抛 IllegalStateException。日常用法远达不到这个量级，但如果你拿它做无界缓冲，最好还是加一层限流，避免内存被撑爆。' },
       { h: '5.13 常见追问' },
       { list: [
-        '为什么增强 for 里不能删除元素？它隐藏了迭代器，只能调集合的 remove，导致 modCount 不一致。',
-        'Iterator 和 ListIterator 的区别？后者只用于 List，支持双向遍历、set 和 add。',
-        'fail-fast 能保证检测到并发修改吗？不能，它是最佳努力，不保证一定触发。',
-        'ArrayDeque 为什么比 LinkedList 快？连续数组、无节点对象、缓存友好。',
-        'PriorityQueue 是先进先出吗？不是，按优先级出队，默认最小元素优先。',
-        'PriorityQueue 遍历为什么无序？它按数组下标遍历，只保证堆序不保证全局有序。',
-        'peek 和 poll 的区别？peek 只看不删，poll 取出并删除，空时都返回 null。',
-        '如何实现大顶堆？传 Comparator.reverseOrder()，不要用相减避免溢出。'
+        '<b>问：fail-fast 能保证一定检测到并发修改吗？</b><br>答：不能，它是「尽力而为」。检测靠的是 modCount 与迭代器保存的期望值是否一致，如果两次检查之间发生了偶数次结构性修改、或者修改恰好发生在下一次 next 之前又被覆盖回来，就可能检测不到；反过来它也可能在单线程下误报，只要你在遍历时绕过了迭代器去改结构。因此它是定位 bug 的辅助手段，不是并发正确性的保证，真正的并发安全要靠 ConcurrentHashMap 这类容器或显式同步。',
+        '<b>问：ArrayDeque 为什么比 LinkedList 快？</b><br>答：因为它是可扩容的循环数组，元素紧挨着存放，一趟操作只碰一小片内存，CPU 缓存命中率高；LinkedList 每个元素都是一个独立节点，还要额外持有两个引用，遍历时不断跳指针，缓存几乎每次都失效。此外 ArrayDeque 不需要为每个元素分配对象，内存占用和 GC 压力都更小。它不允许存 null，这一点常被当成缺点，其实是内部用 null 表示空位带来的必要限制。',
+        '<b>问：PriorityQueue 是先进先出吗？</b><br>答：不是。它按优先级出队，队头永远是最小元素（默认按自然顺序），与入队先后无关；只有优先级相同时，出队顺序才由内部堆结构决定，并不保证是入队顺序。想要大顶堆就传 <code>Comparator.reverseOrder()</code>。若既要按优先级出队、又要同优先级按入队顺序处理，就在比较器里加一个自增序号做第二关键字，把它变成稳定优先队列。',
+        '<b>问：遍历 PriorityQueue 为什么是无序的？</b><br>答：因为它的底层是一个数组形式的二叉堆，只保证「每个父节点不大于它的子节点」这一条局部性质，兄弟之间、不同子树之间没有任何顺序约束。迭代器就是按数组下标从 0 到 size-1 走一遍，看到的自然不是全局有序序列。要得到有序结果只能反复 poll（会破坏原队列），或者先复制一份再逐个取出：<code>new PriorityQueue&lt;&gt;(pq)</code> 的复制是 O(n)。',
+        '<b>问：peek 和 poll 有什么区别？空队列时呢？</b><br>答：peek 只读队头不删除，poll 取出队头并删除，两者都返回元素本身；队列为空时都返回 null，而不是抛异常。要抛异常的是另一组方法：element 和 remove 在空时抛 NoSuchElementException。Queue 接口就是这样成对设计的：add/remove/element 失败抛异常，offer/poll/peek 失败返回特殊值。代码里优先用返回特殊值的那组，能少写 try-catch。',
+        '<b>问：怎么实现大顶堆？为什么不能写相减？</b><br>答：直接传 <code>Comparator.reverseOrder()</code> 最简洁，也可以用 <code>(a, b) -&gt; b - a</code> 的写法，但那是有害的：两个相差很大的 int 相减会溢出，符号翻转后排序结果完全错误，而且这个 bug 只在特定数值上出现。正确写法是 <code>Integer.compare(b, a)</code> 或 <code>Comparator.comparingInt(x -&gt; -x)</code>（后者对最值仍不安全）。同理，比较 long 或 Double 时也别靠减法。'
       ] },
+
       { h: '5.14 自测与练习' },
       { ol: [
-        '用 Iterator 遍历 ArrayList，删除所有长度小于 2 的字符串，再用 removeIf 重写一遍。',
-        '用 ListIterator 从后往前遍历一个 List，把所有元素追加到一个新列表。',
-        '分别用 ArrayDeque 和 LinkedList 实现同一个队列操作序列，比较代码和性能。',
-        '用 PriorityQueue 实现一个任务调度器，按优先级从高到低输出任务名。',
-        '用大小为 k 的小顶堆求数组中第 k 大的元素，并分析时间空间复杂度。',
-        '写代码验证：修改堆中元素的优先级后不重新入堆，poll 的顺序会出错。'
-      ] },
+        '用 Iterator 遍历 ArrayList，删除所有长度小于 2 的字符串，再用 removeIf 重写一遍。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两种写法删除的元素完全一致，剩余列表相同；用增强 for 加 list.remove 的版本会抛 ConcurrentModificationException。<b>为什么</b>：迭代器的 remove 会同步更新 modCount 与 expectedModCount，removeIf 则由集合自己遍历、内部同样走迭代器，因此都安全；增强 for 只是迭代器的语法糖，循环体里直接 list.remove 就会让两个计数不一致。<b>要点</b>：<code>while (it.hasNext()) if (it.next().length() &lt; 2) it.remove();</code>；removeIf 版写 <code>list.removeIf(s -&gt; s.length() &lt; 2)</code>，谓词里不要再改集合。Java 8 的 ArrayList 对 removeIf 做了批量位移动，比逐个 it.remove 快。用下标正序 for 删元素会漏，必须倒序或删完 i--。</div></details>',
+        '用 ListIterator 从后往前遍历一个 List，把所有元素追加到一个新列表。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：新列表的元素顺序与原列表相反，长度相同。<b>为什么</b>：ListIterator 有游标概念，初始化在末尾之后时才能往回走，必须先 <code>hasPrevious()</code> 判断再用 <code>previous()</code> 取元素，每次 previous 把游标前移一位。<b>要点</b>：<code>ListIterator&lt;String&gt; it = list.listIterator(list.size()); while (it.hasPrevious()) out.add(it.previous());</code>；从 0 位置创建时 hasPrevious 一开始就是 false，什么都取不到。反序删除要用 <code>it.remove()</code>，用 <code>list.remove(obj)</code> 会抛 <code>ConcurrentModificationException</code>。若只是为了倒序读，LinkedList 用这个迭代器是 O(n)，而下标循环 <code>get(i)</code> 在链表上是 O(n²)。</div></details>',
+        '分别用 ArrayDeque 和 LinkedList 实现同一个队列操作序列，比较代码和性能。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两者的 API 调用几乎一模一样（都实现 Deque），但同样的十万次入队出队，ArrayDeque 耗时更短、内存占用更小。<b>为什么</b>：ArrayDeque 用循环数组，入队出队只移动头尾下标；LinkedList 每次都要新建或丢弃节点对象，GC 压力大且缓存不友好。<b>要点</b>：优先声明为 <code>Deque&lt;T&gt;</code> 接口，实现换成 ArrayDeque 只需改构造那一行；注意 ArrayDeque 不允许 null 元素，需要存 null 时得另想办法。</div></details>',
+        '用 PriorityQueue 实现一个任务调度器，按优先级从高到低输出任务名。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：加入优先级 1、5、3 的三个任务后，poll 依次返回优先级 5、3、1 的任务名。<b>为什么</b>：PriorityQueue 默认是最小堆，堆顶永远是当前最小的元素，要按优先级从高到低出队就必须提供反序比较器，或者干脆存负的优先级；它不保证相同优先级之间的先后，需要稳定就再加一个自增序号作第二关键字。<b>要点</b>：<code>new PriorityQueue&lt;Task&gt;(Comparator.comparingInt(Task::priority).reversed())</code>，再 <code>while (!pq.isEmpty()) System.out.println(pq.poll().name());</code>。遍历用 iterator 拿到的是堆数组顺序，不是出队顺序，要按序输出只能 poll。并发场景换 PriorityBlockingQueue，它有阻塞的 take。</div></details>',
+        '用大小为 k 的小顶堆求数组中第 k 大的元素，并分析时间空间复杂度。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：数组 {3,2,1,5,6,4}、k=2 时返回 5；k 大于数组长度时抛 IllegalArgumentException。<b>为什么</b>：维护一个只有 k 个元素的最小堆，堆顶就是这 k 个里最小的，也就是已扫过的元素中第 k 大；新元素只有比堆顶大才替换进来，堆里始终留着当前最大的 k 个。<b>要点</b>：循环 <code>if (pq.size() &lt; k) pq.offer(x); else if (x &gt; pq.peek()) { pq.poll(); pq.offer(x); }</code>，最后返回 <code>pq.peek()</code>；时间 O(n log k)，空间 O(k)。k 小于等于 0 或大于数组长度要显式抛 IllegalArgumentException；空堆的 peek 返回 null 而不是抛异常，取值前先判。想更快可以用快速选择，平均 O(n)，但最坏 O(n²)。</div></details>',
+        '写代码验证：修改堆中元素的优先级后不重新入堆，poll 的顺序会出错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：把已入队任务的优先级从 9 改成 0 后直接 poll，返回顺序仍然按旧优先级排列，与新的值不符。<b>为什么</b>：PriorityQueue 只在 offer 与 poll 时做上浮下沉，元素在堆里的位置是入队时算好的；字段被外部改掉后堆性质被破坏，容器不会自动发现。<b>要点</b>：改优先级的标准做法是 <code>pq.remove(old); pq.offer(updated);</code>，或者干脆只放入不可变快照对象；需要动态调整的场景用 TreeSet 并先删后加。</div></details>'
+      ] }
     ]
   };
 
@@ -832,24 +830,23 @@ T['collections-advanced'] = {
       ] },
       { h: '6.11 常见追问' },
       { list: [
-        'TreeMap 和 HashMap 怎么选？需要排序或范围查询用 TreeMap，否则 HashMap 更快。',
-        'TreeMap 的 key 能为 null 吗？不能，自然顺序比较会抛 NullPointerException。',
-        '红黑树和普通二叉搜索树的区别？红黑树自平衡，避免退化成链表，保证 O(log n)。',
-        'EnumMap 为什么快？用 ordinal 直接做数组下标，没有哈希计算和冲突处理。',
-        'EnumMap 的迭代顺序是什么？枚举常量的声明顺序，与插入顺序无关。',
-        'Properties 读取中文为什么乱码？load(InputStream) 默认 ISO-8859-1，需改用 Reader。',
-        'Properties 是线程安全的吗？继承 Hashtable，方法同步，但复合操作仍可能不一致。',
-        'Properties 和 YAML 的区别？前者只支持扁平字符串键值，后者支持层级、列表和类型。'
+        '<b>问：TreeMap 和 HashMap 该怎么选？</b><br>答：只有需要「按 key 有序遍历」或「范围查询」时才选 TreeMap，它的 subMap、headMap、tailMap、firstKey、floorKey 这些操作 HashMap 一个都提供不了，而且只能靠全量扫描模拟。其余场景 HashMap 更快：插入与查询均摊 O(1)，而 TreeMap 每次都是 O(log n) 并伴随比较与平衡旋转。另外 TreeMap 的 key 要么实现 Comparable，要么构造时给 Comparator，null 键一律不允许。',
+        '<b>问：TreeMap 的 key 能为 null 吗？</b><br>答：不能。第一个元素为 null 时，后续插入要调用 <code>null.compareTo(k)</code>；即使第一个是正常键、后面放入 null，比较器也要拿 null 参与运算，两种情况都会抛 NullPointerException。这与 HashMap 不同——后者把 null 的哈希固定为 0，所以能存放一个 null 键。需要表达「没有键」时用 Optional 或哨兵常量，不要依赖 null 键。',
+        '<b>问：EnumMap 为什么快？</b><br>答：它内部就是一个以枚举 ordinal 为下标的普通数组，put 时取 <code>key.ordinal()</code> 直接定位，没有哈希计算、没有扰动、没有冲突链，也不需要扩容与树化，所以读写都接近数组访问的速度。它的迭代顺序固定为枚举常量的声明顺序，天然可预测；构造时还必须显式传入枚举的 Class 对象，用来校验键的类型。代价是键只能来自单一枚举类型，泛型上无法表达「任意枚举」。',
+        '<b>问：Properties 读取中文为什么乱码？</b><br>答：<code>load(InputStream)</code> 按 ISO-8859-1 解码，字节被当成单字节字符读入，中文的 UTF-8 多字节序列就被拆成乱码；<code>store(OutputStream)</code> 同理。标准解法是改用 <code>load(Reader)</code>，用 <code>new InputStreamReader(in, StandardCharsets.UTF_8)</code> 明确指定编码；或者维持 ISO-8859-1 并用 <code>\\uXXXX</code> 转义写入，这也是原生 properties 文件的历史约定。',
+        '<b>问：Properties 是线程安全的吗？</b><br>答：单个方法安全，复合操作不安全。它继承自 Hashtable，get、put、remove 都是同步方法，但「先 get 判断空、再 put 默认值」这种组合在并发下仍会互相覆盖，可能被覆盖成不同的默认值，也可能读到刚被清理的中间状态。要做原子初始化用 <code>computeIfAbsent</code>（Properties 是 Map 的实现，可以直接用），或者干脆换成不可变的配置对象，在启动阶段一次性构建完再共享。',
+        '<b>问：Properties 和 YAML 这类配置格式有什么本质区别？</b><br>答：Properties 只支持扁平的字符串键值与少量分隔符语法，没有层级、没有列表、没有类型，所有值读出来都是 String，需要自己转成 int 或 boolean；层级只能靠点号命名模拟，解析时并不能折叠成结构。YAML 支持嵌套、列表、锚点与类型标注，可读性好得多，但需要第三方库，这与本项目零依赖的原则冲突。所以本地小配置用 Properties 足够，复杂配置值得引入专门的库。'
       ] },
+
       { h: '6.12 自测与练习' },
       { ol: [
-        '用 TreeMap 统计一段文字中每个单词出现的次数，并按单词字典序输出。',
-        '用 TreeMap 实现按分数区间查询：给定 60 到 80，输出该区间内的所有学生。',
-        '用 EnumMap 统计一组订单中每个状态的数量，并按枚举声明顺序打印。',
-        '用 Properties 读取一个含中文的配置文件，分别用 InputStream 和 Reader 验证编码差异。',
-        '用 Properties 实现“基础配置 + 环境覆盖”，验证默认值链的查找顺序。',
-        '比较 TreeMap、HashMap、EnumMap 插入十万条数据的时间，并解释差异。'
-      ] },
+        '用 TreeMap 统计一段文字中每个单词出现的次数，并按单词字典序输出。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出按单词字母序排列，每个词后跟出现次数；同一个词大小写不同若先统一转小写则合并成一个键。<b>为什么</b>：TreeMap 的遍历顺序由 key 的自然顺序决定，插入时不用关心次序，取出来天然有序，省掉一次排序。<b>要点</b>：<code>map.merge(w, 1, Integer::sum);</code> 统计，再 <code>for (Map.Entry&lt;String,Integer&gt; e : map.entrySet())</code> 输出；切词用 <code>split("[^a-zA-Z]+")</code> 并跳过空串。</div></details>',
+        '用 TreeMap 实现按分数区间查询：给定 60 到 80，输出该区间内的所有学生。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：分数为 55、60、72、80、91 时，区间 60 到 80 输出 60、72、80 三名学生，顺序按分数升序。<b>为什么</b>：TreeMap 的 subMap 走红黑树区间定位，代价与结果条数相关，不需要遍历整张表；区间端点是否包含用两个布尔参数控制。<b>要点</b>：<code>map.subMap(60, true, 80, true)</code> 返回视图，改动会写回原表，需要快照就 <code>new TreeMap&lt;&gt;(sub)</code>；分数做 key 时同分学生会覆盖，改成 key 为分数、value 为 List 更稳。</div></details>',
+        '用 EnumMap 统计一组订单中每个状态的数量，并按枚举声明顺序打印。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：打印顺序与枚举常量的声明顺序完全一致，没有出现过的状态输出 0 或直接不出现（取决于遍历方式）。<b>为什么</b>：EnumMap 用 ordinal 做数组下标，迭代时按 0 到 length-1 走，就是声明顺序；未赋值的槽位由实现按需初始化，遍历 entrySet 时默认跳过 null 值。<b>要点</b>：<code>Map&lt;Status,Integer&gt; m = new EnumMap&lt;&gt;(Status.class); m.merge(s, 1, Integer::sum);</code>；要打印全部状态就用 <code>for (Status s : Status.values()) m.getOrDefault(s, 0)</code>。</div></details>',
+        '用 Properties 读取一个含中文的配置文件，分别用 InputStream 和 Reader 验证编码差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：UTF-8 文件用 load(InputStream) 读到的是乱码，用 <code>new InputStreamReader(in, UTF_8)</code> 读到正确中文。<b>为什么</b>：load(InputStream) 规定按 ISO-8859-1 解码，一个字节一个字符，多字节中文会被拆散；load(Reader) 尊重你指定的字符集。<b>要点</b>：<code>try (InputStream in = Files.newInputStream(p)) { props.load(new InputStreamReader(in, StandardCharsets.UTF_8)); }</code>；不要用 FileReader，它用平台默认编码，换机器就变；store 写回文件时同样要显式指定字符集，否则中文会被转成 Unicode 转义序列，人也读不了。</div></details>',
+        '用 Properties 实现「基础配置 + 环境覆盖」，验证默认值链的查找顺序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：基础配置里有 db.host 与 db.port，环境配置只覆盖 db.host，最终读到覆盖后的 host 和基础里的 port。<b>为什么</b>：Properties 支持把一个实例设为默认值来源，getProperty 先查自身、查不到再逐层向上找，形成一条覆盖链。<b>要点</b>：<code>env = new Properties(base);</code> 再 <code>env.load(reader)</code> 覆盖，或 <code>env.setProperty(...)</code>；注意 getProperty(key, default) 的默认值只在整条链都查不到时生效。</div></details>',
+        '比较 TreeMap、HashMap、EnumMap 插入十万条数据的时间，并解释差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：HashMap 与 EnumMap 都很快，EnumMap 通常最快；TreeMap 慢一个量级左右。<b>为什么</b>：EnumMap 是纯数组下标访问，HashMap 要算哈希并处理冲突，TreeMap 每次插入都要沿红黑树比较下沉并可能旋转；三者的复杂度分别是 O(1)、均摊 O(1)、O(log n)，常数也不同。<b>要点</b>：测量前先热身几十万次，取多轮中位数；key 只能来自枚举时才用 EnumMap，否则优先 HashMap，需要有序才付出 TreeMap 的代价。</div></details>'
+      ] }
     ]
   };
 

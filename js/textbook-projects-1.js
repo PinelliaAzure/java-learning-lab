@@ -93,9 +93,19 @@
       { h: '本章小结' },
       { list: ['分层：实体存数据、Service 管规则、Main 管交互。', '集合操作注意封装，返回只读副本。', '文件持久化要处理格式错误和写入失败。', '先跑通主流程，再补校验、异常和测试。'] },
       { h: '常见追问' },
-      { list: ['为什么一定要先拆需求再动手写？需求拆解把“能跑”变成“能验收”，每条验收标准后面都能对应一个方法或一次手工操作，返工时才有依据。', '这么小的项目值得提取接口吗？值得，但只提一层。Main 只依赖 BookService 暴露的能力而不是具体实现，后面把内存存储换成文件、加缓存，调用方都不用改。', '为什么输入层要统一用 nextLine？nextInt 之后换行符留在缓冲区，下一次 nextLine 会读到空串。统一 nextLine 再自己 parse，输入节奏只在一处管理，出问题也只可能在这一处。'] },
+      { list: [
+        '<b>问：为什么一定要先拆需求再动手写？</b><br>答：需求拆解把「能跑」变成「能验收」：每条验收标准后面都要能对应到一个方法或一次手工操作，写代码时才知道什么时候算完成。不拆直接写，通常写到借书和删除互相牵连的时候才发现集合结构不合适，只能回头改。拆完还能顺手得到测试用例：给定什么条件、执行什么操作、期望什么结果，这三句话几乎可以原样抄进 JUnit。返工时也有依据，一对照就知道是需求漏了还是实现错了。',
+        '<b>问：这么小的项目值得提取接口吗？</b><br>答：值得，但只提一层。项目小的时候，抽象的价值不在「将来可能换实现」，而在「现在能被测试」：BookService 只依赖 BookStore 接口，测试时传一个把数据放在 ArrayList 里的内存实现，save 和 load 变成简单复制，测试不碰磁盘，也不会因为上次运行残留的文件导致结果时好时坏。只提一层的意思是不再给 BookStore 套工厂、再给工厂套配置，两三层间接会把几百行的项目读成迷宫，收益抵不上成本。',
+        '<b>问：为什么输入层要统一用 nextLine？</b><br>答：nextInt 只吃掉数字，回车符留在缓冲区，紧接着的 nextLine 会立刻读到空串，现象是「刚输入完菜单项就提示书名不能为空」。统一用 nextLine 读整行，再用 Integer.parseInt 自己转，换行处理就收敛到一处；解析失败抛 NumberFormatException，捕获后打印提示并重试。菜单循环里尤其明显，一次读错位，后面所有交互跟着错位，排查时还以为是业务逻辑的问题。'
+      ] },
       { h: '自测与练习' },
-      { ol: ['增加“按作者查询”和“按价格排序”两个功能。', '把存储格式换成 JSON（可以手写拼接），并处理书名含分隔符的情况。', '给 Service 写 5 个 JUnit 测试，覆盖新增、重复 id、借书、重复借、还书。', '把 Main 的菜单抽成独立类，Service 不依赖 Scanner。'] }
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
+      { ol: [
+        '增加「按作者查询」和「按价格排序」两个功能。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：菜单多出按作者查询、按价格排序两项；输入某个作者能打印该作者的全部图书，没有则提示未找到，列表原顺序不变。<b>为什么</b>：Book 里已经有 author 和 price 字段，缺的只是 Service 上的两个方法和 UI 上的两个分支，不用动实体和存储层。<b>要点</b>：写成 <code>List&lt;Book&gt; findByAuthor(String author)</code>，过滤时用 <code>author.equals(b.getAuthor())</code>；排序前先拷贝一份 <code>new ArrayList&lt;&gt;(books)</code>，再 <code>list.sort(Comparator.comparingDouble(Book::getPrice))</code>，否则会把存储顺序改掉。</div></details>',
+        '把存储格式换成 JSON（可以手写拼接），并处理书名含分隔符的情况。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：保存后的文件能被同一个类的 load 读回来，行数与保存前一致；书名里带逗号、双引号、反斜杠的记录，字段也不会错位。<b>为什么</b>：手写拼接时用户数据直接进字符串，引号和反斜杠会破坏结构，解析时就多切一段或少切一段，这类错误只有边界数据才暴露。<b>要点</b>：字符串值必须转义反斜杠和双引号，且先转义反斜杠，顺序反了会二次转义；每条记录一行，load 时逐行 try/catch，坏行跳过并打印行号，不要让一行坏数据废掉整份文件。</div></details>',
+        '给 Service 写 5 个 JUnit 测试，覆盖新增、重复 id、借书、重复借、还书。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：五个测试全部通过；重复 id 新增时抛 BusinessException 且集合大小不变；对已借出的书再借一次抛异常，状态仍是已借出。<b>为什么</b>：业务规则只有被断言过才算实现过，重复 id 和重复借这两条最容易在 UI 分支里漏掉，因为正常操作路径根本走不到。<b>要点</b>：<code>new BookService(new MemoryBookStore())</code> 注入内存实现，测试不碰磁盘；用 <code>assertThrows(BusinessException.class, ...)</code> 断言异常；数量断言写 <code>assertEquals(1, service.list().size())</code>，每个测试方法里重建 service 保证互不干扰。</div></details>',
+        '把 Main 的菜单抽成独立类，Service 不依赖 Scanner。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：只有 ConsoleUI 里出现 Scanner；BookService 的 import 里查不到 java.util.Scanner，删掉菜单后 Service 仍能被测试直接调用。<b>为什么</b>：依赖方向单一才好测也才好换界面，Service 里读键盘等于把控制台和业务焊死，测试时必须先造一个终端输入。<b>要点</b>：ConsoleUI 持有一个 BookService 字段，菜单方法返回 boolean 控制循环；读整数、读非空串各自封装成私有方法统一重试，UI 方法里只做「读一个选项、调一次 Service、打印结果」。</div></details>'
+      ] }
     ]
   };
 
@@ -211,9 +221,19 @@
       { h: '本章小结' },
       { list: ['Spring Boot = 自动配置 + 内嵌容器 + Starter 依赖。', 'Controller 薄、Service 厚、Repository 只做数据访问。', 'REST 用对 HTTP 方法和状态码，JSON 由 Jackson 转换。', '异常统一处理，打包成可执行 jar 部署。'] },
       { h: '常见追问' },
-      { list: ['Controller 里能不能直接写业务逻辑？不能。Controller 只负责收参数、调 Service、包响应；业务规则、事务边界和校验顺序都在 Service，否则事务注解会失效，测试也不好写。', '为什么用 DTO 而不是直接把 Entity 返回给前端？Entity 跟着表结构变，DTO 跟着接口变。混用之后一次字段改名就是一次接口不兼容，还容易把密码这类字段一起吐出去。', '事务注解为什么有时不生效？@Transactional 靠代理生效，同类内部方法调用、private 方法、自己 new 出来的对象都不走代理；异常被 catch 吞掉也不会回滚，默认只对 RuntimeException 回滚。'] },
+      { list: [
+        '<b>问：Controller 里能不能直接写业务逻辑？</b><br>答：不能。Controller 只负责收参数、调 Service、包响应；业务规则、事务边界和校验顺序都放 Service。原因很实际：事务靠代理织入，业务写在 Controller 上容易出现「明明标了 @Transactional 却不回滚」；而且 Controller 一旦掺杂规则，测一个业务分支就得起整个 Web 上下文，既慢又难断言。参数形状的校验留在 Controller，业务语义的校验留在 Service，边界才清楚。',
+        '<b>问：为什么用 DTO 而不是直接把 Entity 返回给前端？</b><br>答：Entity 跟着表结构变，DTO 跟着接口契约变。混用之后，一次字段改名就是一次接口不兼容，前端要么报错要么静默少拿到字段；更麻烦的是 Entity 上常有密码、内部状态、关联对象这类不该外露的字段，序列化时一起吐出去就是信息泄漏。DTO 还能承载接口需要而表里没有的字段，比如把金额从分转成元、把状态码翻成中文，转换只发生在 Controller 或专门的转换方法里，改动范围可控。',
+        '<b>问：事务注解为什么有时不生效？</b><br>答：因为 @Transactional 靠代理生效：同类内部方法自调用、private 方法、自己 new 出来的对象都不走代理，注解等于没写。另一类原因是异常被吞：方法里 try/catch 把异常吃掉，代理看不到异常自然不会回滚；默认也只对 RuntimeException 和 Error 回滚，受检异常要显式写 rollbackFor。剩下的原因包括类没被容器管理、方法不是 public、数据库引擎不支持事务，排查时按「有没有代理、有没有异常、异常类型对不对」三步走最快。'
+      ] },
       { h: '自测与练习' },
-      { ol: ['增加“按书名模糊查询”和“修改价格”两个接口。', '用 Bean Validation 的 @NotBlank/@Min 校验请求参数。', '把 H2 内存库换成 MySQL，配置连接池和 JPA 方言。', '给 Controller 写 MockMvc 测试，验证 200/400/404。'] }
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
+      { ol: [
+        '增加「按书名模糊查询」和「修改价格」两个接口。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：按书名搜索只返回书名包含关键词的记录，关键词为空或超长时返回 400；改价传负数返回 400，传合法值返回 200，再查价格已变，改不存在的 id 返回 404。<b>为什么</b>：模糊查询的语义在 Service，接口只负责搬参数；改价是写操作，要有事务、校验和记录不存在的分支。<b>要点</b>：Controller 用 <code>@RequestParam(required = false)</code> 接关键词，Service 里交给 <code>findByTitleContaining</code>；改价方法标 <code>@Transactional</code>，先 <code>findById(id).orElseThrow()</code> 再改字段，提交时靠脏检查落库。</div></details>',
+        '用 Bean Validation 的 @NotBlank/@Min 校验请求参数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：请求体缺书名或价格传负数时返回 400，响应里带字段名和自定义消息；参数合法时正常落库，库里不会出现空书名。<b>为什么</b>：校验声明在 DTO 上并由 @Valid 触发，比在每个方法里手写 if 更不容易漏，错误也能被统一异常处理收拢成固定格式。<b>要点</b>：DTO 字段加 <code>@NotBlank(message = "书名不能为空")</code> 和 <code>@Min(value = 0)</code>，Controller 参数前加 <code>@Valid</code>；用 <code>@RestControllerAdvice</code> 捕获 MethodArgumentNotValidException，把字段名与消息拼进统一响应体。</div></details>',
+        '把 H2 内存库换成 MySQL，配置连接池和 JPA 方言。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：应用能连上本地 MySQL，启动日志出现 HikariPool 初始化，重启后数据仍在；连接串写错时启动阶段就报错，而不是等第一次查询才失败。<b>为什么</b>：换库变的是驱动、URL、方言三样，其余代码不用动，这正是分层的价值；连接池参数决定并发下的表现。<b>要点</b>：pom 加 <code>com.mysql:mysql-connector-j</code>（runtime 范围），application.yml 配 <code>jdbc:mysql://localhost:3306/lab?useSSL=false&amp;serverTimezone=UTC</code>、用户名密码，并设 <code>spring.jpa.hibernate.ddl-auto=none</code>，方言交给 Hibernate 自动识别。</div></details>',
+        '给 Controller 写 MockMvc 测试，分别验证正常查询返回 200、参数非法返回 400、资源不存在返回 404。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个用例分别得到 200、400、404；400 的响应体里能读到校验消息，404 时返回统一的错误结构而不是默认异常页。<b>为什么</b>：Controller 测试只关心路由、参数绑定、状态码和响应结构，用 MockMvc 不启真实端口，一次几百毫秒，适合每次提交都跑。<b>要点</b>：<code>@WebMvcTest(BookController.class)</code> 配 <code>@MockBean BookService</code> 隔离业务；用 <code>mockMvc.perform(get("/books/99")).andExpect(status().isNotFound())</code>；返回体用 <code>jsonPath("$.message")</code> 断言，别去比整串。</div></details>'
+      ] }
     ]
   };
 
@@ -361,9 +381,21 @@
       { h: '本章小结' },
       { list: ['表、行、列、主键是关系数据库的基本概念。', '查询四件套：SELECT、WHERE、ORDER BY、LIMIT。', '分组统计用 GROUP BY + HAVING，多表用 JOIN。', 'UPDATE/DELETE 必须带 WHERE；Java 用 PreparedStatement 防注入。'] },
       { h: '常见追问' },
-      { list: ['COUNT(*) 和 COUNT(1) 有区别吗？现代优化器基本一样，COUNT(column) 会忽略 NULL。', 'WHERE 和 HAVING 能互换吗？WHERE 在分组前过滤行，HAVING 在分组后过滤组。', 'JOIN 和子查询哪个快？取决于执行计划，很多优化器会把子查询改写成 JOIN。', '索引越多越好吗？不是，写入要维护索引，过多会拖慢 INSERT/UPDATE。', '事务越大越好吗？不是，长事务占锁、胀日志，应尽量短。'] },
+      { list: [
+        '<b>问：COUNT(*) 和 COUNT(1) 有区别吗？</b><br>答：在主流数据库里没有实质区别，优化器会把 COUNT(1) 当成同一个计划，性能也一致，选哪个看团队习惯。真正的区别在 COUNT(列名)：它只统计该列非 NULL 的行，一列允许为空时结果会小于总行数，这是报表里最容易算错的地方。另外 COUNT 要扫描满足条件的行，大表上并不便宜，需要频繁统计时应该做计数表或用近似统计，而不是每次都翻全表。',
+        '<b>问：WHERE 和 HAVING 能互换吗？</b><br>答：语法上有些写法两边都能过，语义上不能换：WHERE 在分组之前过滤行，HAVING 在分组之后过滤组。把聚合条件写进 WHERE 会直接报错，因为那时分组还不存在；把普通列条件写进 HAVING 则会先分组再筛，白白多算一堆组，还容易写成依赖别名的非标准 SQL。判断方法很简单：条件里出现聚合函数就放 HAVING，否则一律放 WHERE。',
+        '<b>问：JOIN 和子查询哪个快？</b><br>答：看执行计划，不看计划就是猜。现代优化器常把 IN 子查询改写成半连接，性能与 JOIN 相当；但相关子查询在某些版本里仍会逐行执行，字段上套函数或类型不一致时还会让索引失效。判断顺序是：先 EXPLAIN 看扫描行数和有没有 DEPENDENT SUBQUERY，再把可疑的相关子查询改写成 JOIN 或 EXISTS 对比结果。行数只有几十行的表上纠结这个没有意义。',
+        '<b>问：索引越多越好吗？</b><br>答：不是。每个索引都要在 INSERT、UPDATE、DELETE 时维护，写入越频繁代价越明显；索引还占空间、拖慢备份和加字段这类 DDL。该做的是给高频查询建覆盖过滤与排序的联合索引，让一条语句只用一个索引就走完，而不是给每一列都单独建一个。加完必须回头看计划确认用上了，长期没人用的索引要删掉，否则越积越多，写入越来越慢却没人说得清哪一个可以去掉。',
+        '<b>问：事务越大越好吗？</b><br>答：正好相反，事务应该尽量短。事务未提交期间持有的锁不释放，其他会话要么等锁要么超时；日志和回滚段持续增长，回滚代价随事务规模上升；长事务还会把主从延迟放大。正确做法是把网络调用、文件读写、用户交互这类耗时动作放到事务外面，只把必须一起成功或一起失败的几条 SQL 包进事务，并给事务设置超时与重试策略。'
+      ] },
       { h: '自测与练习' },
-      { ol: ['建一张 book 表（id 主键自增、title、author、price），插入 5 条数据。', '查询价格在 50~100 之间的书，按价格降序。', '统计每个作者的书数和平均价格，只显示书数 ≥ 2 的作者。', '用 JOIN 查询每本书的作者姓名，再用 UPDATE 修改一本价格并验证。'] }
+      { p: '先自己动手做一遍，再展开参考答案对照预期现象与判断依据。' },
+      { ol: [
+        '建一张 book 表（id 主键自增、title、author、price），插入 5 条数据。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：建表后 DESC book 能看到四个字段，id 为自增主键；插入五条后 <code>SELECT COUNT(*) FROM book</code> 返回 5，重复插同一个 id 时被主键拦住而不是覆盖。<b>为什么</b>：id 交给自增就不用自己维护唯一键；title 设成 NOT NULL，脏数据在入口就被拒绝。<b>要点</b>：<code>CREATE TABLE book (id BIGINT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(100) NOT NULL, author VARCHAR(50), price DECIMAL(10,2) NOT NULL)</code>；金额用 DECIMAL 不用 FLOAT；插入用一条多值 <code>INSERT INTO book (title, author, price) VALUES (...),(...)</code> 一次写完。</div></details>',
+        '查询价格在 50~100 之间的书，按价格降序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：返回的书价格都落在 50 到 100 之间（含边界），按价格从高到低排列，价格相同的两行先后顺序不保证。<b>为什么</b>：区间条件要用 BETWEEN 或大于等于加小于等于，写成 price 大于 50 且小于 100 会漏掉正好等于 50 和 100 的记录，这正是对账时少几条数据的典型原因。<b>要点</b>：<code>SELECT * FROM book WHERE price BETWEEN 50 AND 100 ORDER BY price DESC</code>；再用 EXPLAIN 确认过滤生效、没有多余的 Using filesort；数据量大时给 price 建索引。</div></details>',
+        '统计每个作者的书数和平均价格，只显示书数 ≥ 2 的作者。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：结果每组一行，含作者、书数、均价三列，书数都大于等于 2，只写过一本书的作者不出现。<b>为什么</b>：书数是聚合后的值，过滤聚合结果必须用 HAVING，写进 WHERE 会因分组尚未发生而报错；AVG 自动忽略 NULL，分母只是非空价格的行数。<b>要点</b>：<code>SELECT author, COUNT(*) AS cnt, AVG(price) AS avg_price FROM book GROUP BY author HAVING COUNT(*) &gt;= 2</code>；均价用 <code>ROUND(AVG(price), 2)</code> 控制小数位；验证时把所有组的 cnt 相加应等于总行数。</div></details>',
+        '用 JOIN 查询每本书的作者姓名，再用 UPDATE 修改一本价格并验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：JOIN 结果每行同时有书名和作者姓名，行数与 book 表一致；UPDATE 后重新查询只有一行价格变化，其他行不变。<b>为什么</b>：JOIN 漏写 ON 条件就退化成笛卡尔积，行数瞬间爆炸；UPDATE 忘了 WHERE 会改整张表，是最不可逆的操作之一。<b>要点</b>：<code>SELECT b.title, a.name FROM book b JOIN author a ON b.author_id = a.id</code>；更新前先用同样的条件 SELECT 一次确认命中行数，再 <code>UPDATE book SET price = 59.9 WHERE id = 3</code>。</div></details>'
+      ] }
     ]
   };
 })();

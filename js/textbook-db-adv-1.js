@@ -132,20 +132,20 @@
 
       { h: '1.12 常见追问' },
       { list: [
-        '<b>为什么用 B+ 树而不是 B 树？</b>非叶子不存数据，扇出更大、树高更低；叶子链表让范围查询只需顺序扫描。',
-        '<b>一张表能建多少索引？</b>没有硬上限，但每个索引都占空间并拖慢写入，实践上单表三到五个。',
-        '<b>主键为什么建议自增？</b>顺序插入避免页分裂，主键短则二级索引更小；UUID 随机插入会降低页利用率。',
-        '<b>联合索引 (a, b) 和两个单列索引的区别？</b>联合索引能同时服务 a 与 a+b，且可能覆盖查询；两个单列索引通常只能用一个，或走索引合并。',
-        '<b>回表一定慢吗？</b>不一定。命中行数少时回表很快；命中行数多时优化器可能放弃索引改全表扫描。'
+        '<b>问：为什么用 B+ 树而不是 B 树？</b><br>答：B 树的非叶子节点也存数据行，一个 16KB 页能塞的键就少，扇出随之变小、树更高，一次查询要多读几层页。B+ 树把整行数据全放到叶子，非叶子只留键和指针，同样的页能放更多键，三到四层就覆盖千万级数据，根节点常驻内存，实际 IO 只有一两次。叶子之间还有双向链表，范围查询和排序顺着链表顺序读即可；B 树要中序遍历、跨层跳转，没法顺序预读。',
+        '<b>问：一张表能建多少索引？</b><br>答：语法上没有硬上限，但实践上单表控制在三到五个。每个二级索引都是一棵独立的 B+ 树，既占空间，又要在每次插入、更新、删除时同步维护，写放大随索引数线性上升。索引过多还会在统计信息不准时让优化器挑到坏路径。判断办法是查 <code>sys.schema_unused_indexes</code> 找长期零命中的索引，再查冗余索引视图把前缀重复的合并掉。',
+        '<b>问：主键为什么建议自增？</b><br>答：InnoDB 的聚簇索引按主键排序存行，自增主键永远追加在末尾，写入集中在最后一个页，写满才分裂，页利用率能到十五分之十五：随机 UUID 会插到中间，频繁页分裂加数据搬移，页碎片多、缓存命中率低。另外二级索引的叶子存的是主键值，主键越短，每个二级索引越小。必须用 UUID 时选有序的 UUIDv7 或雪花 ID，别用完全随机的三十六位字符串。',
+        '<b>问：联合索引 (a, b) 和两个单列索引有什么区别？</b><br>答：联合索引先按 a 再按 b 排序，能同时服务 a = ? 和 a = ? AND b = ?，还可能覆盖查询省掉回表。两个单列索引各自独立，多数情况优化器只用其中一个，少数情况走 index merge 取交集或并集，代价是多一次合并。只用 b 过滤而 a 无条件的查询，联合索引帮不上忙，这就是最左前缀。列顺序按「等值列在前、范围列在后、区分度高的在前」来定。',
+        '<b>问：回表一定慢吗？</b><br>答：不一定。回表代价取决于命中行数和缓冲池命中率：只命中几十行时，几十次随机读远快于全表扫描。但命中行数占比很高，比如超过表的两三成，优化器会估算「回表次数乘以单次随机读」大于顺序全扫，于是主动放弃索引，type 变成 ALL。所以「加了索引反而更慢」常常是优化器的正确判断。真想避免回表，就用覆盖索引把要查的列都放进索引。'
       ] },
 
       { h: '1.13 自测与练习' },
       { ol: [
-        '建一张二十万行的 book 表，分别在有、无 author 索引时执行同一条查询，记录耗时与 EXPLAIN 的 type、rows。',
-        '为 (author, price) 建联合索引，写出三条分别只带 author、只带 price、两列都带的查询，解释各自的执行计划。',
-        '把 SELECT * FROM book WHERE author = ? 改写成覆盖索引查询，说明 Extra 的变化和原因。',
-        '找出三种会让索引失效的写法，各写一条 SQL，并用 EXPLAIN 验证 key 为 NULL。',
-        '解释为什么 SELECT count(*) 可能比 SELECT count(title) 快，以及它能不能走二级索引。'
+        '建一张二十万行的 book 表，分别在有、无 author 索引时执行同一条查询，记录耗时与 EXPLAIN 的 type、rows。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：无索引时 type 为 ALL，rows 约二十万，耗时几十到上百毫秒；建索引后 type 变 ref，rows 是实际匹配行数，耗时降到毫秒级。若 author 只有十来个取值，rows 仍可能上万，优化器甚至可能退回全表扫描。<b>为什么</b>：没有索引只能顺着聚簇索引叶子链表逐页读；有索引先走二级索引定位，再按主键回表取值。<b>要点</b>：<code>CREATE INDEX idx_author ON book(author)</code>，用 <code>EXPLAIN ANALYZE</code> 看真实耗时，选区分度高的列做实验才看得到差距。</div></details>',
+        '为 (author, price) 建联合索引，写出三条分别只带 author、只带 price、两列都带的查询，解释各自的执行计划。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：只有 author 条件时 type 为 ref，key 是 idx_author_price；只有 price 条件时 key 不是这个联合索引，多半 type 为 ALL；两列都带时 type 仍为 ref，ref 列出现两个 const，Extra 可能显示 Using index condition（ICP：走二级索引且条件下推到引擎层时出现），但不同版本与具体条件下也可能显示 Using where; Using index，判断以执行计划与回表次数为准，不要只看某一个 Extra 字样。<b>为什么</b>：联合索引先按 author 排序再按 price 排序，price 只在同一个 author 内部有序，缺了 author 就无法二分查找。<b>要点</b>：EXPLAIN 里把 key 和 key_len 一起看，key_len 反映实际用到了几列；确实要单独按 price 查，就得再建一个 idx_price。</div></details>',
+        '把 SELECT * FROM book WHERE author = ? 改写成覆盖索引查询，说明 Extra 的变化和原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：SELECT * 时 Extra 为空，走 idx_author 定位后要逐行回表；改成只取 id、author、price 且索引为 idx_author_price 时，Extra 出现 Using index，耗时明显下降。<b>为什么</b>：需要的列全在二级索引叶子上，不必再回聚簇索引取整行，省掉了 N 次随机读。<b>要点</b>：<code>SELECT id, author, price FROM book WHERE author = ?</code>，必要时补建 <code>idx_author_price</code>；判断依据是回表次数与执行计划：Extra 从 Using index condition 变成 Using index 是强信号，但不同版本与具体条件下也可能显示 Using where; Using index，本质都是「整行数据都能从索引里取到」，不要只盯某一个 Extra 字样。</div></details>',
+        '找出三种会让索引失效的写法，各写一条 SQL，并用 EXPLAIN 验证 key 为 NULL。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三条语句的 key 都是 NULL，type 为 ALL，rows 接近表的总行数。<b>为什么</b>：对索引列做函数或运算（<code>WHERE YEAR(created_at) = 2025</code>）、隐式类型转换（varchar 列写 <code>author = 100</code>）、前导通配符（<code>LIKE \'%Tom\'</code>）都让 B+ 树无法按前缀定位，只能逐行算表达式再比较。<b>要点</b>：函数改写成范围条件，类型与列定义对齐，模糊匹配改用前缀或全文索引，改完再跑一次 EXPLAIN 确认 key 有值。</div></details>',
+        '解释为什么 SELECT count(*) 可能比 SELECT count(title) 快，以及它能不能走二级索引。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同一张表上 count(*) 通常选一棵最小的二级索引全扫，count(title) 若 title 不在该索引上就得回表或全表扫，大表上耗时能差几倍。<b>为什么</b>：count(*) 只关心行存在，任何索引都能提供行数；count(列) 必须读到列值判断非 NULL，多出取值与回表成本。<b>要点</b>：InnoDB 不缓存总行数，count(*) 仍是索引全扫；count(1) 与 count(*) 在 MySQL 里等价；超大表要实时总数就用计数表或近似统计。</div></details>'
       ] }
     ]
   };
@@ -278,19 +278,19 @@
 
       { h: '2.12 常见追问' },
       { list: [
-        '<b>MVCC 能解决幻读吗？</b>快照读可以，固定视图看不到新插入的行；当前读要靠临键锁阻止范围内插入，两者配合才完整。',
-        '<b>RR 下幻读还会发生吗？</b>标准允许；先快照读、再当前读的混用仍可能看到新行。',
-        '<b>没有主键的表怎么加锁？</b>InnoDB 用隐藏 rowid 组织聚簇索引，仍可加锁；但业务无法按主键定位，容易锁范围过大。',
-        '<b>间隙锁之间会冲突吗？</b>不会。间隙锁的作用是阻止插入，两个事务可以同时持有同一间隙的间隙锁。',
-        '<b>死锁和锁等待超时的区别？</b>死锁是环路，InnoDB 立即检测并回滚一方（1213）；锁等待超时是等不到锁，达到 innodb_lock_wait_timeout 后报 1205。'
+        '<b>问：MVCC 能解决幻读吗？</b><br>答：只解决快照读那一半。REPEATABLE READ 下事务第一次普通 SELECT 时建 Read View，之后的普通 SELECT 复用同一个视图，别人新插入并提交的行不在视图里，所以看不到「幻」。但 UPDATE、DELETE、SELECT ... FOR UPDATE 走当前读，读到的是最新版本，还得靠间隙锁或临键锁阻止范围内插入。所以完整答案是：快照读靠 MVCC，当前读靠锁，两者配合才不幻读。',
+        '<b>问：RR 下幻读还会发生吗？</b><br>答：会。SQL 标准只要求 RR 不出现脏读和不可重复读，幻读是允许的；InnoDB 用临键锁挡住了大部分场景，但混用两种读法仍会漏：先普通 SELECT 得到三行，另一个事务插入并提交，再执行同条件的 UPDATE，当前读看到四行，UPDATE 之后再 SELECT 也能看到四行——事务看得见自己的修改。要堵住就先加 FOR UPDATE 把范围锁住。',
+        '<b>问：没有主键的表怎么加锁？</b><br>答：InnoDB 会隐式建一个六字节的 DB_ROW_ID 作为聚簇索引键，锁仍加在这棵隐藏索引上，行锁机制照常工作。问题是业务语句里没有这一列，无法按它精确定位，任何范围条件都只能锁住一大段 rowid 区间。同时没有主键做主从复制的行定位也不稳。规范做法是每张表都显式定义主键，至少加一个唯一非空索引。',
+        '<b>问：间隙锁之间会冲突吗？</b><br>答：不会。两个事务可以对同一个间隙同时持有间隙锁，它们互不阻塞，因为间隙锁的唯一目的是阻止别人往里插入；插入要拿插入意向锁，而插入意向锁才与间隙锁冲突。真正的坑是范围比想象中大：表里有 id = 5 和 10，执行 WHERE id = 7 FOR UPDATE 会锁住 (5, 10) 这个开区间，插入 6 或 8 一样被挡住。RC 级别下间隙锁基本关闭。',
+        '<b>问：死锁和锁等待超时的区别？</b><br>答：死锁是两个以上事务互相持有对方要等的锁，形成环路，谁都不肯松手；InnoDB 有等待图检测，一旦发现环路立刻回滚代价小的一方，报 ERROR 1213，通常几十毫秒就返回。锁等待超时不是环路，只是等得太久，达到 innodb_lock_wait_timeout（默认 50 秒）后报 ERROR 1205，只回滚当前语句。前者要靠统一加锁顺序预防，后者要查谁持锁太久、把长事务拆短。'
       ] },
 
       { h: '2.13 自测与练习' },
       { ol: [
-        '开两个会话，在 RC 与 RR 下分别重复“读—别人改并提交—再读”，记录两次结果并解释差异。',
-        '在 id 为 5、10、15 的表上执行 WHERE id = 7 FOR UPDATE，再从另一个会话插入 7，观察阻塞并解释原因。',
-        '构造一个加锁顺序相反的死锁，查看 SHOW ENGINE INNODB STATUS 的 LATEST DETECTED DEADLOCK 段。',
-        '为一段批量更新写分批提交的改造方案，说明它如何缩短事务并降低锁冲突。'
+        '开两个会话，在 RC 与 RR 下分别重复「读—别人改并提交—再读」，记录两次结果并解释差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：RC 下第二次读能看到对方提交后的新值，两次结果不同；RR 下两次结果相同，仍是第一次读到的旧值。<b>为什么</b>：RC 每条语句新建 Read View，所以能看到最新提交；RR 只在第一次快照读时建视图并复用，之后所有普通 SELECT 都按老视图判断可见性，靠 undo log 还原旧版本。<b>要点</b>：两个会话都先 <code>SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED</code>（或 REPEATABLE READ），再用 <code>START TRANSACTION</code> 包住两次 SELECT，中间那个会话要显式 COMMIT，否则测出来是锁等待而不是可见性差异。</div></details>',
+        '在 id 为 5、10、15 的表上执行 WHERE id = 7 FOR UPDATE，再从另一个会话插入 7，观察阻塞并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：第二个会话的 INSERT 一直挂住，直到第一个事务提交或回滚才继续；查 <code>information_schema.innodb_trx</code> 能看到 trx_state 为 LOCK WAIT，阻塞方是那个持锁事务。<b>为什么</b>：7 在索引里不存在，优化器找到的下一个记录是 10，于是在 (5, 10) 这个间隙上加间隙锁，插入 7 必须申请插入意向锁，与间隙锁冲突。<b>要点</b>：要把隔离级别设为 REPEATABLE READ，RC 下间隙锁不生效，插入不会被阻塞；这正好用来对比两种级别的差别。</div></details>',
+        '构造一个加锁顺序相反的死锁，查看 SHOW ENGINE INNODB STATUS 的 LATEST DETECTED DEADLOCK 段。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：其中一个会话立刻收到 <code>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction</code>，另一个正常提交；状态输出里能看到两个事务各持一把锁、又在等对方那把。<b>为什么</b>：事务 A 先更新 id = 1 再更新 id = 2，事务 B 反过来，两侧形成等待环路，等待图检测到环后选择回滚撤销代价小的一方。<b>要点</b>：两个会话各自 <code>START TRANSACTION</code> 后按相反顺序 <code>UPDATE ... WHERE id = ?</code>，应用层要捕获 1213 并整事务重试，同时把加锁顺序统一成按主键升序。</div></details>',
+        '为一段批量更新写分批提交的改造方案，说明它如何缩短事务并降低锁冲突。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改造前一个事务更新十万行、持锁几十秒，期间别人更新同一批行全部排队；改造后每批一千行、每批独立提交，单次持锁从几十秒降到几十毫秒，锁等待次数明显减少。<b>为什么</b>：锁在事务提交时才释放，事务越长持锁越久、undo 越难回收；拆成短事务后锁的持有窗口变小，冲突概率随之下降。<b>要点</b>：用 <code>WHERE id BETWEEN ? AND ?</code> 或按主键游标分段，每段一个事务，记录已处理的最大 id 以便断点续跑，批次大小做成可配置参数按压测结果调。</div></details>'
       ] }
     ]
   };

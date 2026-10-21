@@ -230,20 +230,20 @@ public class AsyncDemo {
 
       { h: '1.14 常见追问' },
       { list: [
-        '<b>Q：GET 和 POST 的本质区别是什么？</b>语义不同：GET 读取、应当幂等且可缓存；POST 提交、通常不幂等。至于“参数放 URL 还是 body”，只是约定，不是协议强制。',
-        '<b>Q：为什么我的请求返回 200，但对象字段是 null？</b>先看 JSON 的键名和 Java 字段名是否完全一致（大小写敏感），再看有没有 getter/setter 或 record 组件，最后确认没有开启忽略未知字段却写错了注解。',
-        '<b>Q：HttpClient 要不要每次用完关闭？</b>JDK 21 起 HttpClient 实现了 AutoCloseable，可以用 close 或 shutdown 释放资源；更早的版本没有关闭方法，随 JVM 生命周期存在。真正必须关闭的是你自己创建的线程池。',
-        '<b>Q：JSON 和 Java 对象一定要一一对应吗？</b>不必须。可以先解析成 Map 或 JsonNode，只取需要的字段，适合结构不稳定或只需要部分数据的场景。',
-        '<b>Q：接口返回的金额能用 double 吗？</b>不要。浮点数有精度误差，金额应当用 BigDecimal 或按“分”存整数。'
+        '<b>问：GET 和 POST 的本质区别是什么？</b><br>答：区别在语义，不在「参数放哪」。GET 表示读取，应当幂等、可缓存，浏览器和代理可以放心重放；POST 表示提交，通常非幂等，也不该被缓存。协议本身并不禁止 GET 带 body，只是不少实现不解析它。真正要判断的只有一句：这个操作重做一次，服务端状态会不会变。会变就必须用 POST 或 PUT，并且自己做幂等设计。',
+        '<b>问：为什么接口返回 200，对象字段却全是 null？</b><br>答：状态码 200 只说明对方成功返回了字节，字段映射是另一件事。按顺序查三处：JSON 键名与 Java 字段名是否完全一致（Jackson 默认大小写敏感）；目标类型有没有 getter/setter 和无参构造器，或者 record 的组件名对不对得上；注解 <code>@JsonProperty</code> 是否写错。最后打印一次原始 body，确认对方真的给了值，而不是返回了一个空对象。',
+        '<b>问：HttpClient 要不要每次用完就关闭？</b><br>答：不要每次请求都新建一个。它线程安全、内部带连接池，应该全局创建一个共享使用。JDK 21 起它实现了 <code>AutoCloseable</code>，进程收尾时可以用 <code>close</code> 或 <code>shutdown</code> 释放连接和内部线程；更早的版本没有关闭方法，随 JVM 生命周期存在。真正必须自己关的是你传给它的自定义线程池，以及没有读完的响应流。',
+        '<b>问：JSON 和 Java 对象一定要一一对应吗？</b><br>答：不必须。结构不稳定、只想取几个字段、或者先要看清原始报文时，可以解析成 <code>Map</code> 或 <code>JsonNode</code> 按路径取值，不必为一个临时需求造一堆类。代价是失去编译期检查：键名写错要到运行时才暴露，数字和日期也只能自己转换。等字段稳定、调用方多起来，再抽成 record 或普通类，让绑定替你校验类型。',
+        '<b>问：接口里的金额能用 double 吗？</b><br>答：不要。double 是二进制浮点，0.1 这类十进制小数根本无法精确表示，累加几次就出现 0.30000000000000004，对账时永远差几分钱。金额用 <code>BigDecimal</code>，并且用字符串构造 <code>new BigDecimal("19.90")</code>，不要用 double 构造；或者干脆按「分」存成 long。对外序列化时最好按字符串输出，避免对方语言又把它当浮点解析。'
       ] },
 
       { h: '1.15 自测与练习' },
       { ol: [
-        '用 <code>HttpClient</code> 请求本地的任意一个接口，打印状态码、响应头和响应体长度。',
-        '写一个 <code>Book</code> record，用 Jackson 序列化成 JSON 再反序列化回来，比较两个对象是否相等。',
-        '故意把请求地址改成一个不存在的端口，观察抛出的是哪一类异常，并给出一句用户能看懂的提示。',
-        '构造一段非法 JSON（比如键不加引号），用 Jackson 解析，记录异常信息中的行号和列号。',
-        '把 <code>BookClient</code> 改造成带重试的版本：只对超时和 5xx 重试，最多三次，间隔递增。'
+        '用 <code>HttpClient</code> 请求本地的任意一个接口，打印状态码、响应头和响应体长度。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：控制台依次打印 <code>200</code>、一组响应头、以及 body 的字符数。<b>为什么</b>：<code>send</code> 返回的 <code>HttpResponse</code> 里，<code>statusCode()</code> 来自响应行，<code>headers()</code> 是大小写不敏感的只读 Map，body 是 <code>ofString()</code> 按 Content-Type 字符集解码后的字符串。<b>要点</b>：本地没有服务就先起一个 HttpServer，否则第一题直接抛 <code>ConnectException</code>；长度用 <code>response.body().length()</code>，别混用字节数，中文一个字占 3 字节。</div></details>',
+        '写一个 <code>Book</code> record，用 Jackson 序列化成 JSON 再反序列化回来，比较两个对象是否相等。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两次打印都是 <code>true</code>，中间那行 JSON 形如 <code>{"id":1,"title":"网络编程","price":19.9}</code>。<b>为什么</b>：record 的组件名就是属性名，Jackson 2.12 起直接支持 record，靠 RecordComponent 反射拿名字，所以不必装 jackson-module-parameter-names，也不需要 setter；equals 与 hashCode 按全部组件自动生成，比较的自然是字段值而不是引用。<b>要点</b>：两个调用就够：<code>mapper.writeValueAsString(book)</code> 与 <code>mapper.readValue(json, Book.class)</code>；比较一律用 <code>equals</code>，用 <code>==</code> 一定 false。record 不能互相持有，父子双向引用序列化会抛 <code>JsonMappingException: Infinite recursion</code>；金额别用 double，改 BigDecimal，否则反序列化后可能差几分。</div></details>',
+        '故意把请求地址改成一个不存在的端口，观察抛出的是哪一类异常，并给出一句用户能看懂的提示。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：几乎立刻抛 <code>java.net.ConnectException: Connection refused</code>，不会等到超时；换成不可达的 IP 才会抛 <code>HttpConnectTimeoutException</code> 或 <code>HttpTimeoutException</code>。<b>为什么</b>：端口没人监听时内核直接回 RST，握手立刻失败；包被防火墙丢掉时没有任何回应，只能等 <code>connectTimeout</code> 到点。<b>要点</b>：分类捕获 IOException，refused 提示「服务没起或端口写错」，超时提示「网络不通或对方太慢」，不要把堆栈直接回给用户。</div></details>',
+        '构造一段非法 JSON（比如键不加引号），用 Jackson 解析，记录异常信息中的行号和列号。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：抛 <code>JsonParseException</code>（<code>JsonProcessingException</code> 的子类），message 里带位置，形如 <code>Unexpected character ... ; line: 1, column: 2</code>。<b>为什么</b>：Jackson 是流式解析，读到不合法字符立刻停下，并把当前输入位置写进异常，所以它比正则更容易定位问题。<b>要点</b>：行号列号只写日志；对方返回 HTML 错误页时同样会走到这里，所以解析前先看状态码和 Content-Type。</div></details>',
+        '把 <code>BookClient</code> 改造成带重试的版本：只对超时和 5xx 重试，最多三次，间隔递增。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：正常请求一次就成功、不重试；把服务停掉后连续失败三次，间隔约 200、400 毫秒，最后抛出最后一次的异常；返回 400 或 404 时立刻失败。<b>为什么</b>：只有超时、连接重置和 5xx 属于「可能瞬时」的失败，重试才有意义；间隔翻倍能避免所有客户端同时打回来，把刚恢复的服务再压垮。<b>要点</b>：循环里 <code>try/catch</code>，条件写成 <code>e instanceof HttpTimeoutException</code> 或 <code>status &gt;= 500</code>；<code>HttpClient</code> 全局复用，每次重试只重建 request；整体耗时也要设上限。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 3 题重点观察异常类型的差异，<code>ConnectException</code> 和 <code>HttpTimeoutException</code> 对应的处理策略完全不同；第 5 题注意不要在 4xx 时重试。' },
     ]
@@ -403,20 +403,20 @@ public class AsyncDemo {
 
       { h: '2.14 常见追问' },
       { list: [
-        '<b>Q：线程和进程到底怎么选？</b>需要隔离和独立资源用进程；同一应用内需要共享数据、轻量切换用线程。Java 程序本身就是一个进程，里面跑很多线程。',
-        '<b>Q：一个线程执行完 run 方法后还能再 start 吗？</b>不能。线程进入 TERMINATED 后不可复活，再调用 <code>start</code> 会抛 <code>IllegalThreadStateException</code>。',
-        '<b>Q：sleep(0) 和 yield 有什么区别？</b>几乎没有实际区别，两者都不会释放锁，也不保证让出 CPU。想控制顺序请用同步工具。',
-        '<b>Q：守护线程里的 finally 一定会执行吗？</b>不一定。JVM 退出时守护线程被直接终止，不会等待清理逻辑。',
-        '<b>Q：为什么我的多线程程序反而更慢？</b>可能线程数远超核数导致频繁切换，也可能锁竞争严重，或者任务本身太小，创建和调度开销盖过了收益。'
+        '<b>问：线程和进程到底怎么选？</b><br>答：看你要隔离什么。需要独立地址空间、崩溃互不影响、能单独设内存上限，用进程；同一应用内多个任务要共享堆上的对象、切换代价要小，用线程。Java 程序启动时就是一个进程，main 只是其中一个线程。进程之间通信得走管道、Socket 或共享内存，线程之间直接读写同一个对象——线程不安全问题正是从这份便利里来的。',
+        '<b>问：一个线程执行完 run 方法后还能再 start 吗？</b><br>答：不能。一个 Thread 对象的状态只能从 NEW 出发走一次，进入 TERMINATED 之后就固定了，再调 <code>start</code> 会抛 <code>IllegalThreadStateException</code>。想再跑一遍只能新建对象。真正的做法是把任务写成 Runnable 交给线程池：池里那几个线程被反复复用，每次执行的是不同任务，所以从来不需要「复活」一个线程。',
+        '<b>问：sleep(0) 和 yield 有什么区别？</b><br>答：实践上几乎没有区别，两者都不释放已持有的锁，也都只是给调度器一个提示，不保证真的切换。yield 让当前线程回到就绪队列，<code>sleep(0)</code> 等价于一次极短暂停。想控制执行顺序、想等某个条件成立，必须用 wait/notify、Lock、CountDownLatch 这类同步工具——靠 sleep 调时长凑顺序，在不同机器上一定翻车。',
+        '<b>问：守护线程里的 finally 一定会执行吗？</b><br>答：不一定。JVM 退出时只等非守护线程结束，守护线程会被直接终止，栈上的 finally 很可能来不及跑，日志、flush、释放资源都可能丢。所以守护线程只适合做随时可以放弃的辅助活，比如打点、清理缓存。写文件、提交事务这类必须收尾的工作要交给普通线程，再用 shutdown hook 兜底。',
+        '<b>问：为什么我的多线程程序反而更慢？</b><br>答：常见四种原因：线程数远超核数，上下文切换和缓存失效把收益吃掉；锁竞争严重，大部分时间在排队而不是计算；任务粒度太小，创建、调度、合并的开销盖过计算本身；共享数据太多，多个核心抢同一条缓存行。先用 <code>jstack</code> 看线程到底在跑还是在等，再决定加线程还是减线程。'
       ] },
 
       { h: '2.15 自测与练习' },
       { ol: [
-        '分别用继承 <code>Thread</code> 和实现 <code>Runnable</code> 打印 1 到 5，观察输出顺序是否稳定，并解释原因。',
-        '写一个程序：主线程启动子线程后立刻调用 <code>join</code>，对比不调用 <code>join</code> 时的输出差异。',
-        '把 <code>StopDemo</code> 改成用 <code>isInterrupted()</code> 作为循环条件，验证中断能否让线程退出。',
-        '给 <code>RaceDemo</code> 的计数器加上 <code>synchronized</code>，观察结果是否稳定为 200000（下一章会讲原理）。',
-        '用 <code>jstack</code> 打印一个正在运行的程序的线程栈，找到 main 线程和正在 <code>sleep</code> 的线程，记录它们的状态。'
+        '分别用继承 <code>Thread</code> 和实现 <code>Runnable</code> 打印 1 到 5，观察输出顺序是否稳定，并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个线程各自都会打印 1 到 5，但两段输出会交错，可能出现 1、1、2、3、2……；多运行几次，交错的位置每次都不一样。<b>为什么</b>：<code>start</code> 只是把线程放进就绪队列，谁先被调度、能连续跑几轮由操作系统决定，代码里没有任何同步，就没有任何顺序保证。<b>要点</b>：一次 <code>println</code> 只输出一个数字，别把整个序列拼成一个字符串，否则交错粒度会被掩盖；<code>Runnable</code> 更好，它把任务和线程解耦，之后能直接交给线程池。</div></details>',
+        '写一个程序：主线程启动子线程后立刻调用 <code>join</code>，对比不调用 <code>join</code> 时的输出差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不 join 时 main 往往先打印「结束」，子线程的数字出现在后面，甚至还没打完进程就退出了；join 之后「结束」一定排在所有数字之后。<b>为什么</b>：<code>join</code> 让调用它的线程阻塞，直到目标线程进入 TERMINATED，等于在两者之间建立了明确的先后关系。<b>要点</b>：<code>join</code> 会抛 <code>InterruptedException</code>，必须处理；可以写 <code>join(1000)</code> 设上限，避免子线程卡住时主线程永远等下去。</div></details>',
+        '把 <code>StopDemo</code> 改成用 <code>isInterrupted()</code> 作为循环条件，验证中断能否让线程退出。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：主线程调用 <code>interrupt()</code> 后，子线程在下一轮 <code>while (!isInterrupted())</code> 判断时退出，打印出收尾日志。<b>为什么</b>：<code>interrupt</code> 只是把标志位置位，要不要停由被中断的线程自己决定，这就是协作式停止。注意循环体里若在 sleep 或 wait，会抛 <code>InterruptedException</code> 并清掉标志位，循环不会自己停。<b>要点</b>：捕获异常后要么重新 <code>Thread.currentThread().interrupt()</code> 保留标志，要么直接 return；不要用已废弃的 <code>stop()</code>。</div></details>',
+        '给 <code>RaceDemo</code> 的计数器加上 <code>synchronized</code>，观察结果是否稳定为 200000（下一章会讲原理）。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不加锁时多次运行都得到 199xxx 之类的偏小值，且每次不同；加上 <code>synchronized</code> 后每次都是 200000。<b>为什么</b>：<code>count++</code> 是读、加、写三步，两个线程交错就会丢掉一次更新；<code>synchronized</code> 保证同一时刻只有一个线程进入临界区，退出时还把修改刷给其他线程。<b>要点</b>：锁必须加在同一个对象上，两个实例各锁各的等于没锁；也可以换成 <code>AtomicInteger</code> 的 <code>incrementAndGet()</code>。</div></details>',
+        '用 <code>jstack</code> 打印一个正在运行的程序的线程栈，找到 main 线程和正在 <code>sleep</code> 的线程，记录它们的状态。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：每段以 <code>"main" #1 prio=5 ...</code> 开头，正在干活的显示 <code>java.lang.Thread.State: RUNNABLE</code>；在 sleep 的线程显示 <code>TIMED_WAITING (sleeping)</code>，栈顶是 <code>java.lang.Thread.sleep</code>。<b>为什么</b>：<code>jstack</code> 打印的是 JVM 内所有 Java 线程的瞬时快照，状态名就是 <code>Thread.State</code> 的枚举值；本地方法栈与虚拟机内部线程也会列出来，看业务线程只认你自己起的名字。<b>要点</b>：先 <code>jps -l</code> 拿 pid，再 <code>jstack &lt;pid&gt;</code>，JDK 7 之后等价命令是 <code>jcmd &lt;pid&gt; Thread.print</code>；只装了 JRE 会提示找不到 jstack。隔几秒连抓两三次对比栈顶，才能分清是卡死还是在正常推进；出现死锁时 jstack 末尾会直接打印 <code>Found one Java-level deadlock</code> 与两个线程的持锁链。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 2 题多运行几次，你会看到输出顺序并不稳定，这正是并发程序与顺序程序最大的差别；第 5 题注意栈里 “java.lang.Thread.State” 后面的状态名。' },
     ]
@@ -574,21 +574,21 @@ public class AsyncDemo {
 
       { h: '3.13 常见追问' },
       { list: [
-        '<b>Q：synchronized 和 ReentrantLock 怎么选？</b>简单互斥用 synchronized，代码短、不会忘记释放；需要可中断等待、超时获取、公平锁或多个条件变量时用 ReentrantLock。',
-        '<b>Q：锁对象可以是 null 吗？</b>不可以，<code>synchronized (null)</code> 会直接抛 NullPointerException。',
-        '<b>Q：volatile 数组算不算每个元素都 volatile？</b>不算。volatile 只修饰数组引用本身，元素读写没有 volatile 语义，需要 <code>AtomicIntegerArray</code> 之类的工具。',
-        '<b>Q：为什么加了 volatile 的 count++ 还是错的？</b>volatile 只保证每次读到最新值，读和写之间仍可能被插入，三步不是原子的。',
-        '<b>Q：synchronized 会锁住整个类吗？</b>静态同步方法锁的是 Class 对象，会阻塞其他静态同步方法，但不会阻塞实例同步方法，两者锁不同。'
+        '<b>问：synchronized 和 ReentrantLock 怎么选？</b><br>答：只在需要额外能力时才用 Lock。简单互斥、加锁范围就在一个方法或一个代码块里，用 <code>synchronized</code>：它由 JVM 管理，抛异常也会自动释放，不会写漏 unlock。需要可中断的等待、带超时的 <code>tryLock</code>、公平锁，或者要在一个锁上挂多个条件队列时，才换成 <code>ReentrantLock</code>，并且必须在 finally 里释放。',
+        '<b>问：锁对象可以是 null 吗？</b><br>答：不可以。<code>synchronized (null)</code> 不会静默失败，而是直接抛 <code>NullPointerException</code>，因为 JVM 需要拿到对象的监视器（monitor），null 没有。同步方法则隐含锁住 <code>this</code> 或类的 Class 对象，不会为 null。真正要小心的是锁对象被重新赋值：字段一变，前后两个线程锁的就不是同一个对象了，所以锁字段应该声明成 <code>final</code>。',
+        '<b>问：volatile 数组算不算每个元素都 volatile？</b><br>答：不算。<code>volatile</code> 只修饰那个数组引用，保证引用本身的读写可见且不被重排；一旦拿到引用，<code>arr[0] = 1</code> 就是对元素的普通写，没有任何可见性保证。要给元素也加上原子语义，用 <code>AtomicIntegerArray</code>；只是想让写入被其他线程看到，就老老实实加锁。',
+        '<b>问：为什么加了 volatile 的 count++ 还是错的？</b><br>答：因为 <code>count++</code> 不是一步。它由读、加、写三步组成，<code>volatile</code> 只保证每一步都能看到最新值，却挡不住两个线程同时读到 100 再各自写回 101，于是少加了 100 次。要原子就换 <code>AtomicInteger.incrementAndGet()</code>，靠 CAS 自旋失败重试；或者把整个自增放进同一个锁里。',
+        '<b>问：synchronized 会锁住整个类吗？</b><br>答：要看你锁的是哪个对象。静态同步方法锁的是这个类的 <code>Class</code> 对象，它和同类其他静态同步方法互斥，但完全不阻塞实例同步方法，因为那是两把不同的监视器。同理，同一个类 new 出两个实例，各自锁各自的 <code>this</code>，也互不影响。所以要保护静态共享状态，锁必须落在类上；要保护实例状态，只锁 <code>this</code> 才有效。'
       ] },
 
       { h: '3.14 自测与练习' },
       { ol: [
-        '运行 <code>RaceDemo</code> 十次，记录结果，解释为什么每次都不一样。',
-        '把 <code>StockDemo</code> 的检查和扣减放进同一个 <code>synchronized</code> 块，验证库存不再变成负数。',
-        '写一个类，分别用实例方法和静态方法各加 10000 次，用两个线程验证它们是否互斥，并解释现象。',
-        '把 <code>Basket</code> 的 <code>notifyAll</code> 改成 <code>notify</code>，多放几个生产者和消费者，观察是否会出现卡住。',
-        '用 <code>AtomicInteger</code> 实现一个线程安全的编号生成器，要求从 1000 开始，并说明为什么不用 volatile。',
-        '把 DCL 单例的 volatile 去掉，尝试构造一个能复现“半初始化对象”的测试（提示：可以在构造器里加延时并打印字段）。'
+        '运行 <code>RaceDemo</code> 十次，记录结果，解释为什么每次都不一样。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：十次结果都小于 200000，而且互不相同，例如 199987、199964；偶尔也会正好是 200000。<b>为什么</b>：<code>count++</code> 被拆成读、加、写三步，两个线程同时读到同一个旧值再各自写回，后写的一方覆盖了先写的，每次丢掉多少次取决于调度时机，所以每次结果都不一样。<b>要点</b>：把自增换成 <code>AtomicInteger.incrementAndGet()</code> 或加 <code>synchronized</code>，再跑十次应该全是 200000。</div></details>',
+        '把 <code>StockDemo</code> 的检查和扣减放进同一个 <code>synchronized</code> 块，验证库存不再变成负数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：修改前多跑几次能看到库存变成 -1、-2；改成一个同步块包住「判断库存 &gt; 0」和「库存减一」之后，最小值稳定停在 0。<b>为什么</b>：问题出在检查与扣减之间有缝隙，两个线程都通过了检查才开始扣；只有把这两步放进同一个临界区，判断结果才对后续的扣减依然有效。<b>要点</b>：范围要一次框住，写成 <code>synchronized (lock) { if (stock &gt; 0) stock--; }</code>；只同步读或只同步写都等于没锁。</div></details>',
+        '写一个类，分别用实例方法和静态方法各加 10000 次，用两个线程验证它们是否互斥，并解释现象。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个同步方法各累加自己的计数，最终两个计数都正好是 10000，两个线程并没有互相阻塞；把静态方法改成普通同步实例方法后，才会看到明显的串行化。<b>为什么</b>：<code>synchronized</code> 实例方法锁的是 <code>this</code>，<code>synchronized static</code> 方法锁的是 <code>Xxx.class</code>，两把锁不同自然不会互斥。<b>要点</b>：用 <code>System.nanoTime()</code> 记录总耗时判断有没有串行；保护静态字段就同步静态方法，别混用。</div></details>',
+        '把 <code>Basket</code> 的 <code>notifyAll</code> 改成 <code>notify</code>，多放几个生产者和消费者，观察是否会出现卡住。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改成 <code>notify</code> 后程序偶尔长时间停住，<code>jstack</code> 里所有业务线程都停在 <code>Object.wait</code>；换回 <code>notifyAll</code> 后同样的代码能正常结束。<b>为什么</b>：<code>notify</code> 只随机唤醒一个等待者，若唤醒的是同类线程（消费者叫醒了消费者），它检查条件不满足又回去等，而唯一能满足条件的那个线程一直没被叫醒，于是所有人一起睡死。<b>要点</b>：等待必须写在 <code>while (!条件)</code> 里而不是 if；默认用 <code>notifyAll</code>，只有单条件、单类等待者时才考虑 <code>notify</code>。</div></details>',
+        '用 <code>AtomicInteger</code> 实现一个线程安全的编号生成器，要求从 1000 开始，并说明为什么不用 volatile。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：20 个线程各取 1000 个号，收集到的 20000 个号无重复，最大号正好是 20999。<b>为什么</b>：<code>AtomicInteger</code> 的 <code>incrementAndGet</code> 是一条 CAS 指令，比较并交换失败会自动重试，天然排他；<code>volatile</code> 只解决可见性，<code>get()</code> 之后到 <code>set()</code> 之前的缝隙里，别的线程也能拿到同一个号。<b>要点</b>：<code>new AtomicInteger(1000).incrementAndGet()</code>；要跨进程唯一就得换 UUID 或数据库序列，CAS 只管一个 JVM。</div></details>',
+        '把 DCL 单例的 volatile 去掉，尝试构造一个能复现「半初始化对象」的测试（提示：可以在构造器里加延时并打印字段）。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：在 x86 上往往复现不出来，去掉 volatile 后测试照样通过——这恰恰是最危险的地方；换到弱内存模型的 ARM 机器，或把并发调用压到很大，才可能读到 <code>instance != null</code> 但字段仍是 0 的对象。<b>为什么</b>：<code>new</code> 分三步：分配内存、执行构造器、把引用写给变量。没有 volatile 时编译器或 CPU 可以把第三步提到第二步之前，于是别的线程看到一个还没初始化完的对象。<b>要点</b>：结论是 volatile 不能省；更省心的写法是静态内部类持有或枚举单例，靠类加载机制保证只初始化一次。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 4 题改成 <code>notify</code> 后可能长时间卡住，因为被唤醒的可能是同类线程；第 6 题不保证一定复现，但能帮你理解重排为什么危险。' },
     ]
@@ -893,21 +893,23 @@ public class RejectAndFactory {
     ]},
 
       { h: '4.12 常见追问' },
-      {p:'<b>Q：核心线程数设为 0 会怎样？</b>新任务进来时线程数为 0，会先尝试入队；只有当队列满了才会创建线程。结果是池子可能长期只有一个线程在工作，行为非常反直觉。除非你明确知道自己在做什么，否则 core 不要设 0。'},
-      {p:'<b>Q：为什么我配了 maximumPoolSize=100，线程数却一直是 8？</b>因为队列没满。只要 <code>workQueue</code> 还能放，池子就不会扩容。检查队列是不是无界的，或者容量是不是设得过大。'},
-      {p:'<b>Q：线程池里的线程抛异常后会怎样？</b>那个线程会终止，池子检测到后会创建一个新线程补上，池子的容量不受影响。但如果异常被 submit 包装进 Future，线程根本不会死，异常也不会打印，这是更隐蔽的情况。'},
-      {p:'<b>Q：ScheduledThreadPoolExecutor 的周期任务，一次抛异常会怎样？</b>后续的周期执行会被取消，而且不会有任何提示。所以周期任务体内部必须自己 try-catch 兜住所有异常。'},
-      {p:'<b>Q：JDK 21 的虚拟线程还需要线程池吗？</b>虚拟线程非常轻量，通常用 <code>Executors.newVirtualThreadPerTaskExecutor()</code> 一台任务一个虚拟线程，不再需要“池化”来省资源。但并发上限仍然要控制——这时限制手段从“线程数”变成了信号量或连接池大小。'},
-      {p:'<b>Q：怎么监控一个线程池？</b><code>ThreadPoolExecutor</code> 提供了 <code>getPoolSize()</code>、<code>getActiveCount()</code>、<code>getQueue().size()</code>、<code>getCompletedTaskCount()</code>。把它们定期打点到监控系统，队列长度持续上涨就是最可靠的告警信号。'},
+      { list: [
+        '<b>问：核心线程数设为 0 会怎样？</b><br>答：新任务进来时当前线程数为 0，池子不会立刻建线程，而是先把任务塞进队列；只有队列满了才会创建线程。于是线上表现可能很反直觉：明明有活干，池里却长期只有一两个线程，任务全在队列里排队。除非你确实想要「队列优先」的语义，核心线程数不要设 0，通常至少等于常态并发数。',
+        '<b>问：为什么我配了 maximumPoolSize=100，线程数却一直是 8？</b><br>答：因为队列没满。线程池的扩张顺序是：先用核心线程、再入队、队列满了才扩到最大线程、再满才拒绝。用无界队列（默认的 <code>LinkedBlockingQueue</code>）时队列永远不满，maximumPoolSize 这个参数等于失效。想让它生效就把队列设成有界容量，或者直接用 <code>SynchronousQueue</code> 让任务必须当场交接。',
+        '<b>问：线程池里的线程抛异常后会怎样？</b><br>答：看是用 execute 还是 submit。execute 提交的任务抛出未捕获异常，那个工作线程会终止，池子随后新建一个补上、容量不受影响，异常会交给默认处理器打印。submit 提交时异常被装进 Future，线程根本不死，也不会有任何输出——如果你从不调用 get，这个错误就彻底消失了。所以要么在任务体里自己 try-catch 记日志，要么给池子配 UncaughtExceptionHandler。',
+        '<b>问：ScheduledThreadPoolExecutor 的周期任务，一次抛异常会怎样？</b><br>答：后续所有周期执行都会被静默取消，没有日志、没有提示，监控上只会看到任务不再跑了。因为一次执行抛出异常后，内部会把这个任务从队列里移除。所以周期任务体必须自己 try-catch 兜住所有 <code>Throwable</code> 并记日志，让这一轮失败、下一轮照常继续；否则一次网络抖动就能让定时对账永久停摆。',
+        '<b>问：JDK 21 的虚拟线程还需要线程池吗？</b><br>答：通常不再需要池化。虚拟线程由 JVM 调度、栈按需增长，用 <code>Executors.newVirtualThreadPerTaskExecutor()</code> 一个任务一个就够。但并发上限依然要控制，只是限制手段从「线程数」换成了「稀缺资源数」：信号量、数据库连接池、HTTP 客户端的连接上限。另外要留意的不是性能而是阻塞语义，早期版本里 synchronized 块内的阻塞会把载体线程钉住，JDK 24 起已经解决。',
+        '<b>问：怎么监控一个线程池？</b><br>答：<code>ThreadPoolExecutor</code> 已经暴露了 <code>getPoolSize()</code>、<code>getActiveCount()</code>、<code>getQueue().size()</code>、<code>getCompletedTaskCount()</code>，定时打点到监控系统即可。最值得告警的两个信号是：队列长度持续上涨，说明生产快过消费；活跃线程数长期顶在最大值，说明已经打满。队列总是先涨、线程后满，所以队列长度是最早的预警。要更细就自定义 ThreadPoolExecutor，覆写 <code>beforeExecute</code> 和 <code>afterExecute</code> 记录每个任务耗时。'
+      ] },
 
       { h: '4.13 自测与练习' },
       {ol:[
-      '手写一个 <code>ThreadPoolExecutor</code>，参数为 core=2、max=4、队列容量 2、线程名前缀 <code>demo-</code>，提交 10 个各睡 1 秒的任务，打印每次提交后池子的线程数与队列长度，解释你看到的现象。',
-      '把上题的队列换成无界 <code>LinkedBlockingQueue</code>，再跑一次，说明为什么线程数最多只有 2。',
-      '写一个 <code>submit</code> 提交、任务内抛 <code>RuntimeException</code> 的例子，先不调用 <code>get</code>，观察控制台；再调用 <code>get</code>，观察异常类型，并解释 <code>ExecutionException</code> 里的 cause 是什么。',
-      '实现一个自定义 <code>RejectedExecutionHandler</code>，在拒绝时打印任务类型和当前队列长度，并统计拒绝次数。',
-      '用 <code>shutdown()</code> 加 <code>awaitTermination(5, SECONDS)</code> 关闭一个还有 3 个长任务的池子，观察返回值与剩余任务是否执行完。',
-      '估算：8 核机器，任务平均计算 5ms、等待 45ms，按公式该配多少线程？如果下游数据库连接池只有 20 个连接，这个估算还成立吗？为什么？'
+      '手写一个 <code>ThreadPoolExecutor</code>，参数为 core=2、max=4、队列容量 2、线程名前缀 <code>demo-</code>，提交 10 个各睡 1 秒的任务，打印每次提交后池子的线程数与队列长度，解释你看到的现象。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：前 2 个任务立刻开跑（poolSize=2、queue=0），第 3、4 个进队列（queue 涨到 2），第 5、6 个把线程扩到 4 并立刻执行，第 7 个开始抛 <code>RejectedExecutionException</code>。<b>为什么</b>：执行顺序是核心线程、入队、扩到最大线程、最后拒绝；队列只有 2 个位置，所以池子最多同时容纳 6 个任务。<b>要点</b>：提交 10 个必须自己写拒绝策略，否则第 7 个就炸；打印时同时看 <code>getPoolSize()</code>、<code>getQueue().size()</code> 和 <code>getActiveCount()</code>，才看得出任务停在哪一步。</div></details>',
+      '把上题的队列换成无界 <code>LinkedBlockingQueue</code>，再跑一次，说明为什么线程数最多只有 2。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：线程数始终是 2，10 个任务全部进队列，后 8 个要等前两个跑完才依次执行，总耗时约 5 秒，而且一次拒绝都没有。<b>为什么</b>：无界队列永远不满，而扩容到 maximumPoolSize 的前提正是队列已满，所以那 8 个线程永远不会被创建；任务全堆在内存里，量一大就是 OOM 隐患。<b>要点</b>：想要固定大小就用 core 等于 max 的语义（如 newFixedThreadPool）；想要弹性就必须有界队列配合理拒绝策略。</div></details>',
+      '写一个 <code>submit</code> 提交、任务内抛 <code>RuntimeException</code> 的例子，先不调用 <code>get</code>，观察控制台；再调用 <code>get</code>，观察异常类型，并解释 <code>ExecutionException</code> 里的 cause 是什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不调用 <code>get</code> 时控制台一片安静，程序正常结束；调用 <code>get</code> 时抛 <code>ExecutionException</code>，它的 <code>getCause()</code> 正是那个 RuntimeException，原始堆栈完整保存在其中。<b>为什么</b>：<code>submit</code> 把任务包成 FutureTask，异常被捕获后存进结果字段，只有 <code>get</code> 时才重放并包一层；而 <code>execute</code> 是直接交给线程跑，异常会走 UncaughtExceptionHandler。<b>要点</b>：要么任务体内自己 try-catch，要么在 get 处捕获并打印 cause；批量提交和定时任务最容易把异常吞掉。</div></details>',
+      '实现一个自定义 <code>RejectedExecutionHandler</code>，在拒绝时打印任务类型和当前队列长度，并统计拒绝次数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：每次拒绝都打印一行，形如 <code>reject DemoTask queue=2</code>，最终拒绝数等于提交数减接受数（例如提交 10、接受 6、拒绝 4）。<b>为什么</b>：拒绝发生在「线程已达最大数且队列已满」的时刻，由 handler 的 <code>rejectedExecution</code> 回调，所以此刻队列长度必然等于容量。<b>要点</b>：四种现成策略是 Abort 抛异常、CallerRuns 让调用线程自己跑（天然背压）、Discard、DiscardOldest；生产上更常用 CallerRuns 或自定义落库，并给拒绝计数打点告警。</div></details>',
+      '用 <code>shutdown()</code> 加 <code>awaitTermination(5, SECONDS)</code> 关闭一个还有 3 个长任务的池子，观察返回值与剩余任务是否执行完。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>shutdown</code> 之后池子不再接收新任务，已提交的 3 个任务继续跑；5 秒内跑完返回 <code>true</code>，若每个任务要 60 秒则返回 <code>false</code>，此时任务仍在跑，JVM 也不会退出。<b>为什么</b>：<code>shutdown</code> 只停止接收并等已提交任务结束，不会中断它们；<code>awaitTermination</code> 只是最多等这么久，超时返回 false 且不改变任何状态。<b>要点</b>：返回 false 后要决定继续等还是 <code>shutdownNow</code>——它会中断线程并返回没开始执行的任务列表，但中断是协作式的，sleep 能响应、死循环不行。</div></details>',
+      '估算：8 核机器，任务平均计算 5ms、等待 45ms，按公式该配多少线程？如果下游数据库连接池只有 20 个连接，这个估算还成立吗？为什么？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：按公式 N = 核数 × (1 + 等待/计算) 得到 8 × 10 = 80 个线程；但连接池只有 20 个，80 个线程里同时最多 20 个能拿到连接，其余全堵在获取连接上，实际应配到 20 出头。<b>为什么</b>：那个公式假设等待期间不占用稀缺资源；连接池是硬上限，超过它的线程只会拉长等待时间，把线程本身变成新瓶颈。<b>要点</b>：线程数上限取 min(公式值, 下游最紧的资源数) 再加一点余量，并给获取连接设超时，别让线程无限等。</div></details>'
     ]},
     ]
 };
@@ -1225,21 +1227,23 @@ public class CfCombine {
     ]},
 
       { h: '5.12 常见追问' },
-      {p:'<b>Q：ConcurrentHashMap 的 get 要不要加锁？</b>不加。它的 Node 的 val 和 next 都用 volatile 修饰，保证可见性；读操作全程无锁，所以并发读的性能非常好。'},
-      {p:'<b>Q：ConcurrentHashMap 能完全替代 HashMap 吗？</b>不能。它多了 CAS、volatile 写、锁桶这些开销，单线程场景下比 HashMap 慢；而且它不允许 null 值。没有并发需求就用 HashMap。'},
-      {p:'<b>Q：为什么 JDK 8 之后不再用分段锁？</b>分段锁（Segment）把表分成 16 段，每段一把锁，锁粒度还是偏粗，而且扩容只能段内进行。JDK 8 改成“锁单个桶的头节点 + CAS”，粒度更细；并发扩容也让大表扩容不再是瓶颈。'},
-      {p:'<b>Q：computeIfAbsent 和 putIfAbsent 有什么区别？</b><code>putIfAbsent</code> 要求你先把值算好，不管用不用得上都会创建对象；<code>computeIfAbsent</code> 只在确实缺失时才调用函数，避免无谓的构造开销，但函数里不能做耗时或重入操作。'},
-      {p:'<b>Q：thenApply 和 thenCompose 到底差在哪？</b>如果回调返回的是普通值，用 <code>thenApply</code>，得到 <code>CF&lt;R&gt;</code>；如果回调本身就返回一个 <code>CompletableFuture</code>，用 <code>thenApply</code> 会得到 <code>CF&lt;CF&lt;R&gt;&gt;</code> 这种嵌套结构，必须用 <code>thenCompose</code> 把它压平。'},
-      {p:'<b>Q：CompletableFuture 能不能取代线程池？</b>不能，它本身不创建线程，只是把任务编排好交给线程池执行。异步代码的并发度、隔离性、拒绝策略，最终仍然取决于你传进去的那个 Executor。'},
+      { list: [
+        '<b>问：ConcurrentHashMap 的 get 要不要加锁？</b><br>答：不加。它内部 Node 的 <code>val</code> 和 <code>next</code> 都用 volatile 修饰，保证读到的永远是最新写入的值，读路径全程无锁，遇到正在扩容还会顺手帮忙迁移。代价是读只能保证弱一致：遍历途中别的线程改了表，你看到的是某一瞬间的混合视图，不会抛异常，也拿不到某个时刻的完整快照。',
+        '<b>问：ConcurrentHashMap 能完全替代 HashMap 吗？</b><br>答：不能。它多了 CAS、volatile 写和锁桶的开销，单线程或低竞争场景下比 <code>HashMap</code> 慢；而且它不允许 null 键和 null 值，因为 <code>get</code> 返回 null 时无法区分「没有这个键」和「键在、值是 null」，并发下这个歧义也没法靠 containsKey 补救。没有共享需求就用 HashMap。',
+        '<b>问：为什么 JDK 8 之后不再用分段锁？</b><br>答：分段锁把表切成默认 16 段、每段一把锁，并发度被 16 这个固定数字卡死，扩容也只能在段内做。JDK 8 改成锁单个桶的头节点加 CAS 写入，锁粒度细到桶级，并发度随表大小增长；扩容改成多线程协作迁移，大表扩容不再是一次长时间的全局停顿。',
+        '<b>问：computeIfAbsent 和 putIfAbsent 有什么区别？</b><br>答：<code>putIfAbsent</code> 要求你先把值算出来，不管用不用得上都会创建对象，白查一次数据库很常见；<code>computeIfAbsent</code> 只在确实缺失时才调用映射函数，而且这次调用发生在锁住的桶里，能保证同一个键只算一次。代价是函数里不能做耗时操作，更不能回头去改同一个 map，否则可能死锁或抛 <code>IllegalStateException</code>。',
+        '<b>问：thenApply 和 thenCompose 到底差在哪？</b><br>答：看回调返回的是什么。返回普通值（String、Integer）就用 <code>thenApply</code>，得到 <code>CF&lt;R&gt;</code>；如果回调本身返回一个 <code>CompletableFuture</code>，用 thenApply 会得到 <code>CF&lt;CF&lt;R&gt;&gt;</code> 这种嵌套，后面还得连着 join 两层，这时必须用 <code>thenCompose</code> 把它压平。一句话：thenApply 相当于 map，thenCompose 相当于 flatMap。',
+        '<b>问：CompletableFuture 能不能取代线程池？</b><br>答：不能。它本身不创建任何线程，默认借用 <code>ForkJoinPool.commonPool()</code>，也可以显式传一个 Executor；它只负责「哪一段在什么时候跑」，真正的并发度、隔离性和拒绝策略仍然由那个池子决定。生产上几乎都该显式传自己的池子，否则一个慢任务占满公共池，会连带拖慢全进程的并行流。'
+      ] },
 
       { h: '5.13 自测与练习' },
       {ol:[
-      '写一个程序，用 10 个线程同时向 <code>HashMap</code> 插入 1000 个不同的 key，统计最终 size，重复几次观察结果，并解释为什么会小于 10000。',
-      '把上题换成 <code>ConcurrentHashMap</code>，再用 <code>computeIfAbsent</code> 做一个带过期时间的本地缓存，说明为什么不能用 <code>containsKey + put</code>。',
-      '用 <code>ArrayBlockingQueue(5)</code> 实现一个生产者-消费者：2 个生产者每秒放 3 个任务，1 个消费者每秒处理 1 个，观察队列长度变化，并解释背压是怎么发生的。',
-      '用 <code>CompletableFuture</code> 并发调用三个模拟服务（各睡 200ms、300ms、500ms），用 <code>allOf</code> 等全部完成后合并结果，记录总耗时，验证它接近 500ms 而不是 1000ms。',
-      '给上题加上 300ms 超时和异常兜底：任一服务抛异常时返回默认值，超时时也返回默认值，分别用 <code>exceptionally</code>、<code>handle</code> 和 <code>orTimeout</code> 实现。',
-      '解释：为什么 <code>CopyOnWriteArrayList</code> 的迭代器不会抛 ConcurrentModificationException，却可能读不到刚 add 的元素？'
+      '写一个程序，用 10 个线程同时向 <code>HashMap</code> 插入 1000 个不同的 key，统计最终 size，重复几次观察结果，并解释为什么会小于 10000。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：最终 size 明显小于 10000，各次运行结果都不相同；加了 <code>-ea</code> 之外的版本偶尔还会抛 <code>ArrayIndexOutOfBoundsException</code>。<b>为什么</b>：并发扩容时两个线程同时把旧表搬到新表会互相覆盖，节点直接丢失；size 字段的累加也不是原子的。JDK 8 把头插改成尾插之后，JDK 7 那种环形链表死循环基本消失了，但丢数据一点没少。<b>要点</b>：普通 <code>HashMap</code> 绝不能多线程共享写；用 <code>ConcurrentHashMap</code>，或者让每个线程写自己的 map，最后再合并。</div></details>',
+      '把上题换成 <code>ConcurrentHashMap</code>，再用 <code>computeIfAbsent</code> 做一个带过期时间的本地缓存，说明为什么不能用 <code>containsKey + put</code>。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：size 稳定等于实际写入的不同 key 数（10000）；同一个 key 连续调用两次 <code>computeIfAbsent</code>，加载日志只打印一次。<b>为什么</b>：<code>containsKey</code> 加 <code>put</code> 是两步，中间别的线程可能已经插进来，于是重复计算、或者用旧值覆盖掉别人刚写的新值；<code>computeIfAbsent</code> 在锁住的桶里一次完成判断、计算、放入。<b>要点</b>：过期时间可以让 value 包一层带时间戳的 Entry，读的时候判断并 remove；真实缓存还要有容量上限和淘汰，别指望一个 map 硬扛。</div></details>',
+      '用 <code>ArrayBlockingQueue(5)</code> 实现一个生产者-消费者：2 个生产者每秒放 3 个任务，1 个消费者每秒处理 1 个，观察队列长度变化，并解释背压是怎么发生的。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：队列长度迅速涨到 5 就停住了，此后 <code>put</code> 阻塞，生产者的实际投放速度被压到和消费者一样（每秒 1 个），日志里两次生产的间隔越来越长。<b>为什么</b>：<code>ArrayBlockingQueue</code> 有界，满了之后 <code>put</code> 不是丢弃而是阻塞等待，于是下游的消费速度反过来限制了上游的生产速度，这就是背压。<b>要点</b>：既不想阻塞又不想丢，就用带超时的 <code>offer</code> 并自己决定丢弃还是重试；队列容量就是缓冲上限，设得太大只是把压力推迟成内存占用。</div></details>',
+      '用 <code>CompletableFuture</code> 并发调用三个模拟服务（各睡 200ms、300ms、500ms），用 <code>allOf</code> 等全部完成后合并结果，记录总耗时，验证它接近 500ms 而不是 1000ms。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：总耗时约 500 毫秒出头（加上调度开销大约 510 到 530 毫秒），而不是三段相加的 1000 毫秒；三个任务的开始时间几乎相同。<b>为什么</b>：三个任务同时提交、各自在自己的线程上睡，<code>allOf</code> 只等最慢的那个完成，所以总耗时取决于最大值而不是总和。<b>要点</b>：线程池至少要 3 个线程，单线程池会让它们退化成串行；两个任务合并可用 <code>thenCombine</code>，三个以上用 <code>allOf</code> 再逐个 join 取结果。</div></details>',
+      '给上题加上 300ms 超时和异常兜底：任一服务抛异常时返回默认值，超时时也返回默认值，分别用 <code>exceptionally</code>、<code>handle</code> 和 <code>orTimeout</code> 实现。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：一切正常时返回三个真实结果；把某个服务改成睡 600 毫秒后，<code>orTimeout</code> 在 300 毫秒触发、以 <code>TimeoutException</code> 完成，<code>handle</code> 接住并返回「默认值」，最终程序正常退出而不是崩掉。<b>为什么</b>：<code>exceptionally</code> 只在异常时触发，<code>handle</code> 无论成败都执行、能同时拿到结果和异常，<code>orTimeout</code> 只是给这个 future 挂了一个定时器，超时后强制以异常完成。<b>要点</b>：<code>orTimeout</code> 不会取消底层任务，它还在池子里跑；要给整体设上限，还得在提交侧做可中断的取消，或用带超时的 HTTP 客户端。</div></details>',
+      '解释：为什么 <code>CopyOnWriteArrayList</code> 的迭代器不会抛 ConcurrentModificationException，却可能读不到刚 add 的元素？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：边迭代边 add 不会抛异常，但新加的元素不会出现在这次遍历里；在迭代器上调用 <code>remove</code> 反而会抛 <code>UnsupportedOperationException</code>。<b>为什么</b>：每次写都会复制整个数组、再把内部引用指向新数组，而迭代器持有的是创建那一刻的旧数组，所以既不会被打断、也看不到后续修改，读写之间根本不存在共享的可变结构。<b>要点</b>：它适合读多写极少、元素数量有限的场景（监听器列表、白名单）；频繁写会不断复制数组，内存和 GC 都受不了。需要强一致就读时加锁。</div></details>'
     ]},
     ]
 };
@@ -1532,21 +1536,23 @@ public class TryLockDemo {
     ]},
 
       { h: '6.14 常见追问' },
-      {p:'<b>Q：死锁和数据库死锁是一回事吗？</b>原理相同，都是循环等待。但数据库有死锁检测机制，会主动回滚其中一个事务；JVM 不会主动打破 Java 层的死锁，只能靠你修代码。'},
-      {p:'<b>Q：只有两把锁才会死锁吗？</b>不是。三把、四把锁形成的环同样会死锁，而且更难发现。锁越多、调用链越深，环越隐蔽，所以“减少持锁数量”本身就是一种预防。'},
-      {p:'<b>Q：synchronized 是公平锁吗？</b>不是。它不保证等待时间最长的线程先拿到锁，极端情况下可能出现饥饿。需要公平性时用 <code>new ReentrantLock(true)</code>，但公平锁吞吐更低。'},
-      {p:'<b>Q：volatile 到底加了什么指令？</b>在 x86 上，volatile 写之后会插入一个 <code>lock</code> 前缀指令（相当于内存屏障），把写缓冲刷出去并让其他核心的缓存行失效；读之前会禁止后续读写重排到前面。不同 CPU 架构的实现不同，但语义由 JMM 保证一致。'},
-      {p:'<b>Q：happens-before 和时间先后是一回事吗？</b>不是。happens-before 是可见性约束，允许“A hb B 但 A 在物理时间上晚于 B 完成”的情况（比如编译器优化后的执行顺序）。判断可见性只能用它，不能靠“我觉得先执行了”。'},
-      {p:'<b>Q：为什么说 JMM 让 Java 可以“一次编写，到处运行”？</b>因为 JMM 把不同硬件的内存模型差异屏蔽掉了。你按规则写的并发代码，在 x86 和 ARM 上都正确，不需要为每个平台写不同的内存屏障。'},
+      { list: [
+        '<b>问：死锁和数据库死锁是一回事吗？</b><br>答：原理相同，都是循环等待加不可剥夺。区别在谁来收拾：数据库有死锁检测，发现环就主动回滚其中一个事务，应用层只会收到一次异常；JVM 不会替你打破 Java 层的死锁，线程就那么永远 BLOCKED 着，只能靠改代码或用 tryLock 超时来避免。',
+        '<b>问：只有两把锁才会死锁吗？</b><br>答：不是。三把、四把锁形成的环同样会死锁，而且比两把更难发现，因为环要跨过好几个方法调用才连得上，jstack 里也得仔细对锁地址。锁的数量越多、调用链越深、加锁顺序越分散，环就越隐蔽。所以「一次只持有尽可能少的锁」和「全局统一的加锁顺序」本身就是预防手段。',
+        '<b>问：synchronized 是公平锁吗？</b><br>答：不是。它不保证等待最久的线程先拿到锁，进入竞争时新来的线程可能抢在前面，极端情况下会出现饥饿；偏向锁、自旋这些优化也让顺序更不可预测。需要公平性就用 <code>new ReentrantLock(true)</code>，代价是吞吐明显下降，因为每次唤醒都要排队、还要多一次上下文切换，所以绝大多数场景并不需要公平。',
+        '<b>问：volatile 到底加了什么指令？</b><br>答：在 x86 上，volatile 写通常在写指令后跟一条带 <code>lock</code> 前缀的空操作，效果等于一个全屏障：把写缓冲刷到主存，并让其他核心上对应的缓存行失效。volatile 读则依靠 x86 本身较强的有序性，只禁止编译器和 CPU 把后续读写重排到它前面。不同架构生成的指令不同，但语义统一由 JMM 保证：写对后续读可见，且不重排。',
+        '<b>问：happens-before 和时间先后是一回事吗？</b><br>答：不是。happens-before 是一条可见性规则：A happens-before B，意味着 A 的结果对 B 可见、且 A 在逻辑上先于 B，但它并不要求 A 在物理时间上真的更早完成。编译器优化、CPU 乱序都会让实际执行顺序和这个关系不一致，可只要不违反规则，程序就是正确的。反过来，两个操作在时间上一前一后，也完全可能没有任何 happens-before 关系，所以判可见性只能靠规则，不能靠观察。',
+        '<b>问：为什么说 JMM 让 Java 可以「一次编写，到处运行」？</b><br>答：因为 JMM 把不同硬件的内存模型差异屏蔽掉了。x86 的模型强、ARM 的模型弱，可你只要按 volatile、synchronized、final、happens-before 这几条规则写并发代码，JVM 会为每个平台插入恰当的屏障，让语义保持一致，不需要为 x86 和 ARM 各写一份带手工屏障的版本。'
+      ] },
 
       { h: '6.15 自测与练习' },
       {ol:[
-      '写一个两把锁、加锁顺序相反的程序，稳定复现死锁，然后用 <code>jstack</code> 找到那段 deadlock 输出，指出哪一行对应“循环等待”。',
-      '把上题改成按 id 从小到大加锁，验证死锁消失；再改成用 <code>tryLock(1, SECONDS)</code>，拿不到就释放并重试，观察两个线程是否都能完成。',
-      '用 <code>ThreadMXBean.findDeadlockedThreads()</code> 写一个后台检测线程，每 5 秒检查一次，发现死锁就打印线程 id 和栈。',
-      '写一个可见性实验：主线程循环等待一个普通 boolean 标志，另一个线程把它改成 true，观察主线程是否退出；再给标志加 <code>volatile</code>，对比结果，并用 happens-before 解释差异。',
-      '解释下面这段代码为什么可能出问题：<code>class A { int x; A() { x = 1; } }</code>，一个线程 new A() 后把引用放进静态字段，另一个线程读到引用后打印 x。需要做什么才能保证打印出 1？',
-      '用四个必要条件逐个分析：单例模式的双重检查锁，如果引用不加 volatile，破坏的是哪一条保证？会导致什么现象？'
+      '写一个两把锁、加锁顺序相反的程序，稳定复现死锁，然后用 <code>jstack</code> 找到那段 deadlock 输出，指出哪一行对应「循环等待」。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：几十毫秒内程序卡住、不再有任何输出；<code>jstack</code> 输出里出现 <code>Found one Java-level deadlock:</code> 一段，两个线程各持有一把锁，并写着 <code>waiting to lock</code> 对方手里的那一把。<b>为什么</b>：A 持有 lock1 等 lock2，B 持有 lock2 等 lock1，形成环，两把锁都不会被释放，也没有任何超时机制能打破它。<b>要点</b>：线程状态是 <code>BLOCKED</code>，<code>waiting to lock</code> 后面的 0x 地址就是锁对象；对照代码里两个 <code>synchronized</code> 的顺序，就能指出环在哪一环闭合。</div></details>',
+      '把上题改成按 id 从小到大加锁，验证死锁消失；再改成用 <code>tryLock(1, SECONDS)</code>，拿不到就释放并重试，观察两个线程是否都能完成。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改成按 id 排序加锁后，多次运行都能正常结束，jstack 里再也找不到 deadlock；换成 <code>tryLock(1, SECONDS)</code> 后，抢不到的一方返回 false、释放已持有的锁、退避一会儿重试，最终两个线程都跑完。<b>为什么</b>：排序破坏的是循环等待，所有人按同一顺序排队就不可能出现环；tryLock 破坏的是持有并等待，它不会无限期占着第一把锁。<b>要点</b>：tryLock 返回 false 时必须先释放已经拿到的锁再重试，否则照样死锁；重试要加随机退避，不然两个线程同步重试还会撞上。</div></details>',
+      '用 <code>ThreadMXBean.findDeadlockedThreads()</code> 写一个后台检测线程，每 5 秒检查一次，发现死锁就打印线程 id 和栈。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：死锁发生后 5 秒内检测线程打印类似 <code>deadlock: [21, 22]</code> 的两行 id 和各自的栈帧；没有死锁时该方法返回 null，什么也不打印。<b>为什么</b>：<code>findDeadlockedThreads</code> 在等锁图上找环，和 <code>jstack</code> 用的是同一套 JVM 内部算法，只能发现因监视器或同步器阻塞形成的死锁，线程池任务互相等待、等 IO 这类它看不见。<b>要点</b>：拿到 id 后用 <code>getThreadInfo(ids, true, true)</code> 取栈；生产上用它触发线程 dump 和告警，别指望靠它去强行 kill 线程。</div></details>',
+      '写一个可见性实验：主线程循环等待一个普通 boolean 标志，另一个线程把它改成 true，观察主线程是否退出；再给标志加 <code>volatile</code>，对比结果，并用 happens-before 解释差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不加 volatile 时主线程很可能一直不退出（把标志读提升到循环外，只在寄存器里读）；加上 volatile 后立刻退出。用 <code>-Xint</code> 跑或者循环体里有打印时，两种写法都可能退出，看不到差别。<b>为什么</b>：JMM 允许编译器把循环中不变的读移到循环外，也允许 CPU 用寄存器缓存；volatile 读强制每次都重新读并禁止这种提升。用规则说，就是写线程的写 happens-before 主线程随后的 volatile 读。<b>要点</b>：实验要在 <code>-server</code> 且循环体为空时容易复现；现象不稳定恰恰说明这类 bug 靠测试抓不住。</div></details>',
+      '解释下面这段代码为什么可能出问题：<code>class A { int x; A() { x = 1; } }</code>，一个线程 new A() 后把引用放进静态字段，另一个线程读到引用后打印 x。需要做什么才能保证打印出 1？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：可能打印 1，也可能打印 0，取决于引用赋值和构造器里的赋值有没有被重排、以及读线程是否读到了缓存中的旧值。<b>为什么</b>：把引用写进静态字段是普通写，和构造器里的 <code>x = 1</code> 之间没有 happens-before 关系，读线程可能先看到引用、后读到还没初始化的 x，这就是不安全发布。<b>要点</b>：把静态字段声明为 <code>static volatile</code>，或者用同步块、<code>final</code> 字段来建立 happens-before；最稳的是让对象不可变，构造完就再不改。</div></details>',
+      '用四个必要条件逐个分析：单例模式的双重检查锁，如果引用不加 volatile，破坏的是哪一条保证？会导致什么现象？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：偶尔能拿到一个「引用非 null、但字段还是默认值」的半初始化单例，表现为某个成员字段莫名是 0 或 null；x86 上几乎复现不出来，换弱内存模型的 ARM 或加大并发压测才有可能。<b>为什么</b>：这不是死锁，四个必要条件在这里不适用；被破坏的是 happens-before 对「对象构造完成」的保证，也就是安全发布。<code>new</code> 的三步（分配内存、执行构造器、把引用写进变量）可能被重排成先写引用、后执行构造器。<b>要点</b>：所以 DCL 里的 volatile 不是可选项；更省心的写法是静态内部类持有或枚举单例，靠类加载的初始化锁保证只构造一次且安全发布。</div></details>'
     ]},
     ]
 };

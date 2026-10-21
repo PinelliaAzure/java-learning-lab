@@ -148,21 +148,21 @@
 
       { h: '1.14 常见追问' },
       { list: [
-        '<b>String 为什么设计成不可变？</b>为了线程安全、可缓存哈希、可安全共享，以及作为类名、路径等敏感值时不被篡改。',
-        '<b>常量池到底在堆还是方法区？</b>JDK 7 起在堆中；更准确地说，字符串对象在堆，StringTable 是 JVM 维护的哈希表。',
-        '<b><code>new String("a")</code> 创建几个对象？</b>若池中没有 "a"，先建池中对象再建堆对象，共两个；已有则只建一个。',
-        '<b>String 能被继承吗？</b>不能，类是 final 的；这也是不可变承诺的一部分。',
-        '<b>switch 支持 String 的原理？</b>编译成先比较 hashCode，再用 equals 确认，所以 switch 的表达式为 null 时会抛 NPE。',
-        '<b>为什么 String 要缓存 hashCode？</b>作为 HashMap 的 key 时会被频繁调用，缓存后只需算一次；因为是惰性计算，没用到就不算。'
+        '<b>问：String 为什么设计成不可变？</b><br>答：四个理由互相支撑。线程安全：不可变对象在并发下不需要加锁就能安全共享。可缓存哈希：hashCode 只需算一次，之后复用。可安全共享：字面量复用同一个对象，谁都无法改写它的内容。安全：类名、文件路径、SQL 片段、权限码这类值一旦被当成 String 传递，就不可能在中途被第三方改掉。代价是每次修改都要复制，所以才需要 StringBuilder 承担可变拼接。',
+        '<b>问：常量池到底在堆里还是方法区里？</b><br>答：按当前版本回答：字符串对象本身在堆中。JDK 7 起字符串常量从永久代搬到了堆，JDK 8 用元空间取代永久代，但字符串池一直留在堆里，由 JVM 维护一张名为 StringTable 的哈希表，表里存的是指向堆内对象的引用。看到说「方法区」的资料，多半是 JDK 6 及更早的口径，面试时把版本说清比背结论更重要。',
+        '<b>问：<code>new String("a")</code> 会创建几个对象？</b><br>答：取决于池里有没有 "a"。池中没有时先创建池内对象，构造器再在堆上复制一份内容，共两个；池中已有则只建堆上那一个。注意是「先查池、再复制」——构造器并不会把新对象放进池里，除非你显式调用 intern。而 <code>new String(charArray)</code> 这种不经过字面量的写法，只创建一个对象。',
+        '<b>问：String 为什么不能被继承？</b><br>答：类声明是 final，内部字符数组也是 private final。这是不可变承诺的一部分：一旦允许子类，就能重写 length、charAt 等方法返回可变视图，所有把 String 当 key 的组件都会失去前提——HashMap 的哈希会漂移，类加载器与安全管理器的检查可以被绕过，字符串池的共享也不再安全。',
+        '<b>问：switch 支持 String 的原理是什么？</b><br>答：编译期把它展开成两段判断：先取表达式的 hashCode 做跳转表定位候选分支，再用 equals 逐个确认，所以语义仍然是内容比较。副作用有两个：一是表达式为 null 时在取 hashCode 之前就抛 NullPointerException；二是两个不同的字符串哈希相同时会多做一次 equals，但这不影响正确性。',
+        '<b>问：String 为什么要缓存 hashCode？</b><br>答：String 是 HashMap 最常用的 key，每次 get 或 put 都要参与哈希计算。字段 hash 采用惰性计算：第一次调用时算好写入，之后直接返回，因此既避免了重复计算，又不会让从未当过 key 的字符串白算一次。这也是不可变带来的红利——内容不会变，缓存的哈希永远有效。'
       ] },
 
       { h: '1.15 自测与练习' },
       { ol: [
-        '不运行代码，写出 <code>String a = "1"; String b = a + "2"; System.out.println(b == "12");</code> 的结果，并解释原因。',
-        '写一个方法，统计一段文本中某个子串出现的次数，要求不使用正则。',
-        '把 <code>"2024-10-20"</code> 解析成三个整数并打印，分别用 split 和 substring 实现一次。',
-        '解释为什么 <code>"a.b".split(".")</code> 返回空数组，并给出两种正确写法。',
-        '用 codePointCount 改进一个“昵称最多 10 个字”的校验方法。'
+        '不运行代码，写出 <code>String a = "1"; String b = a + "2"; System.out.println(b == "12");</code> 的结果，并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出 false；把比较换成 <code>b.equals("12")</code> 则输出 true。<b>为什么</b>：a 是变量不是编译期常量，<code>a + "2"</code> 在运行时生成新的堆对象，不会写入常量池；右侧 "12" 是字面量，指向池内对象，两者地址不同。<b>要点</b>：把 a 声明成 <code>final String a = "1"</code>，整个表达式退化为编译期常量，结果才变成 true——这正是 == 不可靠的原因。</div></details>',
+        '写一个方法，统计一段文本中某个子串出现的次数，要求不使用正则。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：("ababab","ab") 返回 3，("aaa","aa") 返回 1（按不重叠计数），空子串返回 0。<b>为什么</b>：用 <code>indexOf(sub, from)</code> 从上次命中处继续找，起点要加上子串长度，否则同一段会被重复计数。<b>要点</b>：核心循环 <code>while ((p = s.indexOf(sub, p)) &gt;= 0) { n++; p += sub.length(); }</code>；先判 <code>sub.isEmpty()</code> 直接返回 0，否则死循环；这个方法对输入是定义良好的：空子串已提前拦下，起点只增不减，循环必然终止。</div></details>',
+        '把 <code>"2024-10-20"</code> 解析成三个整数并打印，分别用 split 和 substring 实现一次。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两种写法都打印 2024、10、20。<b>为什么</b>：split 版按连字符切分得到 String 数组，再用 <code>Integer.parseInt</code> 转数；substring 版按固定下标 0-4、5-7、8-10 截取，适合格式绝对固定的输入。<b>要点</b>：split 版必须校验 <code>parts.length == 3</code>，substring 版必须校验长度，否则越界会抛 StringIndexOutOfBoundsException；真实项目里还应先 strip 再切；两种写法都只适用于固定格式，遇到「2024-1-5」这类不补零的输入必须先规范化，否则整段解析会静默错位。</div></details>',
+        '解释为什么 <code>"a.b".split(".")</code> 返回长度为 0 的数组，并给出两种正确写法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>"a.b".split(".").length</code> 打印 0；改成 <code>split("[.]")</code> 或 <code>split(Pattern.quote("."))</code> 都打印 2。<b>为什么</b>：split 的参数是正则而不是字面分隔符，点号匹配任意字符，于是每个位置都被切开，产生的全是空串，而末尾空串默认被丢弃，结果长度就是 0。<b>要点</b>：字符类里的点失去元字符含义；需要反斜杠转义时注意 Java 字符串本身还要再转一层。</div></details>',
+        '用 codePointCount 改进一个「昵称最多 10 个字」的校验方法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：昵称只有一个 emoji 时，改前 <code>length()</code> 得到 2、误判超长，改后 <code>codePointCount</code> 得到 1、通过；十个汉字仍是 10。<b>为什么</b>：length 数的是 UTF-16 码元，增补平面的 emoji 占两个码元（代理对），所以一个 emoji 的 length 是 2；码点数才接近用户心里的字数。<b>要点</b>：写成 <code>s.codePointCount(0, s.length()) &lt;= 10</code>；截断也别用 <code>substring(0, 10)</code>，它可能把代理对劈开产生乱码，要用 <code>offsetByCodePoints</code> 定位边界。若产品按视觉宽度或字节数限制，改用 <code>getBytes(StandardCharsets.UTF_8)</code> 计数。组合字符（字母加声调符号）码点仍是 2，要按字素簇数得用 BreakIterator。</div></details>'
       ] }
     ]
   };
@@ -312,21 +312,22 @@
       { note: '<b>复习方法：</b>小结不必逐条背诵，抓住两组对比即可——可变与不可变、对象与基本类型。遇到新的字符串或数值 API 时，先用这两组对比判断它属于哪一类，再决定怎么用。' },
       { h: '2.13 常见追问' },
       { list: [
-        '<b>StringBuilder 和 String 的 + 哪个快？</b>单次拼接差不多；循环里 StringBuilder 明显快，因为 + 每次都要新建对象并复制。',
-        '<b>StringBuilder 线程安全吗？</b>不安全，多线程共享会得到错乱结果；需要同步时用 StringBuffer 或自己加锁。',
-        '<b>为什么 Integer 要缓存 -128~127？</b>这个区间是循环计数、状态码等最常用的值，缓存能显著减少小整数对象。',
-        '<b>自动装箱一定创建对象吗？</b>不一定，缓存范围内复用已有对象；但不要依赖这一点做 == 比较。',
-        '<b>包装类和基本类型怎么选？</b>集合、泛型、允许 null 的字段用包装类；计算、循环变量用基本类型。',
-        '<b>BigDecimal 能替代 Double 吗？</b>金额、精确小数用 BigDecimal；科学计算、性能敏感场景仍用 double。'
+        '<b>问：StringBuilder 和 String 的加号哪个快？</b><br>答：单次拼接差别很小，编译器会把一行里连续的加号合成为一次 concat 调用。差距出现在循环里：每次加号都要新建 String 并复制之前全部内容，于是第 i 次的开销与 i 成正比，整体退化为平方级，数据量一上来就明显卡顿。经验规则是编译期能确定的常量直接用加号，运行期的循环拼接一律用 StringBuilder，并且预估容量避免反复扩容。',
+        '<b>问：StringBuilder 线程安全吗？</b><br>答：不安全。它的内部是一个可扩容的字节数组加一个 count 计数，两个线程同时 append 会互相覆盖，扩容时数组引用被整体替换，另一个线程还可能继续往旧数组里写，结果是数据丢失或内容错乱。需要共享时改用 StringBuffer（方法加了 synchronized，代价是每次调用都有锁开销），或者让每个线程用自己的 StringBuilder，最后再合并。',
+        '<b>问：为什么 Integer 要缓存 -128 到 127？</b><br>答：这个区间覆盖了循环计数、状态码、布尔型标志等最高频的取值，命中缓存时 <code>Integer.valueOf</code> 直接返回同一个对象，能省下大量短命对象和随之而来的 GC 压力。缓存上限可以通过 <code>-XX:AutoBoxCacheMax</code> 调大，但那只是性能调优，不要依赖它来判断两个包装类是否相等，比较内容永远用 equals。',
+        '<b>问：自动装箱一定创建新对象吗？</b><br>答：不一定。经过 <code>Integer.valueOf</code> 的装箱在缓存区间内复用已有对象，区间外才新建；显式 <code>new Integer(1)</code> 一定新建，这种写法从 JDK 9 起已标记废弃。但编译器只保证语义正确，不保证复用，所以即使区间内 <code>==</code> 恰好为 true，也属于巧合。比较内容用 equals，或者先拆箱比较基本类型。',
+        '<b>问：包装类和基本类型该怎么选？</b><br>答：集合元素、泛型参数、数据库里允许为空的字段用包装类，因为它们能表达「未知」；循环变量、局部计算、方法内部的累加用基本类型，避免装箱开销和空指针。原则是让 null 只出现在边界上：入口处判空后立刻归一化成基本类型，进入计算逻辑就再也没有 null 传播的可能。',
+        '<b>问：BigDecimal 能替代 Double 吗？</b><br>答：金额、税率、对账这类精确小数必须用 BigDecimal，并且用字符串构造，否则 <code>new BigDecimal(0.1)</code> 会把 double 的二进制误差原样带进来。科学计算、图形、批量统计仍然用 double，因为它有硬件浮点支持、速度快、内存小。两者不要混算，BigDecimal 之间比较用 <code>compareTo</code> 而不是 equals，否则 1.0 与 1.00 会被判为不同。'
       ] },
+
       { h: '2.14 自测与练习' },
       { ol: [
-        '用 StringBuilder 实现一个方法，把整型数组拼成 "[1, 2, 3]" 的形式，要求只创建一个 StringBuilder。',
-        '解释 <code>Integer a = 200; Integer b = 200; a == b</code> 的结果，并写出两种正确的比较方式。',
-        '写一段代码，演示包装类为 null 时参与 <code>==</code> 比较会抛 NPE，并给出修复方案。',
-        '用 <code>Math.addExact</code> 改写一个可能溢出的累加方法，捕获异常并打印提示。',
-        '把一段循环里的字符串 <code>+=</code> 改写成 StringBuilder，估算改造前后创建的字符串对象数量。'
-      ] },
+        '用 StringBuilder 实现一个方法，把整型数组拼成 "[1, 2, 3]" 的形式，要求只创建一个 StringBuilder。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 {1,2,3} 输出 [1, 2, 3]，输入空数组输出 []，输入单元素输出 [7]。<b>为什么</b>：只 new 一次缓冲区，循环里 append 复用同一块内存，分隔符统一处理，不需要为每个元素创建中间字符串。<b>要点</b>：先 append 左括号，循环里当 <code>sb.length() &gt; 1</code> 时先 append 逗号空格，末尾用 <code>setLength(sb.length() - 2)</code> 抹掉多余分隔符再收尾；容量按 <code>n * 4 + 2</code> 预估可减少扩容。</div></details>',
+        '解释 <code>Integer a = 200; Integer b = 200; a == b</code> 的结果，并写出两种正确的比较方式。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>a == b</code> 为 false，<code>a.equals(b)</code> 为 true，<code>a.intValue() == b.intValue()</code> 也为 true；把 200 改成 100 后 <code>a == b</code> 变成 true。<b>为什么</b>：默认缓存区间是 -128 到 127，200 超出区间，两次装箱各自新建对象，== 比的是引用地址。<b>要点</b>：正确写法一是 <code>Objects.equals(a, b)</code>（对 null 安全），二是 <code>a.intValue() == b.intValue()</code>（先确认非空再拆箱）；把比较封装成一个 static 方法，比如 same(Integer x, Integer y)，能一次修掉所有调用点上的同类隐患。</div></details>',
+        '写一段代码，演示包装类为 null 时参与 == 比较会抛 NPE，并给出修复方案。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Integer total = null; if (total == 0)</code> 直接抛 NullPointerException，堆栈指向这一行；换成 <code>Objects.equals(total, 0)</code> 或 <code>Integer.valueOf(0).equals(total)</code> 则正常返回 false。<b>为什么</b>：== 一边是包装类一边是 int 字面量，编译器插入拆箱调用 <code>total.intValue()</code>，对 null 调方法就是空指针；两个包装类之间 == 比的又是引用，<code>Integer</code> 只缓存 -128 到 127，超出范围两个 128 也不相等。<b>要点</b>：判空必须发生在拆箱之前，写成 <code>total != null &amp;&amp; total == 0</code> 也行，但统一用 <code>Objects.equals(total, 0)</code> 更能避免下次忘判；它会把 0 装箱，走的是缓存，结果可靠。<code>Boolean flag = null; if (flag)</code> 同样抛 NPE。包装类之间比较一律用 equals，别依赖缓存范围。</div></details>',
+        '用 <code>Math.addExact</code> 改写一个可能溢出的累加方法，捕获异常并打印提示。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：正常数据求和结果不变；把累加初值设成 <code>Integer.MAX_VALUE - 1</code> 再加 2，抛出 <code>ArithmeticException: integer overflow</code>。<b>为什么</b>：普通加号溢出会静默回绕成负数，错误值看起来仍是合法数字，极难发现；addExact 在溢出发生的那一行主动抛异常，把问题暴露在原地。<b>要点</b>：写法 <code>sum = Math.addExact(sum, x)</code> 放进 try-catch，catch 里记录当前值和下标后返回失败；金额场景改用 long 或 BigDecimal，从根上消除溢出。</div></details>',
+        '把一段循环里的字符串 <code>+=</code> 改写成 StringBuilder，估算改造前后创建的字符串对象数量。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：拼 1000 条记录时，改前耗时随条数呈平方增长，改后近似线性；用堆直方图能看到改前临时 String 数量约等于循环次数。<b>为什么</b>：每次加号都新建一个 String 并复制已有全部内容，第 i 次复制的字符数约为 i 乘以单条长度，总复制量是 n 的平方级。<b>要点</b>：改成 <code>StringBuilder sb = new StringBuilder(n * 16)</code>，循环里只 append，最后 toString 一次；容量预估能把扩容次数直接降到零。</div></details>'
+      ] }
     ]
   };
 
@@ -481,24 +482,23 @@
 
       { h: '3.14 常见追问' },
       { list: [
-        '<b>为什么 LocalDateTime 不能直接转 Instant？</b>因为它不含时区，同一个本地时间在不同时区对应不同时刻，必须补一个 ZoneId 才能确定。',
-        '<b>数据库该存 timestamp 还是 datetime？</b>需要表达绝对时刻用 timestamp with time zone 或 UTC 时间戳；只表达“墙上时间”用 datetime，但要明确它属于哪个时区。',
-        '<b>Period.between 算出来的天数为什么和总天数不一样？</b>Period 按年、月、日逐段分解，月长不固定；要总天数用 ChronoUnit.DAYS.between。',
-        '<b>DateTimeFormatter 真的线程安全吗？</b>是，它是不可变对象，可以定义为 static final 共享；SimpleDateFormat 则不行。',
-        '<b>怎么表示“本月最后一天”？</b>用 <code>date.with(TemporalAdjusters.lastDayOfMonth())</code>，不要手写 28/30/31 的判断。',
-        '<b>系统时区怎么影响结果？</b>LocalDateTime.now()、Instant 的默认展示、旧 API 的 toString 都依赖默认时区，容器里通常是 UTC，和开发机不一致。'
+        '<b>问：为什么 LocalDateTime 不能直接转 Instant？</b><br>答：因为它只描述日历上的年月日时分秒，不含时区，同一个 13:45 在上海和纽约对应两个不同的瞬间，语言无法替你选。要转换必须补一个 ZoneId：<code>ldt.atZone(ZoneId.of("Asia/Shanghai")).toInstant()</code>。反过来 Instant 转本地时间同样要指定时区，用默认时区在容器里就会整体偏移八小时。',
+        '<b>问：数据库该存 timestamp 还是 datetime？</b><br>答：看语义而不是看类型名。要表达「事情发生的那一刻」，存带时区的 timestamp，或者统一存 UTC 的 long 毫秒或秒；只表达「墙上时间」（门店每天九点开门、合同签署日的日期）用 datetime，但字段注释里必须写清它属于哪个时区。最危险的是混用：写入按本地时间、读取按 UTC 解释，跨时区时整批数据都会偏。',
+        '<b>问：Period.between 算出的月和总天数为什么对不上？</b><br>答：Period 按年、月、日逐段分解，返回的是「几年几个月几天」这种人类可读的结构，而月份长度 28 到 31 天不等，各段相加自然不等于总天数。要总天数用 <code>ChronoUnit.DAYS.between(a, b)</code>，要相差几个月用 <code>ChronoUnit.MONTHS</code>。Duration 只适合时刻差，用在 LocalDate 上会抛 UnsupportedTemporalTypeException。',
+        '<b>问：DateTimeFormatter 真的线程安全吗？</b><br>答：是。它不可变，可以声明成 static final 常量被所有线程共享，解析和格式化都不改内部状态。对照的是 SimpleDateFormat：它内部持有可变的 Calendar 字段，多线程共用会出现解析出错误日期、抛 NumberFormatException 这类偶发问题。迁移旧代码时，把每一处 SimpleDateFormat 换成 DateTimeFormatter 是消除这类 bug 成本最低的改法。',
+        '<b>问：怎么表示「本月最后一天」和「下个月同一天」？</b><br>答：最后一天用 <code>date.with(TemporalAdjusters.lastDayOfMonth())</code>，也可以 <code>withDayOfMonth(date.lengthOfMonth())</code>，不要手写 28、30、31 的分支，闰年二月一定算错。下个月同一天用 plusMonths，但要注意它的收敛规则：1 月 31 日加一个月得到 2 月最后一天，而不是溢出到 3 月 3 日。',
+        '<b>问：系统时区会怎样影响结果？</b><br>答：<code>LocalDateTime.now()</code>、<code>Instant.now()</code> 的展示、旧 API 的 toString 都依赖 <code>ZoneId.systemDefault()</code>。开发机是 Asia/Shanghai、容器默认 UTC 时，同一段代码会差八小时，而且只有部署后才暴露。生产代码里显式传时区，或在启动参数固定 <code>-Duser.timezone=UTC</code>，把「机器默认值」从依赖链里去掉。'
       ] },
-      { p: '遇到答不上来的追问，不要背答案，回到“时刻、日历、时区”三个概念上推导，大多数问题都能想通。日期时间的知识是网状的，抓住主干比记住碎片更有效。' },
 
       { h: '3.15 自测与练习' },
       { ol: [
-        '写一个方法，输入两个 LocalDate，输出它们之间相隔的完整年数、月数和天数。',
-        '把 <code>"2024-10-20T13:45:30+08:00"</code> 解析成 Instant，再分别按上海和纽约时区格式化输出。',
-        '实现“本月第一个工作日”：从本月 1 日开始，跳过周六周日，返回第一个周一至周五的日期。',
-        '解释为什么 <code>LocalDate.of(2024, 2, 30)</code> 会抛异常，而某些 formatter 解析 2 月 30 日却不会。',
-        '把一个旧的 <code>java.util.Date</code> 转成 <code>LocalDateTime</code>，要求使用指定时区，并说明每一步的含义。'
+        '写一个方法，输入两个 LocalDate，输出它们之间相隔的完整年数、月数和天数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：2020-01-31 与 2021-03-01 输出「1 年 1 个月 1 天」；同月两个日期输出「0 年 0 个月 3 天」。<b>为什么</b>：<code>Period.between(start, end)</code> 按年、月、日的顺序逐段借位，月末会被收敛到目标月最后一天，结果读起来自然，但各段相加不等于总天数。<b>要点</b>：直接用 Period 的 getYears、getMonths、getDays；需要总天数改用 <code>ChronoUnit.DAYS.between</code>；参数顺序决定正负，end 早于 start 会得到负数。</div></details>',
+        '把 <code>"2024-10-20T13:45:30+08:00"</code> 解析成 Instant，再分别按上海和纽约时区格式化输出。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：上海打印 2024-10-20 13:45:30，纽约打印 2024-10-20 01:45:30，两者是同一时刻的两种视图。<b>为什么</b>：字符串自带偏移 +08:00，<code>OffsetDateTime.parse</code> 能直接吃下，toInstant 得到绝对时刻；<code>atZoneSameInstant</code> 保持时刻不变只换时区。<b>要点</b>：解析用 <code>DateTimeFormatter.ISO_OFFSET_DATE_TIME</code>，格式化用 <code>ofPattern("yyyy-MM-dd HH:mm:ss")</code>；不要依赖默认时区做隐式转换；格式化时也可以把偏移量一起印出来，日志里同时有绝对时刻和本地时间，排查跨时区问题时省一步转换。</div></details>',
+        '实现「本月第一个工作日」：从本月 1 日开始，跳过周六周日，返回第一个周一至周五的日期。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：2024 年 6 月返回 2024-06-03（1 日是周六），2024 年 7 月返回 2024-07-01（1 日是周一），2024 年 9 月返回 2024-09-02（1 日是周日）。<b>为什么</b>：只需要判断 1 日是周几：周六加两天、周日加一天、其余原样返回，不用循环；月内最多只会挪到 3 号，所以这个写法对任意年月都成立，也不用管这个月有多少天。<b>要点</b>：<code>LocalDate d = YearMonth.of(y, m).atDay(1);</code> 再用 <code>d.getDayOfWeek()</code> 与 <code>DayOfWeek.SATURDAY</code>、<code>SUNDAY</code> 比较；m 越界时 <code>YearMonth.of</code> 抛 <code>DateTimeException</code>，不是返回 null。法定节假日没有内置 API，要自己维护 Set 后循环 <code>plusDays(1)</code>，注意别用 java.util.Calendar，它的月份从 0 开始，最容易差一个月。</div></details>',
+        '解释为什么 <code>LocalDate.of(2024, 2, 30)</code> 抛异常，而用 formatter 解析 2 月 30 日却不报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：of 抛 DateTimeException，消息类似 Invalid date Feb 30；<code>DateTimeFormatter.ofPattern("yyyy-MM-dd")</code> 解析 2024-02-30 却得到 2024-02-29。<b>为什么</b>：of 走严格构造，直接拒绝非法日期组合；解析器默认 <code>ResolverStyle.SMART</code>，允许把超出的日期收敛到本月最后一天。<b>要点</b>：要严格校验就 <code>withResolverStyle(ResolverStyle.STRICT)</code>，并且 STRICT 下年份必须写 uuuu 而不是 yyyy，否则会抛异常；若想保留 SMART 又要基本校验，可以在解析后再格式化一遍，字符串与原文不相等就说明日期被收敛过。</div></details>',
+        '把一个旧的 <code>java.util.Date</code> 转成 <code>LocalDateTime</code>，要求使用指定时区，并说明每一步的含义。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>new Date(0L)</code> 转出 1970-01-01T08:00（上海）与 1969-12-31T19:00（纽约）。<b>为什么</b>：Date 内部只有一个 long 毫秒值，本身不带时区，所谓「本地时间」是靠格式化时才套上去的。<b>要点</b>：<code>d.toInstant().atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime()</code>；toInstant 取时刻，atZone 赋予时区，toLocalDateTime 丢掉时区只留日历，每一步都对应一个语义；反向转换用 Date.from(instant)，注意它只有毫秒精度，纳秒部分会被直接截断，做逐条对比时要允许这点误差。</div></details>'
       ] },
-      { note: '<b>练习建议：</b>先自己写，再对照文档；每道题都补一个边界用例（闰年、月末、跨时区），才算真正做完。做完后把代码留档，两周后再不看答案重写一遍，效果最好。' },
+      { note: '<b>练习建议：</b>先自己写，再对照文档；每道题都补一个边界用例（闰年、月末、跨时区），才算真正做完。做完后把代码留档，两周后再不看答案重写一遍，效果最好。' }
     ]
   };
 
@@ -624,21 +624,22 @@
       ] },
       { h: '4.12 常见追问' },
       { list: [
-        '<b>正则能解析 HTML 吗？</b>简单场景可以，嵌套结构不行；用 HTML 解析器更稳。',
-        '<b>Pattern 需要缓存吗？</b>同一正则高频使用时应编译一次复用，String.matches 每次都会重新编译。',
-        '<b>为什么 Java 正则要写两个反斜杠？</b>因为 Java 字符串先处理一层转义，正则引擎再处理一层。',
-        '<b>贪婪和懒惰哪个性能好？</b>没有绝对答案；精确字符类通常比两者都好，因为减少了回溯。',
-        '<b>split 为什么丢末尾空串？</b>默认 limit 为 0 会删除末尾空串，传 -1 可保留。',
-        '<b>Math.random 能用于安全场景吗？</b>不能，用 SecureRandom；Math.random 基于伪随机数，可预测。'
+        '<b>问：为什么说正则不该用来解析 HTML？</b><br>答：HTML 不是正则文法，标签可以嵌套、属性里可以出现尖括号、注释和脚本里可以包含任意原文，这几点会被有限的展开能力反复击穿。真正危险的写法是遇到嵌套标签时不断重试，复杂度指数上涨，一段几百字节的输入就能让线程卡死几分钟。要做解析就用成熟的 DOM 库；要取少量已知标签，也必须限制输入长度并提前排除注释与脚本段。',
+        '<b>问：Pattern 需要缓存吗？反复 compile 有什么代价？</b><br>答：需要。每次 compile 都要把正则解析成内部节点树，再做一轮优化；在循环里或每个请求里编译一次，开销可以和真正的匹配持平甚至更高。把 Pattern 提成 static final 常量复用，它不是线程安全的反对理由——Pattern 本身不可变，只有 Matcher 有状态，而 Matcher 应当每次用 <code>pattern.matcher(input)</code> 新建。',
+        '<b>问：Java 正则里为什么反斜杠要写两次？</b><br>答：因为要穿过两层：Java 字符串字面量一层，正则引擎一层。<code>"\\\\d"</code> 经过字符串解析变成字符 <code>\\d</code>，正则引擎才把它当作数字类。写多了容易数错，可以改用字符类写法 <code>[0-9]</code> 绕开，或者直接 <code>Pattern.quote</code> 处理动态分隔符；在 HTML 里输出时用 <code>&#92;d</code> 这类实体也更稳。',
+        '<b>问：贪婪、懒惰、占有量词怎么选？</b><br>答：默认的贪婪会尽量多吃再回溯；懒惰的 <code>*?</code>、<code>+?</code> 尽量少吃再往后试；占有的 <code>*+</code> 吃满后绝不回溯。文本里找第一个标签用懒惰更省步数，而匹配已确定边界的长串用占有能直接掐掉回溯可能，是防灾难性回溯最有效的手段。改量词之前先确认是否存在嵌套量词，那才是回溯爆炸的根源。',
+        '<b>问：为什么 <code>"a,b,".split(",")</code> 的结果里没有最后的空串？</b><br>答：split 默认走 <code>limit = 0</code>，会丢掉所有尾部空串，这样日常切分才不别扭。要保留就用负数 limit：<code>split(",", -1)</code> 会连末尾空串一起返回。配合 CSV 之类格式时忘了这一点，会漏掉最后一列的空值，而这类 bug 只在那行为空时出现，最难复现。',
+        '<b>问：随机的验证码、令牌能用 Math.random 生成吗？</b><br>答：不能。Math.random 内部是 48 位的线性同余生成器，状态可以被少量输出反推，而且多线程共享同一实例，取值分布还受竞争影响。安全场景改用 <code>java.security.SecureRandom</code>（密码学强度），做程序内的可复现测试可以用 <code>java.util.Random</code> 指定种子，而正确性要求高的模拟建议 <code>SplittableRandom</code>。'
       ] },
+
       { h: '4.13 自测与练习' },
       { ol: [
-        '写一个正则，校验密码至少 8 位，且同时包含字母和数字。',
-        '从一段文本中提取所有日期（yyyy-MM-dd），并打印每个日期的起始下标。',
-        '把 <code>"2024-10-20"</code> 用 replaceAll 改写成 <code>"20/10/2024"</code>。',
-        '解释 <code>"a,b,".split(",")</code> 与 <code>split(",", -1)</code> 的结果差异。',
-        '用 ThreadLocalRandom 模拟掷两个骰子 1000 次，统计每个点数出现的次数。'
-      ] },
+        '写一个正则，校验中国大陆手机号（以 1 开头、第二位 3 到 9、后续九位数字），并说明为什么用 <code>matches</code> 而不是 <code>find</code>。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：13812345678 返回 true；12812345678、1381234567、138123456789、<code>"abc13812345678"</code> 都返回 false。<b>为什么</b>：<code>matches</code> 要求整串都符合模式，<code>find</code> 只要找到一个子串就算成功，用它校验会让脏数据通过。<b>要点</b>：模式写 <code>static final Pattern P = Pattern.compile("1[3-9][0-9]{9}")</code>，调用 <code>P.matcher(s).matches()</code>；判断前先 strip 并排除 null，长度不必额外判断，正则已隐含；需要兼容带国家码的写法时，再加一个可选的 86 前缀分组，但分组编号要重新核对，别让后面的引用错位。</div></details>',
+        '把 <code>"2024-10-20"</code> 用 replaceAll 一步改写成「日在前、年在后」的 <code>"20/10/2024"</code>，并说明分组引用怎么取。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出 20/10/2024，输入 2024/10/20 同样得到 20/10/2024。<b>为什么</b>：把分隔符做成字符类 <code>[-/]</code>，三个日期段各用一个捕获组，替换串里 <code>$1</code>、<code>$2</code>、<code>$3</code> 按组号回填。<b>要点</b>：<code>s.replaceAll("([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})", "$3/$2/$1")</code>；替换串里要写真实反斜杠时需 <code>Matcher.quoteReplacement</code>，否则 <code>$</code> 与 <code>\\\\</code> 会被当转义；分组引用在替换串里写 $1 这种形式，整个模式是第 0 组，写 $0 会把命中的整段原样回填，调试时容易看花眼。</div></details>',
+        '解释 <code>"(a+)+b"</code> 匹配 <code>"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaac"</code> 为什么会卡住，并给出两种修复写法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：30 个 a 后面跟 c，匹配迟迟不返回，CPU 顶满；改后立即返回 false。<b>为什么</b>：外层括号的 <code>+</code> 与内层 <code>a+</code> 构成嵌套量词，引擎为「同一段 a 用不同切分方式」反复回溯，状态数随长度指数增长，这就是灾难性回溯。<b>要点</b>：修复一是去掉冗余嵌套写成 <code>"a+b"</code>，二是用占有量词 <code>"(a++)+b"</code> 或原子组切断回溯；线上还应加输入长度上限兜底。</div></details>',
+        '用 Matcher 写一段代码，从一段文本里提取所有邮箱地址并去重，说明为什么不能直接用 split。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入含三个邮箱、其中两个重复的文本，输出去重后的两个地址，顺序按首次出现。<b>为什么</b>：邮箱不是用固定分隔符隔开的，split 只能按分隔符切，无法描述「符合某模式的一段」；Matcher 的 find 才能逐段扫描。<b>要点</b>：<code>Set&lt;String&gt; set = new LinkedHashSet&lt;&gt;();</code> 再 <code>while (m.find()) set.add(m.group());</code>，模式用 <code>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}</code>，注意点号要转义。</div></details>',
+        '写一个方法，把用户输入里的 <code>\\</code> 与 <code>$</code> 转义后再作为替换串使用，并说明不转义会发生什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：替换文本 <code>"价格 $5"</code> 不转义时抛 IllegalArgumentException 或吞掉字符，转义后原样替换进去。<b>为什么</b>：替换串不是纯文本，<code>$n</code> 表示分组引用、反斜杠表示转义，用户文本里的这两个字符会被解释成语法。<b>要点</b>：用现成方法 <code>Matcher.quoteReplacement(text)</code>，不要手写替换；需要引用分组时改用 <code>Matcher.appendReplacement</code> 拼接，逻辑更清楚。</div></details>'
+      ] }
     ]
   };
 
@@ -879,27 +880,25 @@
       '金额用 BigDecimal，构造用字符串，比较用 compareTo。'
     ] },
 
-    { h: '5.13 常见追问' },
+      { h: '5.13 常见追问' },
+      { list: [
+        '<b>问：有了 ArrayList 为什么还要用数组？</b><br>答：数组是语言级结构，长度固定、元素类型确定、连续存放，没有包装、没有扩容、没有迭代器对象，访问是纯粹的下标寻址。数值计算、缓冲区、定长表、需要与原生接口交换数据的场合用它最合适；而增删频繁、长度未知的列表用 ArrayList 更省心。判断标准是「长度在创建时就确定吗」，能确定就优先数组，还能顺带获得明确的边界。',
+        '<b>问：Arrays.sort 到底用什么算法？</b><br>答：基本类型用双轴快速排序，属于不稳定排序，但不需要额外内存，对小数组切到插入排序；对象数组用 TimSort，稳定，最坏情况需要约等于长度一半的额外空间。所以同一份数据换成对象数组后，相等元素的先后顺序可能变化——需要稳定结果时就用对象数组，或者自己带上序号做二次比较。',
+        '<b>问：二分查找为什么必须先排序？</b><br>答：它的每一步都靠「中间元素与目标的大小关系」排除一半区间，这个推理只在数据有序时成立；乱序数据上它会安静地返回错误的下标，而不是抛异常。另外 JDK 的实现还要求传入的数组是完全排序的，否则结果未定义。查找前用 <code>Arrays.sort</code> 排一遍，代价 O(n log n)，反复查同一个数组时才划算。',
+        '<b>问：为什么说 BigDecimal 不能用 double 构造？</b><br>答：double 只能精确表示二进制分数，0.1 本身就是个无限循环小数，存进去已经被截断。<code>new BigDecimal(0.1)</code> 会把这个截断值原样搬进 BigDecimal，得到 0.1000000000000000055511151231257827；而 <code>new BigDecimal("0.1")</code> 才是精确的一位小数。凡是来自用户输入、配置、数据库的数值都以字符串形式传入。',
+        '<b>问：Arrays.asList 返回的 List 为什么不能 add？</b><br>答：它返回的是 Arrays 内部的定长视图，底层直接指向原数组，长度由数组决定，所以结构修改一律抛 UnsupportedOperationException；但 <code>set</code> 是允许的，会写回原数组。需要可变列表就 <code>new ArrayList&lt;&gt;(Arrays.asList(...))</code>，需要不可变列表用 <code>List.of</code>。',
+        '<b>问：System.arraycopy 能处理源和目标重叠吗？</b><br>答：能。它等价于底层的内存搬移，方向由实现自行判断，因此把数组整体前移或后移几位都不会污染数据。自己写 for 循环逐元素复制则在重叠时会覆盖尚未读取的值，方向写错就得到一堆重复元素。注意 arraycopy 只做浅拷贝，元素若是对象数组，复制的是引用。'
+      ] },
 
-    { list: [
-      '<b>数组和 ArrayList 怎么选？</b>长度固定、追求性能用数组；需要增删、丰富 API 用 ArrayList。',
-      '<b>Arrays.sort 用了什么算法？</b>基本类型是双轴快排，对象是 TimSort，后者稳定。',
-      '<b>为什么二分查找要求有序？</b>它每次用中间值排除一半区间，无序时排除逻辑不成立。',
-      '<b>BigDecimal 能用 double 构造吗？</b>能，但会把二进制误差带进来；用字符串或 valueOf。',
-      '<b>BigDecimal 为什么不可变？</b>避免共享对象被意外修改，线程安全，适合做金额。',
-      '<b>arraycopy 和目标数组重叠会怎样？</b>JVM 按内存搬移处理，结果正确，类似 memmove。'
-    ] },
-
-    { h: '5.14 自测与练习' },
-
-    { ol: [
-      '写一个方法，接收 int 数组，返回去掉所有 0 之后的新数组，要求用 copyOf 控制长度。',
-      '定义 Student 类（姓名、分数），用 Comparator 先按分数降序、再按姓名升序排序，并打印结果。',
-      '实现一个金额结算：三种商品、各自单价与数量、运费 6 元、满 100 减 10，全部用 BigDecimal，结果保留两位。'
-    ] },
-
-    { note: '<b>练习建议：</b>先自己写，再对照本章示例。重点检查边界：空数组、null 元素、金额为 0、折扣后应付为负。每道题至少准备三组测试数据，比写出来更重要。' },
-  ] };
+      { h: '5.14 自测与练习' },
+      { ol: [
+        '用一维数组实现一个能扩容的整型列表：add、get、size 三个方法，扩容时按 1.5 倍增长。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：连续添加 100 个元素全部成功，get(i) 返回第 i 个加入的值；扩容次数约为十次以内，而不是每次都扩。<b>为什么</b>：数组长度固定，只能新建更大的数组并用 <code>System.arraycopy</code> 搬过去；按比例扩容让总复制量保持线性，按固定长度加一则退化为平方级。<b>要点</b>：<code>if (size == data.length) { int[] n = new int[data.length + (data.length &gt;&gt; 1) + 1]; System.arraycopy(data, 0, n, 0, size); data = n; }</code>；get 要检查下标范围。</div></details>',
+        '给定一个乱序 int 数组和一个目标值，用 Arrays.sort 加二分查找返回目标下标，找不到返回 -1。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：在 {9,3,7,1,5} 里查 7，排序后返回下标 3；查 4 返回负数，统一转成 -1。<b>为什么</b>：二分要求有序，所以先排序；<code>binarySearch</code> 找不到时返回「插入点取反再减一」的负数，必须判负而不是判零。<b>要点</b>：<code>int i = Arrays.binarySearch(a, key); return i &gt;= 0 ? i : -1;</code>；注意返回值是排序后数组里的下标，不是原数组的位置，需要原位置就得先连下标一起排序。</div></details>',
+        '把一个含重复元素的 String 数组转成 List，要求结果可修改且顺序不变，写出两条不同路径并比较差别。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Arrays.asList(a)</code> 直接 add 抛 UnsupportedOperationException，仅 set 成功且改的是原数组；<code>new ArrayList&lt;&gt;(Arrays.asList(a))</code> 增删都成功且不影响原数组。<b>为什么</b>：前者是定长视图，后者是独立拷贝，共享与隔离的差别就在这一行构造里。<b>要点</b>：要独立副本用 <code>new ArrayList&lt;&gt;(Arrays.asList(arr))</code>；要不可变用 <code>List.of(arr)</code>（注意它不接受 null 元素）；最后打印两边的 size 与元素，确认拷贝真的独立于原数组。</div></details>'
+      ] },
+      { note: '<b>练习提示：</b>先用纸笔写出每一步数组内容再敲代码，尤其是 arraycopy 的重叠场景；把结果贴进 out 块与预期对照，比凭感觉判断可靠。' }
+    ]
+  };
 
 
   T['modern-java'] = { meta: '本章约 5200 字 · 建议 34 分钟 · 配套流程图与 3 道习题', blocks: [
@@ -908,7 +907,7 @@
     { p: 'Java 每半年发一个版本，但真正改变写代码方式的特性并不多。很多人背过“Java 8 有 Lambda、Java 17 有 record”，却说不清它们解决了什么痛点。这一章不按版本流水账讲，而是按“你写代码时遇到的麻烦”来组织：类型写两遍、字符串拼得满屏加号、switch 又长又容易漏 break、数据传输类写了上百行 getter。' },
     { p: '把这些麻烦和新特性一一对上，你会发现语法演进的主线只有两条：减少样板代码，让编译器多检查。var 减少重复类型，文本块减少转义，record 减少数据类的样板，switch 表达式让编译器检查分支是否覆盖，sealed 让继承关系可控。理解了主线，就不用死记每个版本。' },
     { p: '需要先说明：新特性有版本门槛，也有适用边界。var 不能用于字段，record 不能继承，文本块里的缩进会被自动处理。本章每个特性都会讲“不能做什么”，因为生产事故往往来自“以为它能”。' },
-    { p: '版本节奏也值得了解：Java 从 9 开始每半年发一个特性版本，每两年左右出一个 LTS，当前 LTS 是 25（2025 年 9 月发布），21 是上一代 LTS，下一个 LTS 预计是 27。企业不必追每个版本，但要知道 LTS 之间有大量小改进，比如 HttpClient、Files.mismatch、String.strip 这些日常会用到的 API。选版本的本质是选支持周期，不是选功能多少，新语法只是升级的副产品。' },
+    { p: '版本节奏也值得了解：Java 从 9 开始每半年发一个特性版本，每两年左右出一个 LTS，当前 LTS 是 25（2025 年 9 月发布），21 是上一代 LTS，下一个 LTS 是 29（2027 年 9 月）。企业不必追每个版本，但要知道 LTS 之间有大量小改进，比如 HttpClient、Files.mismatch、String.strip 这些日常会用到的 API。选版本的本质是选支持周期，不是选功能多少，新语法只是升级的副产品。' },
 
     { h: '6.2 var：局部变量类型推断' },
     { p: 'var 是 Java 10 引入的局部变量类型推断。它不是动态类型，也不是关键字，只是一个特殊的类型名。编译器根据右边的初始化表达式推断出真实类型，编译后的字节码和写全类型完全一样，运行时没有任何额外开销。' },
@@ -1054,23 +1053,24 @@
       '虚拟线程适合 I/O 密集，不是让 CPU 计算变快。'
     ] },
 
-    { h: '6.13 常见追问' },
-    { list: [
-      '<b>var 会影响性能吗？</b>不会，编译期推断出具体类型，字节码与写全类型一致。',
-      '<b>record 能序列化吗？</b>可以，但要注意规范构造器校验和兼容性，框架支持程度要确认。',
-      '<b>sealed 和 final 有什么区别？</b>final 禁止任何继承；sealed 允许指定子类继承。',
-      '<b>switch 模式为什么还要 default？</b>对 Object 等非 sealed 类型，编译器无法确认穷尽。',
-      '<b>虚拟线程能替代线程池吗？</b>I/O 密集场景可以大幅简化；CPU 密集仍用固定大小平台线程池。',
-      '<b>新特性一定要用吗？</b>不用。团队熟悉度、依赖支持、升级成本都是决策因素。'
-    ] },
+      { h: '6.13 常见追问' },
+      { list: [
+        '<b>问：用了 var 会变慢吗？</b><br>答：不会。var 只是让编译器从初始化表达式推断类型，推断发生在编译期，生成的字节码与写全类型完全一致，运行时没有额外开销。真正需要留意的是可读性和安全：<code>var list = new ArrayList&lt;&gt;()</code> 把元素类型藏了起来，别人读代码要回推；而 <code>var x = map.get(k)</code> 推断成 Object，后续只能靠强转，反而丢掉了类型检查。团队约定通常是「右侧类型明显时才用 var」。',
+        '<b>问：record 能当 JPA 实体或直接反序列化吗？</b><br>答：不适合当可变实体。record 的字段全是 final、没有无参构造、也没有 setter，而多数 ORM 依赖无参构造加反射赋值，硬用需要额外适配。它的强项是不可变数据载体的场景：DTO、查询结果、配置快照、多返回值。序列化方面，record 的字段名参与序列化格式，改动字段名就是破坏兼容；需要长期稳定的格式时，显式实现序列化方法或改用专门的消息格式。',
+        '<b>问：sealed 和 final 有什么区别？</b><br>答：final 关闭继承，一个子类都不能有；sealed 是有条件开放，用 permits 列出允许的子类，其余一律拒绝，而且被允许的子类必须声明为 final、sealed 或 non-sealed 三者之一。它解决的是「既要封闭、又要能穷举分支」的问题：编译器知道所有实现，switch 就可以不写 default。final 适合工具类和不变量，sealed 适合领域模型与状态机。',
+        '<b>问：模式匹配 switch 为什么还要求 default？</b><br>答：密封类型上的 switch 才能被编译器证明覆盖完整，此时可以省略 default；一旦类型不是 sealed、或者用到了带守卫的 when 分支，覆盖性就无法静态保证，编译器会要求兜底分支。运行时若真的没有任何分支匹配，会抛 MatchException。实践上建议保留一个显式分支处理「不可能发生」，把状态漂移暴露成可观测的异常，而不是静默忽略。',
+        '<b>问：虚拟线程能完全替代线程池吗？</b><br>答：不能完全替代，它替代的是「阻塞等待型」的并发模型。虚拟线程由 JVM 调度、挂起时不占平台线程，因此可以按请求数直接创建，不必池化。但它不适合 CPU 密集型任务（那需要的是固定大小的平台线程池），JDK 24 起（JEP 491）synchronized 块内的阻塞已不再钉住载体线程，残留的钉住主要来自本地方法与部分旧版运行时。迁移前用 JFR 的 VirtualThreadPinned 事件确认还有没有钉住。',
+        '<b>问：新特性必须跟着用吗？</b><br>答：不必，但要知道每一代 LTS 的边界。当前 LTS 是 Java 25，21 是上一代。团队升级的决策点是三条：依赖与构建工具是否支持目标版本、运行时镜像与监控代理是否就绪、新特性是否解决了当下真实的痛点。record 与 switch 模式匹配对业务代码收益最大，虚拟线程在 IO 密集服务上收益最大，其余特性在多数项目里可以先观望。'
+      ] },
 
-    { h: '6.14 自测与练习' },
-    { ol: [
-      '用 record 定义一个订单项（商品名、单价、数量），在紧凑构造器里校验单价和数量都为正，并写一个方法计算小计。',
-      '用 sealed 接口定义三种支付方式，配合 switch 表达式计算手续费，要求不写 default 也能通过编译。',
-      '写一个方法，接收 Object，用 switch 模式分别处理 null、正数、负数、字符串和点坐标，并打印结果。'
-    ] },
-    { note: '<b>练习建议：</b>把代码编译目标设为 21，遇到编译错误先读提示，多数是版本或穷尽性问题。写完对照本章的“常见错误清单”，看看自己踩了几个。' }
-  ] };
+      { h: '6.14 自测与练习' },
+      { ol: [
+        '用 record 定义一个表示「金额与币种」的类型，要求构造时就校验金额非负、币种为三位大写字母，并给出 equals 行为说明。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>new Money(-1, "CNY")</code> 抛 IllegalArgumentException；<code>new Money(10, "cny")</code> 同样抛；两个字段相同的实例 equals 为 true，hashCode 相同。<b>为什么</b>：record 的紧凑构造器可以插入校验，字段仍由编译器生成 final 与访问器；equals、hashCode、toString 按全部组件自动生成，所以比较是值语义，也不需要写 getter。record 从 Java 16 正式，14 与 15 是预览。<b>要点</b>：写成 <code>record Money(long cents, String currency) { Money { if (cents &lt; 0) throw new IllegalArgumentException("cents"); if (!currency.matches("[A-Z]{3}")) throw new IllegalArgumentException("currency"); } }</code>，紧凑构造器里只能抛异常或规范化参数，不要再给组件赋值。record 是 final 不能被继承，组件名也不能叫 clone、finalize 这类 Object 方法名。</div></details>',
+        '用 sealed 接口加模式匹配 switch，写一个对三种形状（圆、矩形、三角形）求面积的函数，并说明为什么不需要 default。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个分支各自返回正确面积，去掉 default 也能编译通过；若新增一种形状，编译直接报错提示 switch 未覆盖。<b>为什么</b>：sealed 加上所有子类都是 final 或 record 时，类型集合在编译期已知，编译器能证明覆盖完整；新增子类会破坏这个证明，于是把运行时错误提前成编译错误。<b>要点</b>：<code>sealed interface Shape permits Circle, Rect, Tri</code>；switch 写 <code>case Circle c -&gt; Math.PI * c.r() * c.r();</code>，圆弧与三角形按对应公式；保留一个显式 case 处理不可能状态亦可。</div></details>',
+        '用 <code>-Xlog:gc</code> 和 <code>jcmd</code> 观察一段用虚拟线程跑一万个阻塞任务的程序，说明该看哪些指标。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Thread.ofVirtual().start(r)</code> 一万次后，<code>jcmd &lt;pid&gt; Thread.dump_to_file -format=json</code> 里虚拟线程数量上万而平台线程数仍是几十；GC 日志显示分配速率上升但老年代增长平稳。<b>为什么</b>：虚拟线程由 JVM 调度到少量载体线程上，堆里每个虚拟线程只是一个对象，所以线程数不再与内存强绑定；阻塞时挂起而不占 OS 线程。<b>要点</b>：关注载体线程池大小是否等于 CPU 核数、有没有残留钉住（JFR 的 VirtualThreadPinned 事件），以及 GC 日志里的晋升量；若老年代快速上涨，通常是任务里缓存了大对象而不是线程本身的问题。</div></details>'
+      ] },
+      { note: '<b>练习提示：</b>每题都跑一遍再对照；JDK 版本用 <code>java -version</code> 确认是 25，编译目标与运行时保持一致，避免用新语法却跑在旧运行时上。' }
+    ]
+  };
 
 })();

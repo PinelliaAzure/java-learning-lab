@@ -131,26 +131,24 @@
 
       { h: '1.11 常见追问' },
       { list: [
-        '<b>问：@Autowired 和 @Resource 有什么区别？</b>答：@Autowired 是 Spring 的注解，默认按类型注入，配合 @Qualifier 按名称；@Resource 是 JDK 规范，默认按名称注入，名称找不到再按类型。新项目统一用构造器注入即可，两者都不需要写。',
-        '<b>问：Bean 太多会不会拖慢启动？</b>答：会。单例 Bean 在启动时全部创建，数量上千时启动时间明显上升。可以按需懒加载，但懒加载会把错误推迟到第一次调用，核心 Bean 不要懒加载。',
-        '<b>问：@Component 和 @Bean 能混用吗？</b>答：能。自己的类用 @Component，第三方类用 @Bean。同一个类型不要既扫描又手动注册，否则会出现两个 Bean。',
-        '<b>问：单例 Bean 线程安全吗？</b>答：容器只保证创建一次，不保证线程安全。Bean 无状态就天然安全；有共享可变字段就需要自己加锁或改用局部变量。',
-        '<b>问：为什么单元测试里注入的依赖是 null？</b>答：直接 new 出来的对象不经过容器。要么用构造器注入手动传依赖，要么用 Spring 的测试支持启动容器。',
-        '<b>问：Bean 名称冲突会怎样？</b>答：同名 Bean 后注册的会覆盖先注册的，但覆盖会把问题藏起来；更推荐改名或用 @Qualifier 明确指定，不要依赖覆盖顺序。',
-        '<b>问：@Autowired(required = false) 什么时候用？</b>答：只适合可选能力，依赖缺失时字段为 null；核心依赖绝不能用它，否则启动期的错误会被推迟到运行期。',
-        '<b>问：启动慢和 Bean 太多有关吗？</b>答：有关。可以在排查时开启懒加载，或把非关键 Bean 标记为 @Lazy；但生产环境要谨慎，问题会推迟到第一次调用才暴露。'
+        '<b>问：@Autowired 和 @Resource 有什么区别？</b><br>答：@Autowired 是 Spring 的注解，默认按类型注入，类型有多个时配合 @Qualifier 按名称挑；@Resource 是 JDK 规范，默认按名称注入，名称找不到再退回按类型。新项目统一用构造器注入，这两个注解都不用写在字段上。更该警惕的是 <code>@Autowired(required = false)</code>：它只适合真正可选的能力，缺失时字段为 null；核心依赖用它，等于把启动期就能发现的错误推迟到运行期第一次调用。',
+        '<b>问：Bean 太多会不会拖慢启动？</b><br>答：会。单例 Bean 在刷新阶段集中创建，数量上千、每个还要建连接池或读远程配置时，启动时间会从两秒涨到几十秒。排查时可以临时给非关键 Bean 加 <code>@Lazy</code>，看启动曲线在哪个 Bean 处变长就能定位。但不要把懒加载当长期方案：它只是把创建时机推迟到第一次调用，配置写错、依赖缺失都要等那一次请求才暴露，核心链路上的 Bean 一律保持饿汉式。',
+        '<b>问：@Component 和 @Bean 能混用吗？</b><br>答：能，分工也很明确：自己的类加 @Component 家族注解交给扫描，第三方类（连接池、ObjectMapper）没法加注解，就在 @Configuration 里写 @Bean 方法。要避免的是同一个类型既被扫到又手动注册一次，容器里会出现两个候选，按类型注入时直接抛 NoUniqueBeanDefinitionException。',
+        '<b>问：单例 Bean 线程安全吗？</b><br>答：容器只保证一个类型创建一个实例，不保证这个实例线程安全。判断标准是有没有可变状态：只读配置、无状态的计算方法天然安全；一旦把请求数据、用户身份写进成员变量，并发时就会互相覆盖，而且极难复现。做法是把状态放在方法局部变量或参数里，必须共享时用 ThreadLocal 之类的显式机制，不要靠加锁糊过去。',
+        '<b>问：为什么单元测试里注入的依赖是 null？</b><br>答：因为那个对象是你在测试里 <code>new</code> 出来的，没经过容器，自然没有人替它注入。三种解法：用构造器注入在测试里直接传假实现；<code>new</code> 之后手动调 set 方法；确实需要容器行为时再用 Spring 的测试支持启动上下文。选第一种最省时间，一个测试几毫秒跑完。',
+        '<b>问：Bean 名称冲突会怎样？</b><br>答：默认情况下同名 Bean 后注册的会覆盖先注册的，启动不报错，被覆盖的实现悄悄消失，属于最难查的一类问题。定位方式是在启动日志里搜 Overriding bean definition，或打开 bean 覆盖检查让它在启动时就失败。根治办法是给 Bean 起有意义的名字（<code>@Service("wechatPayService")</code>）、注入点用 @Qualifier 明确指定，而不是依赖注册顺序。',
       ] },
 
       { h: '1.12 自测与练习' },
       { ol: [
-        '把本章的 OrderService 改成 Setter 注入，比较两种写法在单元测试中的差异。',
-        '新增一个 SmsService，用 @Configuration + @Bean 注册，并在 OrderService 中注入使用。',
-        '故意让两个 Service 构造器互相依赖，观察启动报错信息，再抽一个 NotificationService 解开循环。',
-        '用 @Lazy 标注一个慢初始化的 Bean，观察启动时间和首次调用时间的变化。',
-        '把一个字段注入的类改成构造器注入，对比改造前后单元测试代码的差异。',
-        '用 @Primary 和 @Qualifier 分别解决同类型多 Bean 的注入冲突，记录两种写法的区别。',
-        '给一个单例 Bean 加上可变的计数器字段，用两个线程各调用一百次，观察结果是否等于两百。',
-        '用 @Scope("prototype") 改造 Task，分别用直接注入和 ObjectProvider 获取，比较 id 的变化。'
+        '把本章的 OrderService 改成 Setter 注入，比较两种写法在单元测试中的差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：依赖字段不再是 final，测试代码从一行构造变成先 new 再逐个 set；漏 set 一个依赖时编译不报错，运行到 checkout() 才抛 NullPointerException。<b>为什么</b>：Setter 注入允许对象先创建后装配，容器能保证所有 set 执行完，而测试里手工创建的对象没有人替你校验完整性。<b>要点</b>：构造器版测试写 <code>new OrderService(fakePay, fakeRepo)</code>，Setter 版写 <code>svc.setPay(fakePay); svc.setRepo(fakeRepo);</code>，对比两者在漏依赖时「什么时候报错」。</div></details>',
+        '新增一个 SmsService，用 @Configuration + @Bean 注册，并在 OrderService 中注入使用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：启动日志出现 Creating shared instance of singleton bean 与 smsService，下单后打印发送短信；删掉 @Configuration 后启动报 NoSuchBeanDefinitionException。<b>为什么</b>：@Bean 方法由容器调用，方法名默认就是 Bean 名称 smsService，返回值进单例池后再按类型注入进 OrderService。<b>要点</b>：<code>@Configuration class SmsConfig { @Bean SmsService smsService() { return new SmsService(); } }</code>，OrderService 的构造器参数声明成 SmsService 即可，不要自己 new；把 @Bean 方法改名，注入点就会找不到依赖，因为 Bean 名默认就是方法名。</div></details>',
+        '故意让两个 Service 构造器互相依赖，观察启动报错信息，再抽一个 NotificationService 解开循环。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：启动直接失败，异常链里能看到 BeanCurrentlyInCreationException，或者提示构造器循环引用。<b>为什么</b>：构造器注入要求依赖先造好，A 等 B、B 等 A，谁都无法完成第一步；三级缓存只对字段注入和 Setter 注入的循环有效。<b>要点</b>：抽出 NotificationService 承接双方共同依赖，或把其中一方改成事件监听；不要靠 @Lazy 或开启循环依赖开关把设计问题藏起来。</div></details>',
+        '用 @Lazy 标注一个慢初始化的 Bean，观察启动时间和首次调用时间的变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：加上 @Lazy 后启动时间明显变短，但第一次调用该 Bean 的接口会卡住同样长的时间，创建日志也移到首次调用时出现。<b>为什么</b>：懒加载只是把创建时机从刷新阶段推迟到第一次 getBean，初始化成本没有消失，配置错误也被一起推迟。<b>要点</b>：@Lazy 写在注入点（构造器参数或字段）或 @Bean 方法上；对比 Started App in X seconds 与首次请求耗时两组数字；核心 Bean 不要懒加载。</div></details>',
+        '把一个字段注入的类改成构造器注入，对比改造前后单元测试代码的差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改造前的测试要先启动 Spring 上下文或用反射塞值，单个测试几百毫秒到数秒；改造后直接 new，几毫秒跑完，漏传依赖编译期就报错。<b>为什么</b>：字段注入的类脱离容器无法构造，测试只能借容器能力；构造器注入把依赖变成显式参数。<b>要点</b>：字段加 final、删掉 @Autowired、写一个全参数构造器；测试写 <code>new OrderService(new FakePayService())</code>，不需要 @SpringBootTest。</div></details>',
+        '用 @Primary 和 @Qualifier 分别解决同类型多 Bean 的注入冲突，记录两种写法的区别。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同类型两个 Bean 直接按类型注入，启动报 NoUniqueBeanDefinitionException 并列出候选；给其中一个加 @Primary 后默认注入它；注入点改用 <code>@Qualifier("wechatPayService")</code> 则精确命中指定那个。<b>为什么</b>：找不到唯一候选时，容器先看 @Primary，再要求调用方用 @Qualifier 指定名称。<b>要点</b>：@Primary 表达「绝大多数场景用它」，@Qualifier 表达「这个调用点要它」；两者同时存在时 @Qualifier 优先。</div></details>',
+        '给一个单例 Bean 加上可变的计数器字段，用两个线程各调用一百次，观察结果是否等于两百。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个线程各调一百次后，计数器通常小于两百（例如 187），多跑几次结果还不一样。<b>为什么</b>：count++ 是读、加、写三步，两个线程可能读到同一个旧值再各自写回，造成丢失更新；单例 Bean 只有一份字段，正好把这个问题暴露出来。<b>要点</b>：改用 AtomicInteger 的 incrementAndGet，或用 synchronized 包住整个读改写；更好的做法是把计数变成局部变量或交给无状态工具类。</div></details>',
+        '用 @Scope("prototype") 改造 Task，分别用直接注入和 ObjectProvider 获取，比较 id 的变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：单例里直接注入 prototype 的 Task，两次输出同一个 id；改成注入 <code>ObjectProvider&lt;Task&gt;</code> 再调两次 getObject()，得到两个不同 id。<b>为什么</b>：注入只发生在单例创建那一刻，prototype 的「每次新建」被那一次解析吃掉了；ObjectProvider 把取实例推迟到调用时，每次都向容器要新对象。<b>要点</b>：<code>provider.getObject().getId()</code> 两次结果不同；prototype 实例的销毁容器不管，资源要自己释放。</div></details>',
       ] }
     ]
   };
@@ -289,29 +287,25 @@
 
       { h: '2.12 常见追问' },
       { list: [
-        '<b>问：自动配置类和普通 @Configuration 有什么区别？</b>答：@AutoConfiguration 本质是 @Configuration，额外增加了“必须在用户配置之后处理”的排序语义，并禁止被组件扫描直接扫到，避免重复注册。',
-        '<b>问：@Configuration 里的 @Bean 方法能是 private 吗？</b>答：不能。CGLIB 代理需要可继承的方法，private 或 final 方法会导致代理失效或启动报错，写成 public 或包级可见。',
-        '<b>问：自动配置类能直接改吗？</b>答：不要改框架源码。正确做法是自己声明同类型 Bean，或用 @AutoConfigureBefore 写自己的配置类，升级时才不会痛苦。',
-        '<b>问：为什么我定义了 Bean，默认配置还在生效？</b>答：检查类型是否完全一致、是否真的注册进了容器、条件是不是 @ConditionalOnMissingBean。只 new 不注册，框架看不见。',
-        '<b>问：能关掉某个自动配置吗？</b>答：可以。用 @SpringBootApplication(exclude = DataSourceAutoConfiguration.class) 或配置 spring.autoconfigure.exclude。但关掉之后要自己补上对应的 Bean。',
-        '<b>问：yml 和 properties 哪个好？</b>答：yml 层级清晰、适合复杂结构；properties 简单直白、排查时不容易被缩进坑到。团队统一即可，不要混着写同一份配置。',
-        '<b>问：为什么 @ComponentScan 会覆盖默认扫描？</b>答：显式写 @ComponentScan 后，启动类上的默认扫描规则不再生效，只按你写的包扫描；需要保留默认范围时，把启动类所在包也加进去。',
-        '<b>问：spring.factories 还能用吗？</b>答：3.x 仍兼容部分旧机制，但自动配置已统一到 imports 文件；自己写 starter 时直接用新文件，不要混用两套。',
-        '<b>问：如何只关掉一个自动配置？</b>答：用 exclude 指定类，或配置 spring.autoconfigure.exclude；关掉后要自己补上等价 Bean，否则会出现新的缺依赖错误。',
-        '<b>问：配置会泄露到日志里吗？</b>答：Actuator 的 env 端点默认会对敏感键做脱敏，但自定义键不一定被识别；最稳妥的做法是密钥不落到配置文件里。'
+        '<b>问：@Configuration 里的 @Bean 方法能是 private 吗？</b><br>答：不能。proxyBeanMethods 为 true（默认）时，Spring 用 CGLIB 生成配置类的子类来拦截方法调用，private 和 final 方法无法被覆盖，代理接不住，轻则方法调用不再返回容器里的单例，重则启动直接报错。改成包级可见或 public 即可，包级可见已经够用，不必为了「看得见」硬写 public。配置类标了 proxyBeanMethods = false 时本来就没有代理，可见性不妨碍创建对象，但仍不建议写 private——接手的人很难判断这里有没有副作用。',
+        '<b>问：自动配置类能直接改吗？它和普通 @Configuration 有什么不同？</b><br>答：不要改框架源码，升级一次就全丢。正确做法是自己声明同类型 Bean 覆盖，或用 @AutoConfiguration 写自己的配置类并指定排序。@AutoConfiguration 本质仍是 @Configuration，区别有两点：它必须在用户配置处理完之后才处理，否则覆盖逻辑永远失效；它不会当组件扫描的候选，避免和 imports 清单里的注册重复。自己写自动配置时沿用它，类名写进 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports；spring.factories 里的 EnableAutoConfiguration 键从 Boot 3.0 起就已不再读取（2.7 只是标记废弃），Boot 4 沿续这一口径，自定义自动配置必须放进 imports 文件。',
+        '<b>问：为什么我定义了 Bean，默认配置还在生效？</b><br>答：先确认那个对象真的注册进了容器，而不是在你自己的类里 new 出来的——手动 new 的连接池框架看不见，自动配置仍按「没有该类型 Bean」处理，最后出现两份连接池。再看类型是否完全一致（接口和实现类是两个条件），以及框架侧的判断是不是 @ConditionalOnMissingBean。自己写了 @ComponentScan 的话，还要确认扫描范围包含这个配置类。排查入口是 --debug 的条件评估报告，看它归在 Positive 还是 Negative。',
+        '<b>问：能关掉某个自动配置吗？</b><br>答：能，两种写法等价：<code>@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)</code>，或配置 <code>spring.autoconfigure.exclude</code> 指定全限定类名。要按条件关，就在自己的配置类上用 @ConditionalOnProperty 反着写。关键是关掉之后必须自己补上等价 Bean，否则依赖它的业务代码会报缺 Bean——错误信息换成另一副样子，容易被误判成「关得不干净」。',
+        '<b>问：yml 和 properties 哪个好？</b><br>答：两者能力等价，差别在可读性和踩坑概率。yml 层级清晰、适合嵌套结构，但缩进错了整段失效，同一个键也不能在不同层级重复出现；properties 一行一个键、不看缩进、排查时能直接 grep，缺点是长键名重复。团队统一一种即可，不要在同一份配置里混写。无论用哪个，值都能被环境变量和命令行参数覆盖，密钥不要写进配置文件再提交到仓库。',
+        '<b>问：配置会泄露到日志里吗？</b><br>答：会，而且不止日志一处。启动时若开了 DEBUG，环境信息可能被打印；Actuator 的 env 端点默认对 password、secret 这类键做脱敏，但自定义键名不一定被识别，health 之外的端点更不该裸奔在公网。稳妥做法是密钥只走环境变量或配置中心，仓库里留占位符；同时把 <code>management.endpoints.web.exposure.include</code> 收窄到 health、metrics 这类安全端点，并在网关层限制管理端口。',
       ] },
 
       { h: '2.13 自测与练习' },
       { ol: [
-        '新建一个 Spring Boot 项目，只保留启动类，用 --debug 启动，统计 Positive 和 Negative 各有多少条。',
-        '自己写一个 PayProperties 并绑定配置，改一次 yml、改一次环境变量、改一次命令行参数，验证优先级。',
-        '写一个自定义自动配置类，用 @ConditionalOnMissingBean 让用户能覆盖默认实现，并写测试验证两种分支。',
-        '故意把启动类移到子包，观察哪些 Bean 消失了，并解释原因。',
-        '把一个自动配置类的条件复制到自己的配置类上，观察它与原配置的生效顺序。',
-        '把 @Configuration 改成 proxyBeanMethods = false，验证两个 @Bean 方法互相调用时的对象是否还是同一个。',
-        '用一个自定义 Condition 实现“只在 dev 环境注册的 Bean”，并验证 prod 下不生效。',
-        '把某个自动配置类加入 exclude，观察启动变化，再手动补一个等价 Bean。',
-        '在 Negative matches 里找一条记录，说明它缺少哪个类或哪项配置。'
+        '新建一个 Spring Boot 项目，只保留启动类，用 --debug 启动，统计 Positive 和 Negative 各有多少条。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：控制台的条件评估报告里 Positive matches 只有十几到几十条，Negative matches 上百条，每条都带 Did not match because 的原因。<b>为什么</b>：自动配置是一张候选清单，逐个用 @ConditionalOnClass、@ConditionalOnMissingBean 等条件筛，缺类或缺配置的都被归到 Negative。<b>要点</b>：启动加 <code>--debug</code>，或设 <code>logging.level.org.springframework.boot.autoconfigure=DEBUG</code>；跑起来后也可以用 Actuator 的 <code>/actuator/conditions</code> 端点看同一份报告。</div></details>',
+        '自己写一个 PayProperties 并绑定配置，改一次 yml、改一次环境变量、改一次命令行参数，验证优先级。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三处都配同一个键时，最终生效的是命令行参数，其次是环境变量，最后才是 application.yml；把命令行参数去掉，环境变量接管。<b>为什么</b>：Spring 把配置来源排成有序的 PropertySource 列表，前面的命中就不再往后找，命令行参数排在最前。<b>要点</b>：<code>@ConfigurationProperties(prefix = "app.pay")</code> 配 @EnableConfigurationProperties 或 @Component；环境变量写 <code>APP_PAY_APPID</code>（宽松绑定也认 APP_PAY_APP_ID），命令行写 <code>--app.pay.app-id=xxx</code>。</div></details>',
+        '写一个自定义自动配置类，用 @ConditionalOnMissingBean 让用户能覆盖默认实现，并写测试验证两种分支。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：只有框架默认实现时容器里是自定义 Bean；自己再声明一个同类型 Bean 后，默认实现不再创建，注入到的是用户那个。<b>为什么</b>：@ConditionalOnMissingBean 在评估时检查容器中是否已有该类型，用户配置先于自动配置处理，所以能覆盖默认。<b>要点</b>：配置类标 @AutoConfiguration，加 @ConditionalOnClass 与 <code>@Bean @ConditionalOnMissingBean</code>；清单写进 <code>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</code>；测试用 ApplicationContextRunner 分别跑有、无用户 Bean 两条分支。</div></details>',
+        '故意把启动类移到子包，观察哪些 Bean 消失了，并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原来能起来的项目报 NoSuchBeanDefinitionException，兄弟包下的 @Service、@Controller 全部不在容器里，自己的 Mapper 也扫不到。<b>为什么</b>：@ComponentScan 的默认范围是启动类所在包及其子包，启动类下移一层，兄弟包就被排除在扫描范围外。<b>要点</b>：把启动类放回最外层包，或写 <code>@SpringBootApplication(scanBasePackages = "com.example")</code>；用 <code>/actuator/beans</code> 确认到底注册了哪些 Bean。</div></details>',
+        '把一个自动配置类的条件复制到自己的配置类上，观察它与原配置的生效顺序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两者条件都满足时容器里出现两个同类型 Bean，按类型注入直接报 NoUniqueBeanDefinitionException；若框架侧带 @ConditionalOnMissingBean，则谁先被处理谁生效。<b>为什么</b>：条件注解只判断「要不要创建」，不判断「是否已经有人创建过」，只有 @ConditionalOnMissingBean 才看容器现状，而处理顺序由自动配置的排序决定。<b>要点</b>：自己写配置类时用 <code>@AutoConfiguration(before = XxxAutoConfiguration.class)</code> 或 @AutoConfigureBefore 明确顺序，并给自己的 Bean 加 @ConditionalOnMissingBean。</div></details>',
+        '把 @Configuration 改成 proxyBeanMethods = false，验证两个 @Bean 方法互相调用时的对象是否还是同一个。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：默认 proxyBeanMethods = true 时，一个 @Bean 方法里调用另一个 @Bean 方法返回同一个对象（== 为 true）；改成 false 后再比较得到 false，出现两个实例。<b>为什么</b>：true 时配置类被 CGLIB 代理，方法调用被拦截成 getBean，拿到的是容器里的单例；false 时就是普通方法调用，每次都执行方法体。<b>要点</b>：false 更快也更省内存，代价是不能靠方法调用共享实例，需要共享就把依赖写成 @Bean 方法的参数。</div></details>',
+        '用一个自定义 Condition 实现「只在 dev 环境注册的 Bean」，并验证 prod 下不生效。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：本地用 dev profile 启动时该 Bean 存在；加 <code>--spring.profiles.active=prod</code> 后它消失，依赖它的注入点报缺 Bean。<b>为什么</b>：Condition 的 matches 在容器刷新时被调用，返回值直接决定配置类或 @Bean 是否参与注册，不满足就当它不存在。<b>要点</b>：实现 Condition 接口，在 matches 里读 <code>context.getEnvironment().getActiveProfiles()</code>，配置类上写 @Conditional(OnDevCondition.class)；条件里不要做耗时操作，它会被反复评估。</div></details>',
+        '把某个自动配置类加入 exclude，观察启动变化，再手动补一个等价 Bean。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：排除数据源自动配置后启动失败，报 Failed to configure a DataSource 或注入缺 Bean；自己补一个 @Bean DataSource 后恢复正常。<b>为什么</b>：被排除等于没人再提供这个 Bean，而业务代码的注入点仍然需要它。<b>要点</b>：<code>@SpringBootApplication(exclude = DataSourceAutoConfiguration.class)</code>，或写 <code>spring.autoconfigure.exclude=...</code>；补的 Bean 名称和类型要和原来一致，否则报出来的错只是换了个样子。</div></details>',
+        '在 Negative matches 里找一条记录，说明它缺少哪个类或哪项配置。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：那条记录形如 Negative matches 下的某个 XxxAutoConfiguration，后面跟 Did not match because: @ConditionalOnClass did not find required class，或 @ConditionalOnProperty 的值不匹配。<b>为什么</b>：每条自动配置的全部条件都成立才生效，报告把第一个不成立的条件和原因写出来，这就是「为什么没生效」的答案。<b>要点</b>：缺类就补依赖，缺属性就补配置；用 --debug 或 <code>/actuator/conditions</code> 复现，改完再看它是否从 Negative 挪到 Positive。</div></details>',
       ] }
     ]
   };
@@ -460,31 +454,25 @@
 
       { h: '3.13 常见追问' },
       { list: [
-        '<b>问：@Controller 和 @RestController 能同时用吗？</b>答：不需要。@RestController 已经包含 @Controller，重复标注没有意义；需要返回页面时才用 @Controller。',
-        '<b>问：@RequestBody 和 @ModelAttribute 怎么区分？</b>答：前者读请求体并按 JSON 反序列化，后者把表单或查询参数按字段绑定，两者适用的 Content-Type 不同。',
-        '<b>问：@RequestParam 和 @PathVariable 能混用吗？</b>答：能。路径变量来自 URL 模板，查询参数来自问号后面的键值对，一个方法里同时用两者很常见，注意名字不要重复。',
-        '<b>问：GET 请求能用 @RequestBody 吗？</b>答：语法上可以，但 GET 通常没有请求体，很多客户端和代理会丢弃它。查询条件应该用 @RequestParam 或路径变量。',
-        '<b>问：为什么我的异常处理器没生效？</b>答：检查它是否在扫描范围内、异常类型是否匹配、是否被更具体的处理器抢先；还要注意 @RestControllerAdvice 与 @ControllerAdvice 的返回方式不同。',
-        '<b>问：跨域怎么处理？</b>答：可以在 Controller 上加 @CrossOrigin，或实现 WebMvcConfigurer 的 addCorsMappings，或在网关统一处理。生产环境更推荐网关统一配置。',
-        '<b>问：@RestController 和 @Controller 的区别？</b>答：@RestController 等于 @Controller 加 @ResponseBody，类里所有方法默认写响应体，返回视图名会被当成字符串写出去。',
-        '<b>问：拦截器里能改响应体吗？</b>答：preHandle 阶段还没有响应体；postHandle 时视图已确定但未渲染；要改响应内容，用 ResponseBodyAdvice 或 Filter 包装响应。',
-        '<b>问：静态资源为什么也被 DispatcherServlet 处理？</b>答：默认映射是根路径，静态资源由 ResourceHttpRequestHandler 处理；如果自定义了映射路径，静态资源可能落到 404，需要额外配置。',
-      { p: '如果项目里同时有页面和接口，可以把视图解析器配成前后缀，接口方法用 @ResponseBody 明确返回数据。不要依赖“方法返回字符串就一定是视图”这种隐式规则，显式标注能让接手的人少踩坑。' },
-        '<b>问：前后端分离还需要 ViewResolver 吗？</b>答：通常不需要。返回值由消息转换器写回；只有需要服务端渲染模板时才配置视图解析器。',
-        '<b>问：接口耗时统计放哪一层？</b>答：想统计到具体方法用拦截器或 AOP；想统计包含容器开销的完整耗时用 Filter。'
+        '<b>问：@RestController 和 @Controller 有什么区别？能同时标吗？</b><br>答：@RestController 等于 @Controller 加 @ResponseBody，类里所有方法默认把返回值当响应体写出去；@Controller 的方法返回值默认当视图名交给视图解析器，要返回数据得在方法或类上补 @ResponseBody。两个注解同时标没有意义，@RestController 已经包含了 @Controller。项目里既有页面又有接口时，建议类上统一用 @RestController，需要渲染页面的方法单独用 @Controller 编写；不要依赖「返回字符串就是视图名」这种隐式规则，显式标注接手的人一眼就懂。',
+        '<b>问：@RequestBody 和 @ModelAttribute 怎么区分？</b><br>答：前者读请求体的原始字节，交给 HttpMessageConverter 按 JSON 反序列化，要求 Content-Type 是 application/json；后者把查询字符串或表单字段按名字逐个绑定到对象属性，走数据绑定而不是反序列化。两者不能混用，同一个参数既标 @RequestBody 又标 @ModelAttribute 会绑定失败。顺带回答一个常见追问——GET 能不能用 @RequestBody：语法上能，但 GET 通常没有请求体，很多代理和客户端会直接丢掉，查询条件请改用 @RequestParam 或路径变量。',
+        '<b>问：@RequestParam 和 @PathVariable 能混用吗？</b><br>答：能，而且很常见：路径变量来自 URL 模板 <code>/users/{id}</code>，查询参数来自问号后面的键值对 <code>?page=1&amp;size=20</code>，一个方法里同时用两者完全合法。要注意名称别重复，以及缺失时的行为：@RequestParam 默认必填，缺失抛 MissingServletRequestParameterException 返回 400，加 required = false 或 defaultValue 才能放宽；@PathVariable 类型不匹配抛 MethodArgumentTypeMismatchException，同样是 400，但错误信息不会告诉你哪个参数错了，得自己接管异常处理。',
+        '<b>问：为什么我的异常处理器没生效？</b><br>答：按四步查。第一，类是否在扫描范围内，且标了 @RestControllerAdvice 或 @ControllerAdvice；第二，@ExceptionHandler 的异常类型是否真的匹配，写 Exception 兜底会抢在更具体的处理器前面；第三，返回方式对不对——@RestControllerAdvice 直接返回对象，@ControllerAdvice 需要 @ResponseBody 或返回 ModelAndView；第四，异常是不是在进入 Controller 之前就抛了，404、415 这类由框架处理，根本走不到你的处理器。',
+        '<b>问：跨域怎么处理？</b><br>答：三个位置，粒度从粗到细：网关统一配置（生产首选，一处生效全站）、WebMvcConfigurer 的 addCorsMappings、Controller 或方法上的 @CrossOrigin。要注意跨域失败大多不是配置没写，而是预检请求 OPTIONS 被拦了——拦截器或鉴权过滤器忘了放行 OPTIONS，浏览器看到的是 CORS 错误，服务端日志里反而没有异常。另外 allowCredentials 为 true 时不能用通配符 * 作为 origin，必须写具体域名。',
+        '<b>问：拦截器里能改响应体吗？</b><br>答：preHandle 阶段还没产生响应；postHandle 时视图已确定但尚未渲染；afterCompletion 时响应已经写出去了。想在写出之前改内容，用 ResponseBodyAdvice（配合 @ControllerAdvice）在序列化前拿到对象，或者用 Filter 包装 HttpServletResponse 换一个可缓存的输出流。只想加响应头（traceId、耗时）在拦截器里就能做，afterCompletion 是最合适的位置，那时耗时已经完整。',
       ] },
 
       { h: '3.14 自测与练习' },
       { ol: [
-        '写一个 /api/books/{id} 接口和一个 /api/books?name= 查询接口，分别用 @PathVariable 和 @RequestParam，并用 curl 验证。',
-        '给创建接口加上 @Valid 校验，故意传空名字和负年龄，观察默认 400 响应，再改写成统一错误结构。',
-        '实现一个参数解析器，把请求头里的用户 id 直接注入 Controller 方法参数。',
-        '给接口加上分段耗时日志，分别记录参数解析、业务调用和序列化的时间。',
-        '写一个登录拦截器，对 /api/** 生效、放行 /api/login，验证未登录时返回 401 JSON。',
-        '写一个 HandlerInterceptor 记录每个请求耗时，并观察它与 Filter 的执行顺序。',
-        '用 @ControllerAdvice 把参数校验异常转换成统一 JSON，并用 curl 验证状态码。',
-        '用 Filter 给每个请求生成 traceId 放进 MDC，在日志里输出，观察同一次请求的日志能否串起来。',
-        '分别制造 404、400、415、500，记录每种情况下的响应体和日志，整理成排查清单。'
+        '写一个 /api/books/{id} 接口和一个 /api/books?name= 查询接口，分别用 @PathVariable 和 @RequestParam，并用 curl 验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>curl -i localhost:8080/api/books/42</code> 返回该 id 的 JSON；<code>curl -i "localhost:8080/api/books?name=java"</code> 返回匹配列表；把 42 换成 abc 得到 400。<b>为什么</b>：@PathVariable 从 URL 模板取值，@RequestParam 从查询字符串取值；路径变量还要按声明类型做转换，转不了就抛 <code>MethodArgumentTypeMismatchException</code>，由框架转成 400，而映射没命中给的是 404。<b>要点</b>：<code>@GetMapping("/api/books/{id}")</code> 配 <code>@PathVariable Long id</code>；<code>@GetMapping("/api/books")</code> 配 <code>@RequestParam(required = false) String name</code>，缺省值写 <code>@RequestParam(defaultValue = "java")</code>。Spring Boot 3 用 PathPatternParser，默认不再匹配尾部斜杠，<code>/api/books/42/</code> 会 404。curl 的 URL 要加引号，否则 &amp; 被 shell 吃掉。</div></details>',
+        '给创建接口加上 @Valid 校验，故意传空名字和负年龄，观察默认 400 响应，再改写成统一错误结构。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：默认返回 400，响应体是 Spring 的错误结构，含 timestamp、status、error、path；改写后返回自定义的 code、message 和字段级错误列表。<b>为什么</b>：@Valid 触发 Bean Validation，校验失败抛 <code>MethodArgumentNotValidException</code>，默认由框架直接转成 400，不经过你的业务代码；Spring Boot 3 的默认错误体仍是 timestamp、status、error、path 这套结构，打开 <code>spring.mvc.problemdetails.enabled=true</code> 才会变成 RFC 7807 的 problem+json。<b>要点</b>：DTO 字段加 <code>@NotBlank String name</code>、<code>@Min(1) Integer age</code>，Controller 参数加 @Valid；注解来自 <code>jakarta.validation</code>，Boot 3 换成 jakarta 命名空间后沿用 javax 会编译不过。再用 @RestControllerAdvice 接住 MethodArgumentNotValidException，把 getFieldErrors 拼成统一结构。<code>@Min</code> 对 null 放行，非空要再加 @NotNull；嵌套对象要标 @Valid 才会级联校验。</div></details>',
+        '实现一个参数解析器，把请求头里的用户 id 直接注入 Controller 方法参数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：方法参数声明成 <code>@LoginUser User user</code>，请求头带 userId 时参数直接被填好，不带头时为 null 或按你的实现直接 401。<b>为什么</b>：HandlerMethodArgumentResolver 在参数绑定阶段被调用，supportsParameter 决定它管哪种参数，resolveArgument 负责从请求里取值。<b>要点</b>：实现这两个方法后注册到 WebMvcConfigurer 的 addArgumentResolvers；注解名不要和 @RequestParam 之类冲突，否则框架内置解析器先命中，你的永远不执行。</div></details>',
+        '给接口加上分段耗时日志，分别记录参数解析、业务调用和序列化的时间。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：一次请求打印三段耗时，例如参数解析 3ms、业务 120ms、序列化 8ms，三段之和接近总耗时。<b>为什么</b>：只有拆开才知道瓶颈在绑定、业务还是 JSON 序列化，只看总耗时无法判断该优化哪一层。<b>要点</b>：HandlerInterceptor 的 preHandle 记开始、postHandle 记业务结束、afterCompletion 记整体结束；序列化发生在返回值写出阶段，用 ResponseBodyAdvice 或包装的 Filter 更准；耗时写进结构化日志字段或 MDC。</div></details>',
+        '写一个登录拦截器，对 /api/** 生效、放行 /api/login，验证未登录时返回 401 JSON。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不带 token 请求 /api/orders 返回 401 且响应体是 JSON；请求 /api/login 不被拦截，正常返回。<b>为什么</b>：preHandle 返回 false 就中断后续处理，此时必须自己写响应，否则客户端拿到的是空响应；放行靠 excludePathPatterns。<b>要点</b>：<code>registry.addInterceptor(loginInterceptor).addPathPatterns("/api/**").excludePathPatterns("/api/login")</code>；拦截器里 <code>response.setStatus(401)</code> 加 <code>setContentType("application/json;charset=UTF-8")</code> 再写出错误 JSON；状态码要用 setStatus 设置，只在响应体里写 401 客户端不认。</div></details>',
+        '写一个 HandlerInterceptor 记录每个请求耗时，并观察它与 Filter 的执行顺序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同一次请求，Filter 打印的耗时不小于拦截器的耗时，差值就是容器到 DispatcherServlet 之间的开销；顺序上 Filter 先进后出，拦截器包在它里面。<b>为什么</b>：Filter 在 Servlet 容器层，能包住静态资源和 404 在内的所有请求；拦截器在 DispatcherServlet 内部，只对匹配到 Handler 的请求生效。<b>要点</b>：Filter 用 chain.doFilter 前后打点，拦截器用 preHandle 与 afterCompletion 打点；对比两者差值就能看出框架层占了多少时间。</div></details>',
+        '用 @ControllerAdvice 把参数校验异常转换成统一 JSON，并用 curl 验证状态码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>curl -i -X POST -H "Content-Type: application/json" -d {"name":""}</code> 得到 400 加统一结构 JSON，而不是 Spring 默认的错误体。<b>为什么</b>：校验失败抛 MethodArgumentNotValidException，被 @ExceptionHandler 捕获后由消息转换器写回，状态码由 ResponseEntity 决定。<b>要点</b>：处理器里读 <code>ex.getBindingResult().getFieldErrors()</code>，返回 <code>ResponseEntity.status(400).body(...)</code>；顺手把 404、405 也接过来，避免状态码被一律改成 500；嵌套对象要在字段上再加 @Valid 才会级联校验。</div></details>',
+        '用 Filter 给每个请求生成 traceId 放进 MDC，在日志里输出，观察同一次请求的日志能否串起来。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：一次请求的每行日志都带同一个 traceId，能按 traceId 把 Controller、Service、SQL 串成一条链路；并发时不同请求的 traceId 不串。<b>为什么</b>：MDC 底层是 ThreadLocal，只在当前线程可见；同步链路天然有效，线程池或异步任务需要显式传递。<b>要点</b>：Filter 里 <code>MDC.put("traceId", id)</code>，finally 里 <code>MDC.clear()</code>，否则线程复用会把上一个请求的 traceId 带过来；logback 的 pattern 里加 <code>%X{traceId}</code>。</div></details>',
+        '分别制造 404、400、415、500，记录每种情况下的响应体和日志，整理成排查清单。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：404 无匹配映射，日志里没有异常；400 是参数绑定或校验失败，日志有绑定警告或 MethodArgumentNotValidException；415 是 Content-Type 不对，日志通常什么都没有；500 日志里必有堆栈。<b>为什么</b>：四种状态码分别对应映射、参数、内容协商、业务异常四个阶段，越靠前的阶段框架处理得越沉默。<b>要点</b>：415 先补 <code>-H "Content-Type: application/json"</code>；404 先看包扫描和 context-path 有没有多余斜杠；500 直接搜异常首行；把响应体特征记下来，下次按表定位。</div></details>',
       ] }
     ]
   };
@@ -616,30 +604,25 @@
 
       { h: '4.12 常见追问' },
       { list: [
-        '<b>问：MyBatis 的 Mapper 接口没有实现类，为什么能调用？</b>答：MyBatis 用 JDK 动态代理生成实现，方法调用被转发到 MapperMethod，根据接口全限定名和方法名找到对应 SQL 执行。',
-        '<b>问：为什么 MyBatis 的更新返回 0？</b>答：可能是条件没匹配到行，也可能是值没变化被数据库判定为无更新；先看影响行数和实际参数，再怀疑事务。',
-        '<b>问：JPA 的 EntityManager 能注入到 Controller 吗？</b>答：技术上可以，但会延长持久化上下文、破坏分层，也让事务边界变得模糊。只在 Service 层使用。',
-        '<b>问：JPA 的 save 到底是插入还是更新？</b>答：主键为空时走 persist（插入），主键不为空时走 merge（先查再更新）。所以不要手动给新对象设一个不存在的 id。',
-        '<b>问：为什么查询结果字段是 null？</b>答：列名与属性名不匹配，且没开驼峰映射或没写 resultMap。先用日志打印实际 SQL 和结果集确认。',
-        '<b>问：@Transactional 能加在接口上吗？</b>答：可以但不推荐。Spring 默认用 CGLIB 代理类，接口上的注解在某些配置下不生效；写在实现类的方法上最稳妥。',
-        '<b>问：两个框架能一起用吗？</b>答：可以，但要共享同一个 DataSource 和事务管理器，否则跨框架的操作不在同一个事务里。',
-        '<b>问：Mapper 能被扫描到，调用却报 Invalid bound statement？</b>答：namespace 或语句 id 与接口方法不匹配，或 XML 不在 mapper-locations 覆盖的路径下。',
-        '<b>问：JPA 的 save 会立刻发 SQL 吗？</b>答：不一定，可能延迟到事务提交或 flush；想立刻拿到自增 id，可以用 saveAndFlush。',
-        '<b>问：@Transactional 和 @Async 能一起用吗？</b>答：可以，但异步方法在新线程执行，事务上下文不会自动传播，需要各自管理事务边界。',
-        '<b>问：懒加载异常怎么彻底避免？</b>答：在事务内把需要的数据转成 DTO，或者用 EntityGraph 一次性取回；不要依赖 Open Session in View 这种延长会话的做法。'
+        '<b>问：Mapper 接口没有实现类，为什么能调用？</b><br>答：启动时 MapperScannerConfigurer（或 @MapperScan）扫描接口，给每个接口注册一个 FactoryBean，真正干活的是 JDK 动态代理生成的代理对象。代理把方法调用转成 MappedStatement 的 id 去执行，再把 ResultSet 映射成返回值。所以接口上不能有业务逻辑，也不能重载——方法名就是 SQL 的标识。<code>@Mapper</code> 加在接口上，或者在启动类写 <code>@MapperScan("com.example.mapper")</code> 批量扫描，两种写法二选一，重复反而容易漏。',
+        '<b>问：update 语句明明执行了，为什么返回 0？</b><br>答：返回值是「受影响的行数」，不是「成功的语句数」。最常见的两种 0：更新的值与库里完全一样，MySQL 默认 affectedRows 就是 0；或者 where 条件没命中任何行。想区分这两种情况，可以在 JDBC URL 上加 useAffectedRows=true，或先 select 一次确认条件。另外别忘了事务还没提交时，别的连接查不到改动，这也是「执行了却看不到」的常见错觉。',
+        '<b>问：save 到底是插入还是更新？saveAndFlush 又差在哪？</b><br>答：先看主键。主键为 null 走 persist（插入），主键有值走 merge（先查再决定插入还是更新），所以不是「有值就一定更新」，查不到照样插入。save 只把对象放进持久化上下文，flush 才真正发 SQL，因此 save 之后立刻用原生 SQL 查询可能查不到。saveAndFlush 强制同步发 SQL，适合需要立刻拿到数据库生成值（自增主键、默认值、触发器结果）的场景；两者都要在事务提交后才对其他连接可见。',
+        '<b>问：@Transactional 能加在接口上吗？和 @Async 一起用为什么失效？</b><br>答：能标在接口或方法上，但只有基于接口的 JDK 动态代理才认，换成 CGLIB 代理（类没有接口时默认走它）就读不到接口上的注解，事务静默失效——所以规范要求标在实现类或实现方法上。@Async 与 @Transactional 写在同一个方法上时，方法体在新线程里执行，事务上下文没有传播过去，等于没有事务；正确做法是先开事务再异步，或把异步方法拆到另一个 Bean 里。同一个类内部调用带注解的方法也不生效，因为绕过了代理。',
+        '<b>问：懒加载异常怎么彻底避免？</b><br>答：LazyInitializationException 的根因是实体出了持久化上下文之后才去初始化关联集合。三种解法按推荐度排：查询时用 join fetch 或 @EntityGraph 把需要的数据一次取回；用 DTO 投影，只查要展示的字段，根本不带代理；确实需要延迟加载时，把访问放在 @Transactional 方法内，或显式调用 Hibernate.initialize。不要把 spring.jpa.open-in-view 当解法——它把 Session 拉到整个请求周期，掩盖了问题还让连接持有时间变长。',
+        '<b>问：EntityManager 能注入 Controller 吗？</b><br>答：技术上能，@PersistenceContext 或构造注入都可以，但这是把持久化细节漏到 Web 层：事务边界没了，懒加载一定炸，Service 的分层也就失去意义。正确姿势是 Controller 只接收和返回 DTO，事务与实体操作全在 Service 里。真要绕过分层做只读查询，也放进 Repository 的自定义实现，别在 Controller 里开事务。顺带一提，混用 MyBatis 和 JPA 时必须共用同一个 DataSource 与事务管理器，否则两边的事务互相看不见。',
       ] },
 
       { h: '4.13 自测与练习' },
       { ol: [
-        '用原生 JDBC 写一次按 id 查询，再分别用 MyBatis 和 JPA 实现，比较三者的代码量。',
-        '用 JdbcTemplate 实现一个查询，再对比 MyBatis 版本的代码量。',
-        '对比 MyBatis 与 JPA 在同一个分页查询上的 SQL 日志，记录各自发了几条语句。',
-        '把一条 MyBatis 查询里的 ${} 改成 #{}，构造一个带 OR 1=1 的参数，观察行为差异。',
-        '写一个带三个可选条件的动态查询，验证不传任何条件时 SQL 是否仍然合法。',
-        '把一条拼接排序字段的 SQL 改成白名单校验，尝试传入非法字段并验证被拒绝。',
-        '造一个自调用场景让 @Transactional 失效，再用拆分 Bean 的方式修复并对比。',
-        '给转账方法加 @Transactional，故意在扣款后抛异常，验证两边余额都没有变化。',
-        '构造一个 N+1 场景，用日志统计 SQL 条数，再用 JOIN FETCH 优化并对比。'
+        '用原生 JDBC 写一次按 id 查询，再分别用 MyBatis 和 JPA 实现，比较三者的代码量。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：JDBC 版二十多行（拿连接、拼 SQL、设参、遍历 ResultSet、关资源），MyBatis 版一条 XML 加一个接口方法共五行左右，JPA 版直接 <code>findById</code> 一行。<b>为什么</b>：三者抽象层次不同，JDBC 把结果集映射和资源管理都摊给调用方，MyBatis 只消掉映射和资源管理，JPA 连 SQL 都替你生成。<b>要点</b>：JDBC 用 try-with-resources 关连接；MyBatis 写 <code>&lt;select id="findById" resultType="Book"&gt;select * from book where id = #{id}&lt;/select&gt;</code>；JPA 只写 <code>repository.findById(id)</code>。</div></details>',
+        '用 JdbcTemplate 实现一个查询，再对比 MyBatis 版本的代码量。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：JdbcTemplate 版约十行，SQL 写在 Java 字符串里，结果用 RowMapper 手工映射；MyBatis 版 SQL 搬进 XML，Java 侧只剩一个接口方法。<b>为什么</b>：JdbcTemplate 消掉的是连接和异常转换这类样板，映射仍要自己写；MyBatis 把 SQL 与映射都外置，收益在语句多、需要动态 SQL 时才明显。<b>要点</b>：<code>jdbcTemplate.query("select * from book where id = ?", new Object[]{id}, rowMapper)</code>；注意占位符是 ? 而不是 #{}，两者的绑定机制完全不同。</div></details>',
+        '对比 MyBatis 与 JPA 在同一个分页查询上的 SQL 日志，记录各自发了几条语句。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：MyBatis 手写分页发两条（一条 count、一条 limit 查询）；JPA 用 Pageable 也发两条；不写 count 的 JPA 查询只发一条，但拿不到总数。<b>为什么</b>：分页必须知道总数才能算页数，所以多数实现会额外发一条 count；PageHelper 是把 limit 拼到原 SQL 上，JPA 则由方言生成。<b>要点</b>：开 <code>mybatis.configuration.log-impl=org.apache.ibatis.logging.stdout.StdOutImpl</code> 与 <code>spring.jpa.show-sql=true</code> 对比；数据量大时 count 才是瓶颈，可改成「不查总数、只看有没有下一页」。</div></details>',
+        '把一条 MyBatis 查询里的 ${} 改成 #{}，构造一个带 OR 1=1 的参数，观察行为差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：用 ${} 拼 <code>or 1=1</code> 时条件被当成 SQL 片段执行，返回全表数据；改成 #{} 后整个字符串被当成一个值去比较，查不到任何行。<b>为什么</b>：${} 是字符串直接拼接，参数里的 SQL 语法会进入语句结构；#{} 是预编译占位符，参数永远只是值，不参与语法解析。<b>要点</b>：只用 #{}；确实要动态列名或排序时用白名单校验，不要期望 #{} 能用在标识符位置（那里它会变成带引号的字符串常量而报语法错）。</div></details>',
+        '写一个带三个可选条件的动态查询，验证不传任何条件时 SQL 是否仍然合法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个条件都不传时，日志里打印的 SQL 应为 <code>select * from book</code>，没有悬空的 where 或多余的 and；只传中间一个条件时也能正常执行。<b>为什么</b>：动态 SQL 用 <code>&lt;where&gt;</code> 自动补 where 并裁掉开头的 and/or，用 <code>&lt;if test="..."&gt;</code> 决定是否拼接条件。<b>要点</b>：<code>&lt;where&gt;&lt;if test="name != null"&gt;and name = #{name}&lt;/if&gt;...&lt;/where&gt;</code>；字符串条件判空要写 <code>name != null and name != ""</code>，否则空串会拼出恒不成立的条件。</div></details>',
+        '把一条拼接排序字段的 SQL 改成白名单校验，尝试传入非法字段并验证被拒绝。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：传入 <code>order by id; drop table book</code> 时接口返回 400 或抛业务异常，SQL 日志里看不到非法片段；传合法字段时排序正常生效。<b>为什么</b>：排序字段是 SQL 结构的一部分，只能用字符串拼接，必须靠白名单把它限制在已知列名里，参数化解决不了这个问题。<b>要点</b>：<code>Set.of("id","price","create_time").contains(sort) ? sort : "id"</code>，或用枚举映射前端传的字段名；非法值直接拒绝而不是静默改成默认值，否则漏洞只是被藏起来。</div></details>',
+        '造一个自调用场景让 @Transactional 失效，再用拆分 Bean 的方式修复并对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：类内 <code>this.save()</code> 调用标了 @Transactional 的方法，异常后数据仍在库里；把方法搬到另一个 Bean 再注入调用后正常回滚。<b>为什么</b>：事务靠代理实现，自调用走的是 this 引用，绕过了代理对象，注解形同虚设。<b>要点</b>：验证时开 <code>logging.level.org.springframework.transaction=DEBUG</code>，失效场景日志里没有 Creating new transaction；修复用拆分 Bean 或注入自身代理，不要用 AopContext.currentProxy 这种隐蔽写法。</div></details>',
+        '给转账方法加 @Transactional，故意在扣款后抛异常，验证两边余额都没有变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：抛出 RuntimeException 后，转出方余额未减少，也没有多出转入记录；去掉 @Transactional 再跑一次，扣款已经落库。<b>为什么</b>：同一个事务里两条 update 要么一起提交要么一起回滚，异常触发回滚时前面的改动被撤销。<b>要点</b>：方法上标 <code>@Transactional(rollbackFor = Exception.class)</code>；验证必须另开连接查库（或另发一次请求），在未提交的事务里查会看到自己的改动而产生误判。</div></details>',
+        '构造一个 N+1 场景，用日志统计 SQL 条数，再用 JOIN FETCH 优化并对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：查 10 个订单再逐个取明细时，日志里有 11 条 SQL；改成 JOIN FETCH 后只剩 1 条，返回结果里明细已初始化。<b>为什么</b>：关联默认按需加载，每条主记录访问关联集合就补一次查询，条数随记录数线性增长；JOIN FETCH 在一条语句里把关联数据一起取回。<b>要点</b>：<code>@Query("select distinct o from Order o join fetch o.items")</code>；一对多 join 会产生重复主记录，务必加 distinct；用 <code>spring.jpa.show-sql=true</code> 前后对比条数。</div></details>',
       ] }
     ]
   };
@@ -775,28 +758,25 @@
 
       { h: '5.13 常见追问' },
       { list: [
-        '<b>问：日志里要不要打印完整请求体？</b>答：调试时可以，生产要谨慎：请求体可能含敏感信息，也可能非常大。更稳妥的做法是打印关键字段和请求 id。',
-        '<b>问：Docker 镜像越小越好吗？</b>答：小意味着拉取快、攻击面小，但不要为了小牺牲可调试性；保留 jcmd、jstack 等工具，或使用 distroless 加临时调试容器，都是可接受的折中。',
-        '<b>问：-Xmx 设置多大合适？</b>答：容器里让堆占容器内存的 60% 到 75%，留出元空间、线程栈、直接内存和系统缓存的空间；设置后用压测验证，而不是凭感觉。',
-        '<b>问：为什么容器里的 Java 看起来内存超了限制？</b>答：堆只是一部分，还有元空间、线程栈、Netty 直接内存、JIT 代码缓存。JDK 8 早期版本不识别容器限制，需要升级或显式设置。',
-        '<b>问：jar 和镜像哪个是交付物？</b>答：jar 是构建产物，镜像是部署产物。CI 里两者都应该有版本号，镜像里包含 jar，保证可追溯。',
-        '<b>问：为什么容器里日志时间差八小时？</b>答：容器默认时区常是 UTC，JVM 也跟着走。设置 TZ=Asia/Shanghai 或挂载 /etc/localtime，日志时间才对得上。',
-        '<b>问：健康检查通过就一定没问题吗？</b>答：不一定。健康检查只说明进程和关键依赖可用，业务正确性还要靠监控指标和冒烟测试。',
-        '<b>问：滚动发布时旧实例还能接请求吗？</b>答：可以，但需要 readiness 探针和优雅停机。收到停止信号后先摘流量，再等待处理中的请求完成。',
-        '<b>问：日志采集会不会影响性能？</b>答：同步写磁盘在大流量下会有影响，可以用异步 appender 或直接输出到标准输出，由容器运行时统一采集。'
+        '<b>问：日志里能打请求体吗？</b><br>答：能，但要克制。请求体可能含密码、手机号、身份证，直接整段打印等于把敏感数据抄进日志系统，很多合规场景这是明确禁止的。常见做法是把请求包装成 ContentCachingRequestWrapper 再读，或写 Filter 只记录方法、路径、状态码和耗时，正文按需开启。响应体同理，尤其是带 token 的登录接口。排查期间临时打开要记得关，DEBUG 级别的脱敏日志比全量 dump 有用得多。',
+        '<b>问：-Xmx 该设多大？</b><br>答：先看容器内存，再留出堆外空间。堆只是 JVM 内存的一部分，还要给元空间、线程栈、直接内存、GC 自身结构留余量，经验上堆占容器限额的 50%–70%。容器里优先用 <code>-XX:MaxRAMPercentage=70</code> 让它跟随限额自适应，硬写 -Xmx 反而容易在限额变化时越界。真正的依据是压测出来的常驻集，不是拍脑袋的比例；设完用 jcmd 或 /actuator/metrics 观察老年代峰值与 GC 后回收量。',
+        '<b>问：容器里的 Java 为什么内存超限被杀了？</b><br>答：典型的 OOMKilled，被杀的是进程不是 JVM——JVM 自己没抛 OutOfMemoryError，容器 cgroup 到限额直接 SIGKILL。原因通常是堆按宿主机内存算（老 JDK 或关掉了容器感知），或堆外占用没算进去。Java 10 以后默认开启 UseContainerSupport，会自动按 cgroup 限额算；如果显式写了 -Xmx 又小于限额，再看线程数、直接内存、Netty 的堆外缓冲。排查看 <code>docker inspect</code> 的 OOMKilled 字段和 cgroup 的 memory.max。',
+        '<b>问：容器里时间差八小时怎么办？</b><br>答：镜像默认是 UTC，JVM 又优先读时区环境，容器里没有 tzdata 时改 TZ 也不一定生效。三种做法：镜像里装 tzdata 并设 <code>TZ=Asia/Shanghai</code>；启动参数加 <code>-Duser.timezone=Asia/Shanghai</code>；或干脆全链路用 UTC 存储、展示层再转。要比时间的具体值而不是字符串，就别依赖默认时区。数据库连接的时区参数也要显式写，Connector/J 8.0.23 起 serverTimezone 更名为 connectionTimeZone，不写它驱动就按自己猜的时区换算，问题会在夏令时或跨时区时突然冒出来。',
+        '<b>问：健康检查通过了是不是就没问题？</b><br>答：不是。liveness 只告诉你进程活着，readiness 才决定要不要把流量导进来；接口能返回 200 也不代表依赖可用。要让检查有意义，readiness 里应包含数据库连通、关键下游可达这些真实依赖，且检查本身要轻量、有超时，别把检查写成一次全量查询。另外首次启动慢的应用要配 startupProbe 或足够的初始延迟，否则还没初始化完就被判死重启，形成反复重启的假故障。',
+        '<b>问：滚动发布时旧实例还在接请求怎么办？</b><br>答：两步一起做才干净。先把 readiness 置为不就绪让负载均衡停止导流，再等一个「排空窗口」（至少覆盖最慢请求和长连接），最后才发 SIGTERM；应用侧要注册优雅停机，Spring Boot 配 <code>server.shutdown=graceful</code> 并给足 <code>spring.lifecycle.timeout-per-shutdown-phase</code>。顺序错了就会出现新老实例同时处理、请求打到正在关闭的实例上超时。发布窗口内还要盯错误率，只看「发布成功」的结论往往滞后于真实故障。',
       ] },
 
       { h: '5.14 自测与练习' },
       { ol: [
-        '给一个项目配置 logback-spring.xml，实现控制台加文件双输出、按天滚动、保留 7 天，并验证滚动是否生效。',
-        '把日志格式改成 JSON，并在日志平台里按 traceId 查询一次完整请求。',
-        '用 mvn clean package 打出 jar，分别在本地和另一台机器上用 java -jar 启动，记录两次的 JVM 版本与默认时区。',
-        '写一个 Dockerfile，用多阶段构建把镜像体积压到只含 JRE 和 jar，并用非 root 用户运行。',
-        '给日志加上 traceId：在 Filter 里生成并放进 MDC，验证同一次请求的多行日志能串起来。',
-        '把镜像改成非 root 用户运行，并配置优雅停机，观察停止时是否还有请求被中断。',
-        '用 docker compose 拉起应用和 MySQL，故意不配健康检查，观察应用启动失败的过程，再补上依赖条件。',
-        '开启 Actuator，只暴露 health 和 metrics，用 curl 检查 liveness 与 readiness 的返回。',
-        '模拟一次发布失败（例如把数据库密码改错），按本章的顺序排查，并写出回滚步骤。'
+        '给一个项目配置 logback-spring.xml，实现控制台加文件双输出、按天滚动、保留 7 天，并验证滚动是否生效。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：控制台照常打印，logs/app.log 同时出现完整日志；把系统时间往后调或临时把 maxHistory 改小，旧的 app.log.2026-10-01.gz 被删除，目录里最多保留 7 天。<b>为什么</b>：appender 决定输出目的地，RollingFileAppender 配 TimeBasedRollingPolicy 才按天切分，maxHistory 控制保留代数，超过的自动清理。<b>要点</b>：<code>&lt;appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender"&gt;</code> 配 <code>&lt;fileNamePattern&gt;logs/app.%d{yyyy-MM-dd}.log.gz&lt;/fileNamePattern&gt;</code> 与 <code>&lt;maxHistory&gt;7&lt;/maxHistory&gt;</code>；文件名带 %d 才会自动滚动。</div></details>',
+        '把日志格式改成 JSON，并在日志平台里按 traceId 查询一次完整请求。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：标准输出每行是一个 JSON 对象，含 timestamp、level、logger、message、traceId 字段；在 Kibana 或 Grafana 里按 traceId 过滤，能取到这次请求的全部日志行。<b>为什么</b>：结构化日志把字段从文本里解放出来变成可检索的键，纯文本只能全文匹配，字段级过滤做不了。<b>要点</b>：用 logstash-logback-encoder 的 <code>&lt;encoder class="net.logstash.logback.encoder.LogstashEncoder"/&gt;</code>；traceId 通过 MDC 注入（encoder 自动带上 MDC 字段），pattern 里也可写 <code>%X{traceId}</code>。</div></details>',
+        '用 mvn clean package 打出 jar，分别在本地和另一台机器上用 java -jar 启动，记录两次的 JVM 版本与默认时区。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：本地 <code>java -version</code> 是 25，另一台机器可能是 17 或 21；区域设置一致时两边时区都会打印 Asia/Shanghai，容器或境外机器上多半是 UTC，日志时间相差八小时。<b>为什么</b>：JVM 版本和时区来自运行环境而不是 jar 包，同一份产物在不同机器上会长出不同行为，这也是「本地好的线上挂」的常见来源。<b>要点</b>：<code>mvn clean package -DskipTests</code> 后 <code>java -jar target/app.jar</code>；查时区用 <code>date</code> 或启动加 <code>-Duser.timezone</code>；用 <code>java -version</code> 与 <code>mvn -v</code> 对齐编译和运行版本。</div></details>',
+        '写一个 Dockerfile，用多阶段构建把镜像体积压到只含 JRE 和 jar，并用非 root 用户运行。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：最终镜像从数百 MB 降到一百多 MB，<code>docker run --rm image whoami</code> 输出非 root 用户，容器内 java -version 显示 25 且能正常启动应用。<b>为什么</b>：多阶段构建只把构建产物 copy 进运行阶段，源码、Maven 缓存、编译工具链都不进镜像；非 root 运行缩小了被攻破后的权限。<b>要点</b>：<code>FROM maven:3-eclipse-temurin-25 AS build</code> 与 <code>FROM eclipse-temurin:25-jre</code>；<code>COPY --from=build /app/target/*.jar app.jar</code>；加 <code>USER 10001</code>，先 COPY pom.xml 再 COPY 源码以命中依赖层缓存，并用 .dockerignore 排除 target；镜像标签按当前公布版本可以写 maven:3-eclipse-temurin-25 与 eclipse-temurin:25-jre，但标签随时会变，落地前一定去 Docker Hub 确认该 tag 存在，也不要依赖 :latest。</div></details>',
+        '给日志加上 traceId：在 Filter 里生成并放进 MDC，验证同一次请求的多行日志能串起来。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：一次请求的 Controller、Service、SQL 日志都带同一个 traceId；并发压测时不同请求的 traceId 互不串。<b>为什么</b>：MDC 底层是 ThreadLocal，日志组件渲染时从当前线程取值；线程复用会让上一个请求的值残留，所以必须清理。<b>要点</b>：Filter 里 <code>MDC.put("traceId", UUID.randomUUID().toString())</code>，finally 里 <code>MDC.clear()</code>，pattern 加 <code>%X{traceId}</code>；异步线程池要显式把 MDC 传过去，否则子线程里是空的。</div></details>',
+        '把镜像改成非 root 用户运行，并配置优雅停机，观察停止时是否还有请求被中断。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>docker stop</code> 时日志出现 waiting for active requests to complete，正在处理的请求返回 200 而不是连接被重置；持续压测期间停止容器，错误数为 0。<b>为什么</b>：优雅停机先停止接收新请求、等已进入的请求处理完再关线程池，硬 kill 会把处理中的请求直接切断。<b>要点</b>：<code>server.shutdown=graceful</code> 配 <code>spring.lifecycle.timeout-per-shutdown-phase=30s</code>；docker stop 的默认超时只有 10 秒，要用 <code>docker stop -t 40</code> 或 compose 的 stop_grace_period 覆盖；非 root 用户下日志与临时目录要有写权限。</div></details>',
+        '用 docker compose 拉起应用和 MySQL，故意不配健康检查，观察应用启动失败的过程，再补上依赖条件。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：不配任何依赖条件时应用先于 MySQL 就绪启动，报 Communications link failure 或 Connection refused，容器退出；加 <code>depends_on</code> 配 healthcheck 后应用等数据库就绪再启动，一次成功。<b>为什么</b>：compose 默认只保证容器启动顺序，不保证服务就绪；MySQL 镜像启动到能接受连接还有几秒空窗，应用这时连不上就崩。<b>要点</b>：给 mysql 服务写 <code>healthcheck: test: ["CMD","mysqladmin","ping","-h","localhost"]</code>，应用侧写 <code>depends_on: mysql: condition: service_healthy</code>；应用本身也该有重试，别把启动顺序当唯一保障。</div></details>',
+        '开启 Actuator，只暴露 health 和 metrics，用 curl 检查 liveness 与 readiness 的返回。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>curl localhost:8080/actuator/health/liveness</code> 与 readiness 都返回 <code>{"status":"UP"}</code>；访问 /actuator/env 返回 404，说明没暴露。<b>为什么</b>：liveness 表示进程该不该重启，readiness 表示能不能接流量，两者语义不同，探针用错会出现反复重启或流量打到没准备好的实例；暴露面收窄是为了不在公网泄露配置与运行信息，/actuator/env 返回 404 就是它没在 include 列表里。<b>要点</b>：<code>management.endpoints.web.exposure.include=health,metrics</code> 配 <code>management.endpoint.health.probes.enabled=true</code>；只有跑在 Kubernetes 上探针组才默认开启，本地要手动打开。默认响应只有 <code>{"status":"UP"}</code>，想看 db、diskSpace 的明细要再加 <code>management.endpoint.health.show-details=always</code>。</div></details>',
+        '模拟一次发布失败（例如把数据库密码改错），按本章的顺序排查，并写出回滚步骤。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：新版本启动即失败，日志里是 Access denied for user 或 HikariPool 初始化超时；按「看日志 → 查配置来源 → 比对环境变量」的顺序能在几分钟内定位到密码来源被旧值覆盖。<b>为什么</b>：配置有优先级，环境变量会盖过配置文件，改错的地方不一定是生效的地方；发布失败必须能一键回到上一个可用版本。<b>要点</b>：先 <code>kubectl logs</code> 或 <code>docker logs</code> 取异常首行，再确认配置来源（环境变量、配置中心、挂载文件）；回滚命令写进清单，如 <code>kubectl rollout undo deployment/app</code> 或切回上一个镜像 tag，并留观察窗口看错误率。</div></details>',
       ] }
     ]
   };

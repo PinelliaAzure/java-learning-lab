@@ -518,6 +518,129 @@ rule(12, '附加：js/curriculum-order.js 的 ORDER 覆盖全部模块且已生�
   }
 });
 
+/* ---------- 附加规则 13/14 的公共零件：章尾两节的定位与统计 ---------- */
+function normHead(h) {
+  return String(h).replace(/^\d+(\.\d+)*\s*/, '').trim();
+}
+function cjkCount(s) {
+  const m = String(s).match(/[\u4e00-\u9fff]/g);
+  return m ? m.length : 0;
+}
+function noTags(s) {
+  return String(s).replace(/<[^>]+>/g, '');
+}
+function blockKey(b) {
+  const ks = Object.keys(b || {});
+  return ks.length ? ks[0] : '?';
+}
+function chapterIds() {
+  return Object.keys(TEXTBOOK).sort();
+}
+function tailSections(tb) {
+  const blocks = (tb && tb.blocks) || [];
+  const heads = [];
+  blocks.forEach(function (b, i) { if (b.h != null) heads.push(i); });
+  const out = [];
+  heads.forEach(function (start, k) {
+    const end = k + 1 < heads.length ? heads[k + 1] : blocks.length;
+    const body = [];
+    for (let i = start + 1; i < end; i++) body.push(blocks[i]);
+    out.push({ h: blocks[start].h, body: body });
+  });
+  return out;
+}
+
+/* ---------- 附加规则 13：章尾倒数第二节「常见追问」格式统一 ---------- */
+rule(13, '附加：章尾倒数第二节「常见追问」为 1 flow（可选）+ 1 个 3–6 条 list，条条含问/答前缀', function (r) {
+  const ids = chapterIds();
+  const bad = [];
+  let withList = 0; let qa = 0; let withFlow = 0;
+  ids.forEach(function (id) {
+    const secs = tailSections(TEXTBOOK[id]);
+    if (secs.length < 2) { bad.push(id + '：章尾不足两节（实得 ' + secs.length + ' 节）'); return; }
+    const faq = secs[secs.length - 2];
+    if (normHead(faq.h).indexOf('常见追问') < 0) {
+      bad.push(id + '：倒数第二节不是「常见追问」，实为「' + faq.h + '」');
+      return;
+    }
+    let list = null; let flows = 0;
+    faq.body.forEach(function (b) {
+      const k = blockKey(b);
+      if (k === 'flow') { flows++; if (flows > 1) bad.push(id + '：常见追问出现多个 flow 块'); return; }
+      if (k === 'list') { if (list) bad.push(id + '：常见追问出现多个 list 块'); else list = b.list; return; }
+      bad.push(id + '：常见追问含不允许的块「' + k + '」');
+    });
+    if (!list) { bad.push(id + '：常见追问缺 list 块'); return; }
+    withList++; qa += list.length; if (flows === 1) withFlow++;
+    if (list.length < 3 || list.length > 6) bad.push(id + '：常见追问 ' + list.length + ' 条，要求 3–6 条');
+    list.forEach(function (it, k) {
+      const n = k + 1; const s = String(it);
+      if (!/^<b>问：/.test(s)) bad.push(id + '：常见追问第 ' + n + ' 条未以「<b>问：」开头');
+      if (s.indexOf('<details') >= 0) bad.push(id + '：常见追问第 ' + n + ' 条含 details（应写成纯文本问答）');
+      const at = s.indexOf('<br>答：');
+      if (at < 0) { bad.push(id + '：常见追问第 ' + n + ' 条缺「<br>答：」'); return; }
+      const c = cjkCount(noTags(s.slice(at + 6)));
+      if (c < 50) bad.push(id + '：常见追问第 ' + n + ' 条答案仅 ' + c + ' 汉字，要求 50–320');
+      if (c > 320) bad.push(id + '：常见追问第 ' + n + ' 条答案 ' + c + ' 汉字，要求 50–320');
+    });
+  });
+  r.facts.push(ids.length + ' 章章尾 / ' + withList + ' 个 list / ' + qa + ' 条问答 / ' + withFlow + ' 章带 flow');
+  bad.slice(0, 40).forEach(function (s) { r.issues.push(s); });
+  if (bad.length > 40) r.issues.push('……另有 ' + (bad.length - 40) + ' 条同类问题省略');
+});
+
+/* ---------- 附加规则 14：章尾末节「自测与练习」答案折叠完整 ---------- */
+rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可选 1 p 前置 + 1 note 后置），每题折叠三要素齐全', function (r) {
+  const ids = chapterIds();
+  const bad = [];
+  let withOl = 0; let total = 0; let okQ = 0;
+  ids.forEach(function (id) {
+    const secs = tailSections(TEXTBOOK[id]);
+    if (!secs.length) { bad.push(id + '：没有任何 h 小节'); return; }
+    const self = secs[secs.length - 1];
+    if (normHead(self.h).indexOf('自测与练习') < 0) {
+      bad.push(id + '：末节不是「自测与练习」，实为「' + self.h + '」');
+      return;
+    }
+    let ol = null; let pBefore = 0; let noteAfter = 0;
+    self.body.forEach(function (b) {
+      const k = blockKey(b);
+      if (k === 'ol') { if (ol) bad.push(id + '：自测与练习出现多个 ol 块'); else ol = b.ol; return; }
+      if (k === 'p') { if (ol) bad.push(id + '：自测与练习的 p 块出现在 ol 之后'); else pBefore++; return; }
+      if (k === 'note') { if (!ol) bad.push(id + '：自测与练习的 note 块出现在 ol 之前'); else noteAfter++; return; }
+      bad.push(id + '：自测与练习含不允许的块「' + k + '」');
+    });
+    if (pBefore > 1) bad.push(id + '：自测与练习有 ' + pBefore + ' 个 p 块，上限 1');
+    if (noteAfter > 1) bad.push(id + '：自测与练习有 ' + noteAfter + ' 个 note 块，上限 1');
+    if (!ol) { bad.push(id + '：自测与练习缺 ol 块'); return; }
+    withOl++;
+    if (ol.length < 3 || ol.length > 9) bad.push(id + '：自测与练习 ' + ol.length + ' 题，要求 3–9 题');
+    ol.forEach(function (item, k) {
+      const n = k + 1; const s = String(item); total++;
+      const mark = bad.length;
+      const d = s.indexOf('<details class="tb-ans">');
+      if (d < 0) { bad.push(id + '：自测第 ' + n + ' 题缺 <details class="tb-ans">'); total--; return; }
+      if (s.indexOf('<summary>参考答案</summary>') < 0) bad.push(id + '：自测第 ' + n + ' 题的 summary 不是「参考答案」');
+      if (s.indexOf('</details>') < 0) bad.push(id + '：自测第 ' + n + ' 题 details 未闭合');
+      const ds = s.indexOf('<div class="ans-body">');
+      if (ds < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <div class="ans-body">');
+      let body = ds < 0 ? s.slice(d) : s.slice(ds + 22);
+      const cut = body.indexOf('</div></details>');
+      if (cut >= 0) body = body.slice(0, cut);
+      if (/<p[ >]/.test(body)) bad.push(id + '：自测第 ' + n + ' 题答案内含 <p>（answer 里只放行内标签）');
+      if (body.indexOf('<b>预期现象</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>预期现象</b>：');
+      if (body.indexOf('<b>为什么</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>为什么</b>：');
+      if (body.indexOf('<b>要点</b>：') < 0) bad.push(id + '：自测第 ' + n + ' 题缺 <b>要点</b>：');
+      const c = cjkCount(noTags(body));
+      if (c < 80) bad.push(id + '：自测第 ' + n + ' 题答案正文仅 ' + c + ' 汉字，要求 80–400');
+      if (c > 400) bad.push(id + '：自测第 ' + n + ' 题答案正文 ' + c + ' 汉字，要求 80–400');
+      if (bad.length === mark) okQ++;
+    });
+  });
+  r.facts.push(ids.length + ' 章 / ' + withOl + ' 个自测 ol / ' + total + ' 题，折叠答案三要素齐全 ' + okQ + ' 题');
+  bad.slice(0, 40).forEach(function (s) { r.issues.push(s); });
+  if (bad.length > 40) r.issues.push('……另有 ' + (bad.length - 40) + ' 条同类问题省略');
+});
 /* ============================================================
    四、输出
    ============================================================ */

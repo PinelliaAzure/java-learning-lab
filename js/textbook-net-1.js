@@ -129,20 +129,21 @@
 
       { h: '1.15 常见追问' },
       { list: [
-        '<b>为什么是三次握手？</b>两次无法让客户端确认服务端的发送能力，也无法可靠同步初始序列号。',
-        '<b>TCP 一定不丢数据吗？</b>连接正常期间按序可靠；连接断开、进程崩溃时缓冲区里的数据仍可能丢，业务要自己做确认与重试。',
-        '<b>accept 之后为什么还要新开线程？</b>accept 返回的 Socket 上的读写会阻塞，单线程处理会让服务端无法接受新连接。',
-        '<b>短连接和长连接怎么选？</b>请求稀疏、实现简单用短连接；高频调用用长连接或连接池，省掉握手和 TIME_WAIT。',
-        '<b>本地能连、局域网连不上？</b>服务端可能绑在 127.0.0.1，改成 0.0.0.0 或本机网卡地址；也可能是防火墙没放行端口。'
+        '<b>问：为什么是三次握手？</b><br>答：两次不够，因为双方要各自确认两件事：我能发、你能收。客户端发 SYN，服务端回 SYN+ACK，这一句同时确认了客户端的发送能力和自己的接收能力；客户端再回 ACK，服务端才知道自己的 SYN 也送到了、自己的发送能力也被确认。另外 SYN 会各自携带初始序列号，而确认号依赖对方先给出序列号，一来一回至少就是三次。',
+        '<b>问：TCP 一定不丢数据吗？</b><br>答：它保证的只是按序可靠传输，而且只覆盖连接正常期间、已经进入发送缓冲区并且被确认的数据。进程崩溃、机器断电、网线被拔时，缓冲区里还没发出去或没被确认的数据就丢了，对端还可能一直在等。至于「这次下单到底成没成」这种业务语义，必须由幂等键、确认协议或事务来保证，不能指望传输层。',
+        '<b>问：accept 之后为什么还要新开线程？</b><br>答：<code>accept</code> 只做一件事——从内核里已完成三次握手的队列取一个连接，返回一个新的 Socket。这个 Socket 上的 <code>read</code> 和 <code>write</code> 都是阻塞的，如果就在 accept 线程里读写，一个慢客户端就能让服务端再也接不了新连接。所以常见结构是 accept 线程只负责接，读写交给线程池；连接数很大时改用 NIO，一个线程管理成百上千个连接。',
+        '<b>问：短连接和长连接怎么选？</b><br>答：看请求密度和连接代价。请求稀疏、交互很短、客户端不多，用短连接最简单，断了重建就行；服务之间高频调用则必须用长连接或连接池，否则每次都要三次握手、TLS 协商，而且主动关闭的一方会留下一堆 TIME_WAIT，端口耗尽很快变成新故障。判断标准很直接：一次请求的握手成本占比越高，就越该复用连接。',
+        '<b>问：本地能连、局域网连不上？</b><br>答：九成是绑定地址或防火墙。服务端绑在 127.0.0.1 时只有本机能连，要改成 0.0.0.0 或指定网卡地址；其次是防火墙、云安全组有没有放行这个端口。再往下才是路由问题：用 ping 和 telnet 端口分开测，能 ping 通但端口连不上，说明是被拦截而不是网络不通。'
       ] },
 
       { h: '1.16 自测与练习' },
       { ol: [
-        '写一个回声服务端：客户端发一行，服务端原样返回；再开第二个客户端连接，观察 accept 的行为。',
-        '给上面的客户端加读取超时，把服务端改成 sleep 3 秒，验证超时异常。',
-        '解释为什么 <code>readLine</code> 返回 null 代表对方关闭，而不是读到空字符串。',
-        '用 ss 或 netstat 查出本机 80、3306、6379 三个端口分别被哪个进程占用。'
+        '写一个回声服务端：客户端发一行，服务端原样返回；再开第二个客户端连接，观察 accept 的行为。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：第一个客户端发一行收一行；第二个客户端同样能连上，服务端也会为它打印一行新连接日志，但如果服务端在单线程里顺序处理，第一个客户端会明显卡住，它发的内容迟迟没有回音。<b>为什么</b>：三次握手由内核完成，所以第二个连接能建立；但服务端必须回到 <code>accept</code> 才能取到它，而单线程此时正阻塞在第一个连接的 <code>readLine</code> 上。<b>要点</b>：服务端写成 <code>while (true) { Socket s = server.accept(); pool.submit(...) }</code>；客户端写完要 flush，流用 try-with-resources 关。</div></details>',
+        '给上面的客户端加读取超时，把服务端改成 sleep 3 秒，验证超时异常。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：客户端在设定时限（例如 1 秒）后抛 <code>java.net.SocketTimeoutException: Read timed out</code>，而不是一直挂着；服务端 3 秒后照常写出，此时客户端可能已经断开，服务端那一侧会抛 <code>Broken pipe</code> 或写入失败。<b>为什么</b>：<code>setSoTimeout</code> 只对读操作生效，到点抛异常但不会关闭连接；BIO 里根本没有写超时的开关。<b>要点</b>：<code>socket.setSoTimeout(1000)</code> 必须在读之前调用；捕获异常后要显式关闭 socket，否则连接一直泄漏；真要写超时得上 NIO 或异步客户端。</div></details>',
+        '解释为什么 <code>readLine</code> 返回 null 代表对方关闭，而不是读到空字符串。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：对方关闭连接后 <code>readLine</code> 立刻返回 null，循环随之退出；如果对方发的是一个空行，返回的是空字符串，循环会继续往下读。<b>为什么</b>：读到流结束（EOF）时已经没有任何内容可返回，只能用 null 表示「没有下一行了」；而空字符串表示「确实有一行，内容为空」，两者在协议上是完全不同的意思。<b>要点</b>：判断必须写 <code>if (line == null) break;</code>，不能写 <code>line.isEmpty()</code>；用 <code>BufferedReader</code> 读时还要注意字符集，别用平台默认编码。</div></details>',
+        '用 ss 或 netstat 查出本机 80、3306、6379 三个端口分别被哪个进程占用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>ss -ltnp</code> 的 LISTEN 行末尾带 <code>users:((“java”,pid=1234,fd=...))</code>，直接看到进程名和 pid；没被占用的端口在输出里根本不存在。<b>为什么</b>：端口和进程的对应关系在内核的 socket inode 里，<code>ss</code> 通过 netlink 直接读，比解析 /proc 的 netstat 更快也更全；非 root 运行时看不到别人的进程信息。<b>要点</b>：按端口过滤用 <code>ss -ltnp | grep 6379</code>；看不到进程名就是权限不够，加 sudo；UDP 端口要用 <code>-u</code> 而不是 <code>-t</code>。</div></details>'
       ] },
+
     ]
   };
 
@@ -301,21 +302,22 @@
 
       { h: '2.17 常见追问' },
       { list: [
-        '<b>HttpClient 和 HttpURLConnection 怎么选？</b>新代码用 HttpClient：API 清晰，支持异步和 HTTP/2；老代码里的 HttpURLConnection 没必要为了改而改。',
-        '<b>为什么响应 body 是乱码？</b>多半是没按 Content-Type 里的字符集解码，或者服务端声明了错误的字符集。',
-        '<b>sendAsync 的异常去哪了？</b>包在 CompletionException 里，通过 join 抛出，或用 exceptionally、handle 处理。',
-        '<b>HttpServer 能上生产吗？</b>不建议：功能少，缺少成熟的连接管理、安全和可观测性，生产一般用 Spring Boot 或 Netty。',
-        '<b>重试几次合适？</b>通常两到三次，配合退避和上限；非幂等请求要么不重试，要么先做幂等设计。'
+        '<b>问：HttpClient 和 HttpURLConnection 怎么选？</b><br>答：新代码一律用 <code>HttpClient</code>：API 清晰，默认支持 HTTP/2，异步不用自己管线程，超时、重定向、代理都有显式配置项。老代码里的 <code>HttpURLConnection</code> 没必要为了改而改，它没有维护问题，只是难用；等这段代码本来就要动的时候顺手换掉最划算。',
+        '<b>问：为什么响应 body 是乱码？</b><br>答：先看响应头 Content-Type 里有没有 charset。没有的话 <code>HttpClient</code> 会按 UTF-8 解，而服务端可能实际发的是 GBK，中文就变成问号或方块；另一种情况是服务端声明了 charset 却发错编码。排查顺序：打印 Content-Type，打印 body 前几十个字节的十六进制，再对比按不同字符集解出来的结果，一眼就能看出是谁错了。',
+        '<b>问：sendAsync 的异常去哪了？</b><br>答：被包在 <code>CompletionException</code> 里存进了返回的 <code>CompletableFuture</code>。你用 <code>join()</code> 取结果时它才抛出来，真正的异常在 <code>getCause()</code>；如果从头到尾都不 join，这个错误就静默消失了。所以要么用 <code>exceptionally</code> 和 <code>handle</code> 显式兜底，要么在最后统一 join 并捕获。',
+        '<b>问：HttpServer 能上生产吗？</b><br>答：不建议。JDK 自带的 <code>com.sun.net.httpserver</code> 是极简实现，功能止步于路由和基本响应，没有成熟的连接管理、限流、优雅停机，也没有内建的 TLS 与可观测性。它最合适的用途是写测试桩和教学示例；真正的服务交给 Spring Boot、Netty 或 Javalin 这类框架，别自己补一堆轮子。',
+        '<b>问：重试几次合适？</b><br>答：两到三次，配合指数退避和总耗时上限。前提是这个请求可以重试：GET 天然幂等，POST 必须先有幂等键，否则一次超时重试就可能下两单。还要只对可恢复的失败重试，也就是连接超时和 5xx；4xx 是请求本身错了，重试多少次都一样，只会浪费下游资源。'
       ] },
 
       { h: '2.18 自测与练习' },
       { ol: [
-        '启动 TestServer，用 curl 访问 /books/1 和 /books，观察状态码与 Content-Type。',
-        '用 HttpClient 发 GET，打印状态码、Content-Type 和 body。',
-        '写一个 POST 请求，把中文 JSON 发给 TestServer，确认控制台输出不乱码。',
-        '给客户端设 300 毫秒请求超时，访问 /slow，观察异常类型。',
-        '用 sendAsync 同时请求两次 /books/1，比较串行与并行的总耗时。'
+        '启动 TestServer，用 curl 访问 /books/1 和 /books，观察状态码与 Content-Type。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>curl -i</code> 显示 <code>HTTP/1.1 200 OK</code> 与 <code>Content-Type: application/json; charset=utf-8</code>；<code>/books</code> 返回数组，<code>/books/1</code> 返回单个对象，访问 <code>/books/99</code> 则返回 404 和一段错误 JSON。<b>为什么</b>：<code>HttpServer</code> 按 context 前缀匹配路径，处理函数要自己解析路径参数、自己决定状态码和响应头，没有框架的自动序列化。<b>要点</b>：<code>sendResponseHeaders(code, len)</code> 里的 len 必须和实际写出的字节数一致，否则客户端会一直等 body 或直接截断；用 -1 表示流式、长度未知。</div></details>',
+        '用 HttpClient 发 GET，打印状态码、Content-Type 和 body。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：打印出 <code>200</code>、<code>application/json; charset=utf-8</code> 和那段 JSON 原文。<b>为什么</b>：<code>statusCode()</code> 取自状态行，<code>headers().firstValue("content-type")</code> 拿到的是原始头值，<code>body()</code> 已按该头的 charset 解码成字符串，缺省按 UTF-8，所以中文能直接打印；服务端漏写 charset 又用 GBK 时就会乱码，这时改用 <code>ofString(StandardCharsets.GBK)</code>。<b>要点</b>：<code>HttpClient.newHttpClient()</code> 全局建一个复用；要配超时、代理或 HTTP/2 就用 <code>HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()</code>，别每次请求都新建。URL 里有中文或空格要先编码，否则 <code>URI.create</code> 直接抛 <code>IllegalArgumentException: Illegal character in path</code>。</div></details>',
+        '写一个 POST 请求，把中文 JSON 发给 TestServer，确认控制台输出不乱码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：服务端打印出的中文完全正确，响应里也没有问号或方块。<b>为什么</b>：<code>BodyPublishers.ofString(json)</code> 默认按 UTF-8 编码，而服务端如果直接 <code>new String(bytes)</code> 或不指定字符集地包 <code>InputStreamReader</code>，就会按平台默认编码解，在 Windows（GBK）上立刻乱码。<b>要点</b>：两端都把字符集写死成 <code>StandardCharsets.UTF_8</code>，请求头再带上 <code>Content-Type: application/json; charset=utf-8</code>，三处一起对齐才稳。</div></details>',
+        '给客户端设 300 毫秒请求超时，访问 /slow，观察异常类型。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：约 300 毫秒后抛 <code>java.net.http.HttpTimeoutException: request timed out</code>，它继承自 <code>IOException</code>；而服务端 3 秒后仍然会把响应写完。<b>为什么</b>：<code>HttpRequest.Builder.timeout()</code> 限制的是整次请求的总时长，到点就把这次交换取消并以超时异常完成；它和客户端的 <code>connectTimeout</code> 是两个独立开关，一个管连接、一个管整体。<b>要点</b>：<code>HttpTimeoutException</code> 要单独捕获，提示「稍后重试」而不是「系统错误」；超时后服务端可能还在干活，幂等键能防重复副作用。</div></details>',
+        '用 sendAsync 同时请求两次 /books/1，比较串行与并行的总耗时。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：串行总耗时约等于两次之和（每次 300 毫秒就约 600 毫秒），并行约等于最慢的那一次（300 毫秒出头）。<b>为什么</b>：<code>sendAsync</code> 立刻返回 <code>CompletableFuture</code>，两次请求同时在途，<code>allOf</code> 等的是最慢的一个；串行时第二次必须等第一次彻底结束才能开始。<b>要点</b>：默认 <code>HttpClient</code> 自带连接池，两次请求可以复用连接；计时用 <code>System.nanoTime()</code>，并且要等 join 之后再停表。</div></details>'
       ] },
+
     ]
   };
 })();

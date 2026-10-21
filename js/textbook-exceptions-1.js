@@ -224,25 +224,24 @@ public class ReadFileDemo {
       ] },
       { h: '1.13 常见追问' },
       { list: [
-        '<b>问：受检异常能不能干脆在 main 上写 throws Exception？</b> 能编译，但等于把处理责任交给了 JVM 的默认处理器，用户看到的是堆栈而不是友好提示。学习阶段可以这样图省事，生产代码不推荐。',
-        '<b>问：try 里 return 了，finally 还会执行吗？</b> 会。JVM 先算返回值并暂存，再执行 finally，最后返回暂存值；除非 finally 里也 return，那就返回 finally 的值。',
-        '<b>问：catch (Exception e) 能捕获 Error 吗？</b> 不能。Error 和 Exception 是 Throwable 下平行的两支，catch Exception 接不住 OutOfMemoryError。',
-        '<b>问：为什么 catch 顺序反了会编译失败？</b> 因为前面的宽类型会把后面的子类型全部截胡，后面的 catch 永远不可达，编译器直接判定为错误。',
-        '<b>问：try-with-resources 里 close 抛异常会怎样？</b> 如果 try 块也抛了异常，close 的异常会被 addSuppressed 挂到原异常上；如果 try 块正常，close 的异常正常向外抛。',
-        '<b>问：finally 里修改对象字段，返回值能看到吗？</b> 能。return 暂存的是引用，finally 改的是同一个堆对象的内容；但如果 finally 让引用指向新对象，返回值不受影响。',
-        '<b>问：捕获后打印日志再抛出，算不算重复处理？</b> 在同一层既记录又抛出，通常会造成上层重复记录。约定是“要么在这里处理完，要么记录必要的上下文后向上抛，只让最外层记录一次完整堆栈”。'
+        '<b>问：受检异常能不能干脆在 main 上写 throws Exception？</b><br>答：能编译，但等于把处理责任交给 JVM 的默认处理器：main 声明 throws Exception 只是把异常转给启动器，JVM 打印堆栈后线程退出，退出码变成 1，用户看到的是堆栈而不是提示。学习阶段图省事可以这样写，生产代码应该在真正能处理的那一层捕获：读配置失败就报「配置文件缺失或缺字段」，而不是把 IOException 直接甩给终端。至少要 catch 后打印人能看懂的提示，再决定要不要非零退出。',
+        '<b>问：try 里 return 了，finally 还会执行吗？</b><br>答：会。JVM 先算出 return 表达式的值并存到栈上的临时槽，再执行 finally，最后返回那个暂存值；所以 finally 里改局部变量看不到效果，改对象字段却能看到（改的是同一个堆对象）。若 finally 里也 return，它的值会覆盖原返回值，原异常也会被丢弃，这就是禁止在 finally 里 return、throw 的原因。唯一不执行的例外是 System.exit()、JVM 崩溃或线程被强杀。',
+        '<b>问：为什么把 catch 顺序写反会编译失败？</b><br>答：因为前面的宽类型会把后面的子类型全部截胡。先写 catch (Exception e) 再写 catch (IOException e)，只要异常是 IOException，第一个 catch 就已经匹配，第二个永远不可达，编译器把它当错误（unreachable catch block）而不是警告。正确顺序是从子类到父类：FileNotFoundException、IOException、Exception。并列且互不继承的类型必须用 multi-catch 写成 catch (IOException | SQLException e)，这两个类型之间也不能有继承关系。',
+        '<b>问：try-with-resources 里 close 抛异常会怎样？</b><br>答：分两种。try 块正常结束时，close 抛出的异常照常向外抛，你最先看到它。try 块自己已经抛了异常时，close 的异常不会覆盖它，而是被 addSuppressed 挂到原异常上，用 e.getSuppressed() 才能看到，这样真正的失败原因不会丢。所以排查 TWR 的现场时，除了主异常还要检查 getSuppressed()。反过来手写 finally 关流时，close 的异常会直接覆盖 try 里的异常，这是改用 TWR 的另一个理由。',
+        '<b>问：finally 里修改对象字段，返回值能看到吗？</b><br>答：能，但只到「改内容」这一步。return 暂存的是引用，finally 改的是同一个堆对象，调用者拿到的自然是改后的字段值；如果 finally 让引用指向新对象，改的只是栈上的副本，返回值仍是旧对象。同理，finally 里给 String 重新赋值也无效，因为 String 不可变、赋值只改引用。把这条和「改局部变量无效」放在一起记：栈上的副本不生效，堆上的内容生效。',
+        '<b>问：捕获后打印日志再抛出，算不算重复处理？</b><br>答：在同一层既记录完整堆栈又原样向上抛，通常会造成上层再记一次，一次失败产生多份堆栈，日志被稀释。约定是「要么在这里处理完，要么补充少量业务上下文后向上抛，让最外层记录一次完整堆栈」；中间层确实要留痕，就只记一条带业务标识（订单号、traceId）的短日志，不要把异常对象再当参数传一次。包装时务必保留 cause，否则最外层那个堆栈只剩包装层，根因已经丢了。',
       ] },
       { h: '1.14 自测与练习' },
-      { p: '下面的练习建议先在纸上写出预期输出，再实际运行验证。能准确预测输出，说明你对控制流和 finally 的理解已经到位。' },
+      { p: '下面的练习建议先在纸上写出预期输出，再实际运行验证：能准确预测输出，说明你对控制流和 finally 的理解已经到位。' },
       { ol: [
-        '写一个方法 <code>parseInt(String s)</code>，把字符串转成 int；非法输入时捕获 NumberFormatException，返回 0，并打印原始输入。',
-        '写一个方法，演示 try 中 return、finally 中修改局部变量，验证返回值是否改变，并解释原因。',
-        '写一个方法，依次打开两个实现了 AutoCloseable 的资源，在 close 里打印名字，验证关闭顺序。',
-        '把一段使用 finally 关闭 BufferedReader 的代码改写成 try-with-resources，对比两者的行数和异常处理差异。',
-        '定义一个方法 <code>read(String path) throws IOException</code>，在 main 中分别用 try-catch 和 throws 两种方式处理，观察编译器提示。',
-        '找出下面代码的问题：<code>try { return 1; } catch (Exception e) { return 2; } finally { return 3; }</code>，说明实际返回值和潜在风险。'
+        '写一个方法 <code>parseInt(String s)</code>，把字符串转成 int；非法输入时捕获 NumberFormatException，返回 0，并打印原始输入。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：传 "123" 返回 123 且不打印任何东西；传 "12a" 或空串返回 0，并打印「解析失败: 12a」。<b>为什么</b>：<code>Integer.parseInt</code> 对非数字、空串、超范围（如 "99999999999"）都抛 <code>NumberFormatException</code>，它是 <code>IllegalArgumentException</code> 的子类，属非受检异常，catch 住就能返回兜底值。<b>要点</b>：try 只包住 <code>parseInt</code> 这一行；打印时带上原始输入；注意调用方拿到 0 时无法区分「真解析出 0」和「解析失败」。</div></details>',
+        '写一个方法，演示 try 中 return、finally 中修改局部变量，验证返回值是否改变，并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>int x = 1; try { return x; } finally { x = 100; }</code> 返回 1，尽管 finally 里打印出 100。<b>为什么</b>：return 先把表达式求值存进临时槽，再执行 finally；finally 改的是栈上那个局部变量副本，暂存值不受影响。反过来，若暂存的是对象引用，finally 里改这个对象的字段就会生效，两者别混为一谈。<b>要点</b>：把 finally 换成 <code>return 3</code> 做对照，返回值变 3，try 里的异常还会被吞掉，IDE 也会给 warning；用 <code>javap -c</code> 能看到 istore 与 iload 的先后顺序。真实项目里 finally 只做释放资源，不要写 return、break 或 continue。</div></details>',
+        '写一个方法，依次打开两个实现了 AutoCloseable 的资源，在 close 里打印名字，验证关闭顺序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：按 A、B 顺序打开，输出是「open A / open B / close B / close A」，关闭顺序与声明顺序相反。<b>为什么</b>：try-with-resources 被编译成嵌套的 try-finally，后声明的资源在外层，所以先关；关闭顺序与声明顺序严格相反，和打开顺序正好镜像。<b>要点</b>：如果 B.close 抛异常而 try 里也抛了，B 的异常会被压制，打印 <code>e.getSuppressed().length</code> 可以验证；两个资源用分号分隔写在同一个 try 括号里，别写成嵌套 try。JDK 9 起可以直接写 <code>try (in)</code> 复用已声明的 final 变量，不再要求重新声明。资源必须写在括号里才会被自动关闭，写在 try 内部不算。</div></details>',
+        '把一段使用 finally 关闭 BufferedReader 的代码改写成 try-with-resources，对比两者的行数和异常处理差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：行数从十几行降到五六行；异常行为更安全——close 抛出的异常不再覆盖 try 块里的异常。<b>为什么</b>：TWR 由编译器生成关闭逻辑，并用 addSuppressed 保留主异常；手写 finally 只能靠人记得判空和吞 close 异常。<b>要点</b>：资源变量在 try 括号内声明，作用域只到该 try 块；JDK 9 之后可以直接写一个已有的 effectively final 变量，如 <code>try (in)</code>。两者的读取逻辑完全不变，可直接对比输出。</div></details>',
+        '定义一个方法 <code>read(String path) throws IOException</code>，在 main 中分别用 try-catch 和 throws 两种方式处理，观察编译器提示。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：只 catch 时编译通过，main 签名不变；只给 read 写 throws、main 也不处理时，编译报 <code>unreported exception java.io.IOException; must be caught or declared to be thrown</code>。<b>为什么</b>：受检异常强制调用方表态，要么处理要么继续声明。<b>要点</b>：main 上写 throws 会让 JVM 打印堆栈并退出，退出码非零；更贴近实战的写法是 catch 后用 <code>log.error</code> 记录并包装成非受检异常，或者在 try-with-resources 里读完再处理。</div></details>',
+        '找出下面代码的问题：<code>try { return 1; } catch (Exception e) { return 2; } finally { return 3; }</code>，说明实际返回值和潜在风险。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：实际返回 3，try 里的 return 1 和 catch 里的 return 2 都被 finally 覆盖；如果 try 里先抛异常，异常也会被吃掉。<b>为什么</b>：finally 的 return 会直接改写返回槽，并丢弃挂起的异常对象。<b>要点</b>：IDE 会给出 <code>return inside finally block</code> 警告；正确写法是 finally 只做清理，需要兜底就在 try 之前声明返回值变量，在 finally 之后统一返回。</div></details>',
       ] },
-      { note: '<b>练习提示：</b>第 2 题和第 6 题都要亲手运行，不要凭印象。第 3 题可以自己写一个类实现 AutoCloseable，在 close 里 <code>System.out.println(name)</code>，然后观察输出顺序是否与声明顺序相反。' }
+      { note: '<b>练习提示：</b>第 2 题和第 6 题都要亲手运行，不要凭印象。第 3 题可以自己写一个类实现 AutoCloseable，在 close 里 <code>System.out.println(name)</code>，观察输出顺序是否与声明顺序相反。' }
     ]
   };
 
@@ -538,23 +537,22 @@ public class WrapDemo {
       ] },
       { h: '2.12 常见追问' },
       { list: [
-        '<b>问：业务异常到底该不该继承 RuntimeException？</b> 多数情况应该。业务失败是正常分支，不需要强制每一层表态；但如果某个业务异常确实要求调用方必须处理（例如支付结果未知），可以用受检异常并明确文档。',
-        '<b>问：自定义异常要不要写 serialVersionUID？</b> 建议写。异常可能被序列化到日志、消息队列或远程调用中，显式版本号能避免反序列化失败。',
-        '<b>问：包装异常时 message 应该写什么？</b> 写“这次操作失败的业务上下文”，例如订单号、用户 ID、操作名；不要把底层异常的 message 复制一遍，也不要把堆栈拼进字符串。',
-        '<b>问：全局异常处理器会不会把 Error 也捕获？</b> 取决于写法。<code>@ExceptionHandler(Exception.class)</code> 捕获不到 Error；不要为了“兜住一切”去捕获 Throwable，JVM 级错误应该让它暴露。',
-        '<b>问：异常太多，前端怎么知道该提示什么？</b> 让前端依赖错误码而不是 message；后端为每个码维护一份用户可读文案，message 只用于开发排查。',
-        '<b>问：能不能用异常传递正常返回值？</b> 不建议。异常对象的构造和堆栈填充有成本，语义上也把“正常”和“异常”混在一起，调用方容易漏处理。',
-        '<b>问：同一个异常被多层包装，堆栈会不会很长？</b> 会，但这是有价值的上下文。控制包装层数，避免为了“统一”反复包装同一个异常；打印时用日志框架的异常参数，不要手工拼 cause。'
+        '<b>问：业务异常到底该不该继承 RuntimeException？</b><br>答：多数情况应该。业务失败（余额不足、库存不够）是正常分支，调用方通常只需把原因转成提示，不需要每一层签名都写 throws；用非受检异常能让 Service、Controller 的方法签名保持干净。但如果某个失败调用方必须处理且确实能恢复，例如支付结果未知、需要重试或对账，用受检异常并写进文档是合理的。判断标准就是 2.2 那张图：能否恢复、是否外部环境导致，而不是「大家都这么写」。',
+        '<b>问：自定义异常要不要写 serialVersionUID？</b><br>答：建议写。异常对象常被序列化到日志管道、消息队列、RPC 响应或本地缓存里；不写时 serialVersionUID 由编译器按类结构计算，改一个字段或方法就可能变，老数据反序列化会抛 InvalidClassException。显式声明 <code>private static final long serialVersionUID = 1L;</code> 之后，兼容性由你自己控制，真正破坏兼容的改动再升版本号。注意它只对实现了 Serializable 的异常有意义，Throwable 本身已经实现了。',
+        '<b>问：包装异常时 message 应该写什么？</b><br>答：写「这次操作失败的业务上下文」——订单号、用户 ID、操作名、关键入参，让人不看代码就知道是哪一笔业务出了事，例如「查询订单失败, id=1001」。不要把底层异常的 message 复制一遍（cause 已经带着），也不要把整个堆栈拼进字符串，那会让日志重复且难以结构化检索。三层信息各司其职：上层异常类型表达业务语义，message 表达本次上下文，cause 保留技术根因。',
+        '<b>问：全局异常处理器会不会把 Error 也捕获？</b><br>答：取决于写法。<code>@ExceptionHandler(Exception.class)</code> 捕获不到 Error，因为 Error 和 Exception 是 Throwable 下平行的两支；只有声明 Throwable 才会连 OutOfMemoryError、StackOverflowError 一起接住。不要为了「兜住一切」去捕获 Throwable：JVM 已经不稳定，继续拼响应只会产生更诡异的问题。Error 应该让它暴露，交给进程退出和告警。另外线程池里的异常要靠 UncaughtExceptionHandler 兜，别指望全局处理器。',
+        '<b>问：异常太多，前端怎么知道该提示什么？</b><br>答：让前端依赖稳定的错误码，而不是 message。后端为每个码维护一份用户可读文案（放字典表或前端语言包），message 只用于开发排查；响应体把 code、message、traceId 分开给，前端按 code 分支。这样改文案不用发版，也不会因为拼接字符串把内部细节泄露给用户。错误码要有命名规范（模块加原因），并避免一个码打天下，否则前端只能靠猜。',
+        '<b>问：同一个异常被多层包装，堆栈会不会很长？</b><br>答：会，但这是有价值的上下文——每一层包装都说明了它在做什么。问题不在长，而在无意义的重复：为了「统一」在每层都 new 一个同类型异常，会让堆栈里出现五个几乎一样的 cause 链，真正根因埋在底部。控制办法是只在跨越边界时包装一次（技术层、业务层、协议层各一次），包装时只补充这一层才知道的上下文；打印时用日志框架的异常参数如 <code>log.error("下单失败 orderId={}", id, e)</code>，它会输出完整 Caused by 链，不要手工 getCause 循环。',
       ] },
       { h: '2.13 自测与练习' },
-      { p: '下面的练习覆盖定义、包装、分层和全局处理。建议先写出代码，再故意制造失败，观察日志里能不能还原现场。' },
+      { p: '下面的练习覆盖定义、包装、分层和全局处理。建议先写出代码，再故意制造失败，看日志里能不能还原现场。' },
       { ol: [
-        '定义一个 InsufficientStockException，携带商品 ID、需求数量和实际库存；写一个扣库存方法，在库存不足时抛出它。',
-        '写一个方法读取文件并把内容解析成整数，分别处理 IOException 和 NumberFormatException，最后包装成一个自定义的 ConfigLoadException 抛出，保留 cause。',
-        '设计一个 BusinessException 基类，包含 code 和 message；再写两个子类，分别表示“可重试的超时”和“不可重试的状态冲突”，在 main 中按类型分别处理。',
-        '写一个 validate 方法，校验用户名、年龄、邮箱三个字段，一次性收集所有错误并抛出 ValidationException。',
-        '把一段“每层都 catch 并打印”的代码改成“只在最外层记录一次”，说明修改后日志量和信息完整性的变化。',
-        '列出你当前项目里最容易被吞掉的三个异常，分别给出改进方案，并说明改进后调用方需要做什么。'
+        '定义一个 InsufficientStockException，携带商品 ID、需求数量和实际库存；写一个扣库存方法，在库存不足时抛出它。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：库存 5 时请求 8，抛出的 toString 形如 <code>InsufficientStockException: 库存不足 sku=1001 need=8 stock=5</code>，catch 里能通过 getter 拿到三个字段，不需要解析 message。<b>为什么</b>：把结构化字段做成 final 成员，message 只是它们的展示形式，上层才能据此决定重试还是提示。<b>要点</b>：构造器只留一个 (sku, need, stock)，内部调 super 拼 message；错误码单独给；不要为它改继承 Exception，除非调用方必须恢复。</div></details>',
+        '写一个方法读取文件并把内容解析成整数，分别处理 IOException 和 NumberFormatException，最后包装成一个自定义的 ConfigLoadException 抛出，保留 cause。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：文件不存在时抛 ConfigLoadException，cause 是 <code>NoSuchFileException</code>；内容是 abc 时 cause 是 NumberFormatException；日志里能看到两层 Caused by。<b>为什么</b>：<code>new ConfigLoadException("加载配置失败: " + path, e)</code> 把底层异常作为 cause，日志里就有两层 Caused by，类型信息也保住了，比把 message 拼成字符串更能定位问题。<b>要点</b>：文件不存在时 <code>Files.readString</code> 抛 <code>NoSuchFileException</code>，内容是 abc 时 <code>Integer.parseInt</code> 抛 <code>NumberFormatException</code>。别在 catch 里 <code>throw new RuntimeException(e.getMessage())</code> 丢掉 cause，也别同时 printStackTrace；日志用 <code>logger.error("加载配置失败: " + path, e)</code> 把栈交给框架。自定义异常继承 RuntimeException 还是 Exception，取决于调用方能不能就地处理。</div></details>',
+        '设计一个 BusinessException 基类，包含 code 和 message；再写两个子类，分别表示「可重试的超时」和「不可重试的状态冲突」，在 main 中按类型分别处理。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：catch (BusinessException e) 能统一兜底，而写在它前面的 catch (RetryableTimeoutException e) 能命中具体分支；顺序写反会报 already caught。<b>为什么</b>：catch 按源码顺序匹配，先窄后宽，编译器会检查后面的块是否不可达。<b>要点</b>：基类字段 final 并提供 getCode()；两个子类各自带可重试标记或建议的状态码；区分类型用 catch 顺序或 instanceof，绝对不要比较 message 字符串。</div></details>',
+        '写一个 validate 方法，校验用户名、年龄、邮箱三个字段，一次性收集所有错误并抛出 ValidationException。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个字段全错时异常里带 3 条错误，一次返回给前端；只错一个时带 1 条，不会改一个报一个。<b>为什么</b>：先在方法内用列表累积，再统一抛出，异常本身只是一个载体。<b>要点</b>：异常里的列表用 <code>List.copyOf</code> 包成不可变集合，测试时在 catch 里 add 会抛 UnsupportedOperationException；每条错误用「字段名加原因」的结构体，不要拼成一句话再让前端切分。</div></details>',
+        '把一段「每层都 catch 并打印」的代码改成「只在最外层记录一次」，说明修改后日志量和信息完整性的变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：一次失败从 3 份堆栈变成 1 份；日志里出现一条带业务标识的完整记录，既有请求上下文又有完整 Caused by 链。<b>为什么</b>：中间层重复记录不增加任何信息，只是稀释信号。<b>要点</b>：Service 层删掉 printStackTrace，只在补充上下文时 <code>throw new XxxException("...", e)</code>；Controller 或全局处理器统一 <code>log.error("...", e)</code>；改完要确认异常类型没被吞成 RuntimeException 而丢失状态码映射。</div></details>',
+        '列出你当前项目里最容易被吞掉的三个异常，分别给出改进方案，并说明改进后调用方需要做什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：能写出三处具体位置和改法，例如空 catch、只打印 message、catch 后 return null。<b>为什么</b>：吞异常会把错误变成「看起来正常的空值」，排查时没有堆栈，只能靠猜。<b>要点</b>：每处给出改前与改后两段代码，并写清「失败时调用方看到什么」；新增的处理要能被测试覆盖；用 IDE 的空 catch 警告或 Sonar 规则防止回归。</div></details>',
       ] },
       { note: '<b>练习提示：</b>第 2 题重点检查 cause 是否保留，打印时用 <code>e.getCause()</code> 验证；第 4 题注意异常对象的不可变性，尝试在 catch 里修改错误列表，看看是否会抛 UnsupportedOperationException。' }
     ]
@@ -829,25 +827,24 @@ public class GenericInterface {
       ] },
       { h: '3.12 常见追问' },
       { list: [
-        '<b>问：泛型和 C++ 模板有什么区别？</b> C++ 模板在编译期为每种类型生成一份代码，属于“膨胀式”实例化；Java 泛型在编译后擦除，只保留一份字节码，靠编译期检查和插入强转保证安全。',
-        '<b>问：为什么 List&lt;String&gt; 不能赋给 List&lt;Object&gt;？</b> 因为后者允许 add(Object)，如果前者被当成后者使用，就能往字符串列表里塞整数。数组是协变的，所以 Java 用运行时 ArrayStoreException 兜底；泛型选择在编译期禁止。',
-        '<b>问：&lt;T extends X&gt; 和 &lt;? extends X&gt; 有什么区别？</b> 前者声明一个类型变量，可以在方法体、返回值、多个参数之间复用；后者是通配符，只描述“某种未知子类型”，不能用于声明返回值类型，也不能写入。',
-        '<b>问：什么时候用泛型方法，什么时候用通配符？</b> 如果类型只出现在一个参数里、方法不返回它，用通配符更灵活；如果类型要在多个参数或返回值之间建立关系，用类型变量 T。',
-        '<b>问：泛型会不会影响性能？</b> 不会带来运行时类型检查的开销，因为类型被擦除；但基本类型会装箱，频繁操作时可能比专用类型慢。',
-        '<b>问：@SafeVarargs 什么时候能加？</b> 方法必须是 static、final 或 private，且你确认方法体不会把可变参数数组暴露出去、不会造成堆污染。加错地方编译报错。',
-        '<b>问：原始类型和 &lt;?&gt; 有什么区别？</b> 原始类型完全关闭泛型检查，所有元素退化成 Object；<code>&lt;?&gt;</code> 保留“这是泛型容器”的信息，只是不知道具体类型，仍然禁止写入。'
+        '<b>问：泛型和 C++ 模板有什么区别？</b><br>答：C++ 模板在编译期为每种类型生成一份代码，属于膨胀式实例化，类型在运行期是真实存在的；Java 泛型在编译后擦除，<code>List&lt;String&gt;</code> 和 <code>List&lt;Integer&gt;</code> 共用同一份字节码，靠编译期检查和插入强转保证安全。代价是运行时拿不到实参，所以不能 new T、不能创建泛型数组、不能按泛型参数重载；好处是二进制兼容、类文件不膨胀，代价还包括基本类型仍然要装箱。',
+        '<b>问：为什么 List&lt;String&gt; 不能赋给 List&lt;Object&gt;？</b><br>答：因为后者允许 add(Object)，如果前者被当成后者使用，就能往字符串列表里塞整数。数组是协变的，所以 Java 用运行时 ArrayStoreException 兜底；泛型选择在编译期直接禁止，用「不协变」换取零运行时开销。需要放宽时用通配符：只读给 <code>List&lt;? extends Object&gt;</code>，只写给 <code>List&lt;? super String&gt;</code>，两个方向都不允许越界。',
+        '<b>问：&lt;T extends X&gt; 和 &lt;? extends X&gt; 有什么区别？</b><br>答：前者声明一个类型变量，可以在参数、返回值、方法体之间复用同一个 T，也能调用 X 的方法；后者是通配符，只描述「某种未知子类型」，不能用于声明返回值类型，也不能写入（编译器不知道真实子类型）。经验法则是：类型只出现一次且只读，用通配符；需要在多处建立「同一个类型」的关系，用类型变量。返回类型上尽量给具体类型，别让调用者拿到 <code>? extends T</code>。',
+        '<b>问：什么时候用泛型方法，什么时候用通配符？</b><br>答：如果类型只出现在一个参数里、方法也不返回它，用通配符更灵活，调用方不必被迫推断；如果类型要在多个参数或返回值之间建立关系（例如 <code>map(Function&lt;T, R&gt;)</code>、<code>transfer(List&lt;T&gt;, List&lt;T&gt;)</code>），必须用类型变量。判断方法很直接：把参数里的 T 全换成 <code>&lt;?&gt;</code>，如果编译不过或者返回值不可用，说明你需要类型变量。',
+        '<b>问：泛型会不会影响性能？</b><br>答：不会带来运行时类型检查的开销，因为类型被擦除，字节码里只有必要的 checkcast，接近一次普通强转。真正的成本是装箱：<code>List&lt;Integer&gt;</code> 存基本类型值要装箱，循环里会持续产生小对象；这种场景改用 <code>IntStream</code>、<code>int[]</code> 或专用容器更快。另外泛型不改变算法复杂度，别指望把 Object 容器换成泛型容器就变快。',
+        '<b>问：原始类型和 &lt;?&gt; 有什么区别？</b><br>答：原始类型（<code>List list</code>）完全关闭泛型检查，所有元素退化成 Object，add 什么都能过，编译器只给一条 unchecked 警告；<code>List&lt;?&gt;</code> 保留「这是泛型容器」的信息，只是不知道具体类型，仍然禁止写入（null 除外），读取只能当 Object。所以前者是危险地关掉检查，后者是安全地不关心元素类型。只有对接遗留代码才用原始类型，并且把警告范围缩到最小。',
       ] },
       { h: '3.13 自测与练习' },
-      { p: '练习时先预测编译器会不会报错，再实际编译。能准确判断“哪一行编译失败、为什么”，说明你已经掌握了泛型的检查规则。' },
+      { p: '练习时先预测编译器会不会报错，再实际编译。能准确判断「哪一行失败、为什么」，说明你已经掌握泛型的检查规则。' },
       { ol: [
-        '把 ObjectBox 改写成 Pair&lt;A, B&gt;，保存两个值，提供 getFirst、getSecond 和 swap 方法。',
-        '写一个泛型方法 countIf，接收 List&lt;T&gt; 和 Predicate&lt;T&gt;，返回满足条件的元素个数。',
-        '写一个方法接收 List&lt;? extends Number&gt;，返回最大值；再写一个方法接收 List&lt;? super Integer&gt;，把 1 到 10 填进去。',
-        '实现 PECS 版本的 transfer 方法，把源列表的元素移动到目标列表，并解释两个参数为什么一个用 extends、一个用 super。',
-        '写一个泛型接口 Transformer&lt;T, R&gt;，分别用匿名类和 lambda 实现“字符串转长度”。',
-        '找出下面代码的编译错误并修正：<code>List&lt;Object&gt; list = new ArrayList&lt;String&gt;(); list.add(1);</code>'
+        '把 ObjectBox 改写成 Pair&lt;A, B&gt;，保存两个值，提供 getFirst、getSecond 和 swap 方法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Pair&lt;String, Integer&gt; p = new Pair&lt;&gt;("a", 1);</code> 编译通过，<code>p.swap()</code> 返回 <code>Pair&lt;Integer, String&gt;</code>，取 getFirst 得到 1 且不需要强转。<b>为什么</b>：swap 要在返回值上交换类型参数，签名必须写成 <code>Pair&lt;B, A&gt;</code>，写反就编译不过。<b>要点</b>：字段 private final，类上声明 <code>&lt;A, B&gt;</code>；钻石操作符依赖目标类型推断，<code>var p = new Pair&lt;&gt;(1, "a")</code> 也能推出来。注意 swap 返回的是新 Pair，原对象保持不变：不可变写法里没有原地交换这回事。</div></details>',
+        '写一个泛型方法 countIf，接收 List&lt;T&gt; 和 Predicate&lt;T&gt;，返回满足条件的元素个数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>countIf(List.of(1, 2, 3, 4), n -&gt; n % 2 == 0)</code> 返回 2；换成字符串列表配字符串断言也能编译，说明方法是泛型的。<b>为什么</b>：<code>static &lt;T&gt; long countIf(List&lt;T&gt; list, Predicate&lt;T&gt; p)</code> 用同一个 T 把两个参数绑在一起，Lambda 的类型由目标类型推断。<b>要点</b>：别漏掉方法签名上的 <code>&lt;T&gt;</code>，否则编译器把 T 当类名报 cannot find symbol；想更灵活可以把参数写成 <code>List&lt;? extends T&gt;</code>。</div></details>',
+        '写一个方法接收 List&lt;? extends Number&gt;，返回最大值；再写一个方法接收 List&lt;? super Integer&gt;，把 1 到 10 填进去。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：第一个方法能接收 <code>List&lt;Integer&gt;</code>、<code>List&lt;Double&gt;</code> 并返回 Number；第二个能接收 <code>List&lt;Number&gt;</code> 或 <code>List&lt;Object&gt;</code> 并填进 1 到 10。反过来，向 extends 列表 add 会编译失败，从 super 列表读只能得到 Object。<b>为什么</b>：PECS——extends 是生产者只能读，super 是消费者只能写。<b>要点</b>：比较用 <code>doubleValue()</code>；空列表返回什么先想清楚；两个方法不要共用同一个参数类型。</div></details>',
+        '实现 PECS 版本的 transfer 方法，把源列表的元素移动到目标列表，并解释两个参数为什么一个用 extends、一个用 super。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>transfer(List&lt;Integer&gt; src, List&lt;Number&gt; dst)</code> 编译通过，元素被搬走并按目标元素类型接收。<b>为什么</b>：源只读所以用 <code>List&lt;? extends T&gt;</code>，可以安全地按 T 取出元素；目标只写所以用 <code>List&lt;? super T&gt;</code>，可以安全地 add T；T 由两侧共同推断，实现里不能往 src 里写，也不能从 dst 里读具体类型。<b>要点</b>：方法写成 <code>static &lt;T&gt; void transfer(List&lt;? extends T&gt; src, List&lt;? super T&gt; dst)</code>；两边都写死 <code>List&lt;T&gt;</code> 时 <code>List&lt;Integer&gt;</code> 到 <code>List&lt;Number&gt;</code> 报 <code>incompatible types</code> 编译不过。搬完记得 <code>src.clear()</code>；src 与 dst 是同一个列表时边遍历边删会抛 <code>ConcurrentModificationException</code>，要先复制一份。</div></details>',
+        '写一个泛型接口 Transformer&lt;T, R&gt;，分别用匿名类和 lambda 实现「字符串转长度」。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两种写法都输出 5；匿名类写成 <code>new Transformer&lt;String, Integer&gt;() { ... }</code>，Lambda 写成 <code>Transformer&lt;String, Integer&gt; t = String::length;</code>，后者还能再简写成方法引用。<b>为什么</b>：接口只有一个抽象方法，才能把 Lambda 或方法引用当作目标类型；编译器用这个唯一的抽象方法去匹配参数与返回值，所以 <code>String::length</code> 直接对上 int，再自动装箱成 Integer。<b>要点</b>：接口上加 <code>@FunctionalInterface</code> 让编译器守住这个前提，它允许 default 与 static 方法共存；参数类型可省略。接口一旦有两个抽象方法，Lambda 立刻编译不过，只能退回匿名类或另建接口。Lambda 不能赋值给 Object，也不能直接 new，先赋给函数式接口变量再传。</div></details>',
+        '找出下面代码的编译错误并修正：<code>List&lt;Object&gt; list = new ArrayList&lt;String&gt;(); list.add(1);</code><details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：第一行就报 incompatible types，因为泛型不协变；把左边改成 <code>List&lt;? extends Object&gt;</code> 后，<code>list.add(1)</code> 又报错——extends 通配符只读不写。<b>为什么</b>：编译器不能保证这个列表的真实元素类型是 Object 的超类。<b>要点</b>：两种正确改法：左边写 <code>List&lt;Object&gt; list = new ArrayList&lt;&gt;()</code>（元素本来就是 Object），或者接收任意列表时用 <code>List&lt;?&gt;</code> 只读遍历；不要用原始类型把错误「修」掉。</div></details>',
       ] },
-      { note: '<b>练习提示：</b>第 3 题的两个方法分别对应生产者和消费者；第 6 题要说明“泛型不协变”和“通配符不能写”两个原因，改法可以用 <code>List&lt;? super String&gt;</code> 或直接改成 <code>List&lt;Object&gt;</code>。' }
+      { note: '<b>练习提示：</b>第 3 题的两个方法分别对应生产者和消费者；第 6 题要说明「泛型不协变」和「通配符不能写」两个原因，改法可以用 <code>List&lt;? super String&gt;</code> 或直接改成 <code>List&lt;Object&gt;</code>。' }
     ]
   };
 
@@ -1065,25 +1062,24 @@ public class TypeTokenDemo {
       ] },
       { h: '4.11 常见追问' },
       { list: [
-        '<b>问：既然擦除后都一样，为什么还要写泛型？</b> 为了编译期检查和可读性。它能在写代码时阻止类型错误，并省掉大量强转；运行时虽然擦除，但编译器已经保证了安全（除非你用原始类型绕过）。',
-        '<b>问：擦除是在什么时候发生的？</b> 编译期。javac 先做类型检查，再把泛型信息擦除并生成普通字节码；也可以用 <code>javap -c</code> 看到擦除后的签名和插入的 checkcast。',
-        '<b>问：为什么不能创建泛型数组？</b> 数组在运行时需要元素类型来做存储检查，而 T 已被擦除；如果允许 <code>new T[10]</code>，JVM 不知道该创建什么数组，也无法保证只能放入 T。',
-        '<b>问：桥接方法会不会影响性能？</b> 只多一次方法转发，JIT 通常能内联，实际影响可以忽略。它主要影响反射和字节码工具，遍历方法时要跳过 synthetic/bridge。',
-        '<b>问：@SuppressWarnings(\"unchecked\") 能不能随便加？</b> 不能。它只是让编译器闭嘴，不改变运行时行为。加之前要证明类型安全，并把作用范围缩到最小，最好附上注释说明原因。',
-        '<b>问：TypeToken 和 Class&lt;T&gt; 有什么区别？</b> Class 只能表示原始类型，拿不到 <code>List&lt;User&gt;</code> 这种带参数的泛型；TypeToken 通过匿名子类保留泛型签名，能表达嵌套泛型。',
-        '<b>问：Java 以后会不会支持具体化泛型？</b> 目前没有在主流版本中实现。它会破坏向后兼容，涉及 JVM、反射、字节码的全面改动；现有的 Valhalla 等项目更多关注值类型，而不是重新设计泛型。'
+        '<b>问：既然擦除后都一样，为什么还要写泛型？</b><br>答：为了编译期检查和可读性。它能在写代码时阻止把 Integer 塞进 <code>List&lt;String&gt;</code>，并省掉大量强转；运行时虽然擦除，但编译器已经在所有取值处插入了 checkcast，只要不通过原始类型绕过，类型安全就是有保证的。泛型还让 API 自解释：<code>Map&lt;String, List&lt;Order&gt;&gt;</code> 比 <code>Map</code> 多传递了大量信息，IDE 补全和重构也更可靠。',
+        '<b>问：为什么不能创建泛型数组？</b><br>答：数组在运行时需要元素类型来做存储检查（ArrayStoreException），而 T 已被擦除；如果允许 <code>new T[10]</code>，JVM 不知道该创建什么数组，也无法保证只能放入 T。可以强转 <code>(T[]) new Object[n]</code>，或者传一个 <code>IntFunction&lt;T[]&gt;</code>，前者会有 unchecked 警告，把数组暴露出去还可能堆污染。更稳的方案是用集合，或者用 <code>Array.newInstance(type, n)</code> 配合 <code>Class&lt;T&gt;</code>。',
+        '<b>问：桥接方法会不会影响性能？</b><br>答：只多一次方法转发，JIT 通常能内联，实际影响可以忽略；它主要影响反射和字节码工具，遍历方法时要跳过 synthetic 与 bridge，否则会看到两个同名方法。桥接方法是编译器为维持多态自动生成的：父类擦除后是 <code>Object get()</code>，子类是 <code>String get()</code>，桥接方法负责把调用转给真正的子类方法并插入强转。',
+        '<b>问：@SuppressWarnings("unchecked") 能不能随便加？</b><br>答：不能。它只是让编译器闭嘴，不改变运行时行为；加错地方会把真正的堆污染藏起来，错误延迟到取值强转时才爆 ClassCastException。加之前要能证明类型安全（例如数组只在内部使用、不暴露、不写入错误类型），并把作用范围缩到最小——标在单个局部变量或方法上，不要标在类上；最好附一行注释说明为什么安全。',
+        '<b>问：TypeToken 和 Class&lt;T&gt; 有什么区别？</b><br>答：Class 只能表示原始类型，拿不到 <code>List&lt;User&gt;</code> 这种带参数的泛型；TypeToken 通过匿名子类保留父类的泛型签名，反射用 <code>getGenericSuperclass()</code> 能读到完整的 Type，因此能表达嵌套泛型，Jackson 的 TypeReference、Gson 的 TypeToken 都是这个套路。代价是每次都要 new 一个匿名子类，而且只能表达声明处的类型，无法从对象实例反推实参。',
+        '<b>问：Java 以后会不会支持具体化泛型？</b><br>答：目前没有在主流版本中实现，Java 25 仍然是擦除。具体化泛型会破坏向后兼容，涉及 JVM 指令、反射 API、字节码格式的全面改动，还要处理与现有擦除字节码的混用。Valhalla 项目解决的是值类型与基本类型的泛型化（通过专门化），并不等于重新设计泛型；短期内仍要按「把类型信息显式传进去」的思路设计 API。',
       ] },
       { h: '4.12 自测与练习' },
-      { p: '练习重点是把“源码里的泛型”翻译成“运行时的样子”。建议用 javap 查看编译后的签名，亲眼确认擦除结果。' },
+      { p: '练习重点是把「源码里的泛型」翻译成「运行时的样子」：用 javap 查看编译后的签名，亲眼确认擦除结果。' },
       { ol: [
-        '写一个泛型类 Box&lt;T&gt;，编译后用 <code>javap -c -p</code> 查看 get 方法，找出插入的 checkcast 指令。',
-        '写两个方法 <code>print(List&lt;String&gt;)</code> 和 <code>print(List&lt;Integer&gt;)</code>，观察编译错误，并改成合法的方法名。',
-        '写一个泛型方法 <code>&lt;T&gt; T[] toArray(List&lt;T&gt; list, Class&lt;T&gt; type)</code>，用 <code>Array.newInstance</code> 创建数组。',
-        '用反射打印 StringNode 的所有方法，区分 bridge 方法和普通方法，解释 bridge 的返回类型为什么是 Object。',
-        '写一个 TypeToken 读取 <code>Map&lt;String, List&lt;Integer&gt;&gt;</code> 的完整类型，打印 actual type arguments。',
-        '复现堆污染：用原始类型往 List&lt;String&gt; 里塞一个整数，观察在哪一行抛 ClassCastException，并说明为什么不是 add 时抛。'
+        '写一个泛型类 Box&lt;T&gt;，编译后用 <code>javap -c -p</code> 查看 get 方法，找出插入的 checkcast 指令。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Box.class</code> 里 get 的签名是 <code>()Ljava/lang/Object;</code>，方法体只有 aload、getfield、areturn，没有 checkcast；checkcast 出现在调用方取到值之后。<b>为什么</b>：擦除后字段就是 Object，强转由编译器插在需要具体类型的位置。<b>要点</b>：字段声明 T value 在字节码里是 Object；若有界 <code>T extends Number</code>，签名会变成 Number；用 <code>javap -v</code> 还能看到 Signature 属性保留了尖括号信息。</div></details>',
+        '写两个方法 <code>print(List&lt;String&gt;)</code> 和 <code>print(List&lt;Integer&gt;)</code>，观察编译错误，并改成合法的方法名。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两个方法同时存在时报 <code>name clash: print(List&lt;String&gt;) and print(List&lt;Integer&gt;) have the same erasure</code>。<b>为什么</b>：擦除后两个方法都是 <code>print(List)</code>，JVM 无法区分该调哪一个；泛型参数不参与方法签名，返回类型也不参与，所以只改返回类型同样冲突。<b>要点</b>：改方法名最省事（printStrings、printInts）；也可以加一个标记参数，或统一成 <code>print(List&lt;?&gt;)</code> 在方法体内判断元素类型。注意 <code>print(List&lt;String&gt;)</code> 与 <code>print(List&lt;?&gt;)</code> 也是同一个擦除，不能共存；别指望加大括号、注释或 @Override 能骗过编译器。</div></details>',
+        '写一个泛型方法 <code>&lt;T&gt; T[] toArray(List&lt;T&gt; list, Class&lt;T&gt; type)</code>，用 <code>Array.newInstance</code> 创建数组。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>toArray(list, String.class)</code> 返回真正的 String[]，可以直接赋给 <code>String[]</code>；若改成 <code>(T[]) new Object[n]</code>，返回的实际是 Object[]，调用方赋值时抛 ClassCastException。<b>为什么</b>：<code>Array.newInstance</code> 用运行时的 Class 创建了类型正确的数组，JVM 的存储检查才有据可依。<b>要点</b>：方法签名写 <code>&lt;T&gt; T[]</code>，长度用 list.size()；实际项目里优先用 <code>list.toArray(String[]::new)</code>。顺带一提，返回数组的元素类型在运行期是真的 String，用 getClass().getComponentType() 能直接验证。</div></details>',
+        '用反射打印 StringNode 的所有方法，区分 bridge 方法和普通方法，解释 bridge 的返回类型为什么是 Object。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：方法列表里出现两个 get：<code>String get()</code> 与 <code>Object get()</code>，后者 <code>isBridge()</code> 与 <code>isSynthetic()</code> 都为 true。<b>为什么</b>：父类擦除后是 Object get()，子类重写的是 String get()，签名不同不构成重写，编译器生成桥接方法把调用转过去并插入强转，多态才不失效。<b>要点</b>：遍历时用 isBridge 过滤，否则方法数量永远对不上；用 <code>getDeclaredMethods</code> 看本类，用 getMethods 看可见成员，两者结果不同。</div></details>',
+        '写一个 TypeToken 读取 <code>Map&lt;String, List&lt;Integer&gt;&gt;</code> 的完整类型，打印 actual type arguments。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：打印出 <code>java.util.Map&lt;java.lang.String, java.util.List&lt;java.lang.Integer&gt;&gt;</code>；<code>getActualTypeArguments()</code> 返回两个元素，String 和 <code>List&lt;Integer&gt;</code>，后者还能再取一次实参得到 Integer。<b>为什么</b>：匿名子类 <code>new TypeRef&lt;Map&lt;String, List&lt;Integer&gt;&gt;&gt;() {}</code> 把类型写进了类文件的 Signature 属性。<b>要点</b>：必须写成匿名子类，<code>Map.class</code> 拿不到；第二层取实参前先判断是不是 ParameterizedType，否则会 ClassCastException。TypeToken 也替代不了 Class：拿到 Type 之后仍要自己逐层解析 ParameterizedType。</div></details>',
+        '复现堆污染：用原始类型往 List&lt;String&gt; 里塞一个整数，观察在哪一行抛 ClassCastException，并说明为什么不是 add 时抛。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>List raw = strings; raw.add(42);</code> 只给一条 unchecked 警告、编译通过；异常在 for-each 取到 Integer 做强转那一行抛出 <code>ClassCastException: Integer cannot be cast to String</code>。<b>为什么</b>：运行时容器就是 ArrayList，不保存元素类型；强转由编译器插在取值处，所以错误延迟爆发。<b>要点</b>：加 <code>-Xlint:unchecked</code> 看到警告；必须真的遍历才会复现；修复是全程使用泛型、禁止原始类型。</div></details>',
       ] },
-      { note: '<b>练习提示：</b>第 1 题重点看 <code>checkcast</code> 出现在调用方还是被调用方；第 6 题要能说清“擦除后容器不检查元素类型，强转发生在取值处”，这是堆污染难排查的根本原因。' }
+      { note: '<b>练习提示：</b>第 1 题重点看 <code>checkcast</code> 出现在调用方还是被调用方；第 6 题要能说清「擦除后容器不检查元素类型，强转发生在取值处」，这是堆污染难排查的根本原因。' }
     ]
   };
 
@@ -1342,24 +1338,23 @@ ALICE` },
         '实现基于 invokedynamic 与 LambdaMetafactory，不是匿名类。'
       ] },
       { h: '5.13 常见追问' },
-      { p: '问：Lambda 和匿名内部类到底有什么区别？答：语法更短只是表象。关键区别有三点：<code>this</code> 的指向不同，Lambda 指外围实例，匿名类指自身；编译产物不同，Lambda 用 invokedynamic，匿名类生成独立 class 文件；捕获方式不同，Lambda 用合成字段，匿名类用构造器参数。' },
-      { p: '问：为什么局部变量必须是 final 或 effectively final？答：因为 Lambda 可能比方法活得更久。Java 把局部变量的值复制进 Lambda 对象，如果允许两边各自修改，就无法保证一致。禁止修改是最简单、最不容易出错的选择。成员变量在堆上共享，所以没有这个限制。' },
-      { p: '问：<code>@FunctionalInterface</code> 必须加吗？答：不必须。它只是让编译器检查“这个接口确实只有一个抽象方法”，避免别人后来加方法时悄悄破坏 Lambda 的可用性。写给别人用的函数式接口建议加，自己临时用可以不加。' },
-      { p: '问：Lambda 里能抛异常吗？答：能抛运行时异常；受检异常取决于目标接口的抽象方法有没有声明 <code>throws</code>。内置接口基本都没声明，所以要么在 Lambda 内 try-catch，要么用 5.9 节的包装适配器，要么自定义允许 throws 的接口。' },
-      { p: '问：方法引用和 Lambda 怎么选？答：当 Lambda 只调用一个已有方法、没有任何额外逻辑时，方法引用更短也更清楚；需要固定参数、加判断、做转换时，用 Lambda。两者编译后的行为基本一致，选择标准是可读性。' },
-      { p: '问：Lambda 性能比匿名类差吗？答：不能一概而论。无捕获 Lambda 通常只生成一个实例，调用点链接后接近普通调用；有捕获的会有分配开销，但可能被逃逸分析消除。匿名类同样有对象分配和类加载成本。与其纠结，不如把注意力放在算法复杂度和 IO 上。' },
-      { p: '问：Lambda 里能递归调用自己吗？答：不能直接递归，因为 Lambda 没有名字。可以把 Lambda 赋给一个字段或数组元素，再在体内通过该字段调用；更推荐把递归逻辑写成普通私有方法，再用方法引用。强行在 Lambda 里引用自身，往往还会遇到“变量可能未初始化”的编译错误。' },
+      { list: [
+        '<b>问：Lambda 和匿名内部类到底有什么区别？</b><br>答：语法更短只是表象，关键差异有三点。<code>this</code> 的指向不同：Lambda 里的 this 指外围实例，匿名类里指匿名类自身，所以在 Lambda 里调 <code>this.toString()</code> 得到的是外部对象。编译产物不同：Lambda 用 invokedynamic 在首次调用时链接，不生成独立 class 文件；匿名类每次都生成 <code>Outer$1.class</code>。捕获方式不同：Lambda 捕获值并要求 effectively final，匿名类通过构造器参数持有外部变量。',
+        '<b>问：为什么局部变量必须是 final 或 effectively final？</b><br>答：因为 Lambda 可能比定义它的方法活得更久。Java 在创建 Lambda 对象时把局部变量的值复制进去，如果允许两边各自修改，就无法保证一致——你改的是栈上的副本，Lambda 里看到的还是旧值，这种「看起来能改、其实没改」比编译错误危险得多。禁止修改是最简单、最不容易出错的选择。成员变量在堆上共享，所以没有这个限制，需要可变计数就用字段、数组或 AtomicInteger。',
+        '<b>问：Lambda 里能抛异常吗？</b><br>答：能抛运行时异常；受检异常取决于目标接口的抽象方法有没有声明 <code>throws</code>。内置接口（Function、Consumer 等）基本都没声明，所以在里面调用 <code>Files.readString</code> 会直接编译失败。三条出路：在 Lambda 内部就地 try-catch（适合失败返回默认值）；用 5.9 节的包装适配器把受检异常转成 RuntimeException 并保留 cause；自定义一个允许 throws 的接口，让异常继续往上抛。',
+        '<b>问：方法引用和 Lambda 怎么选？</b><br>答：当 Lambda 只调用一个已有方法、没有任何额外逻辑时，方法引用更短也更清楚，例如 <code>String::length</code>、<code>System.out::println</code>、<code>User::new</code>；需要固定参数、加判断、做类型转换或组合两个调用时，用 Lambda。两者编译后的行为基本一致，选择标准是可读性：读的人一眼能看出你在调哪个方法就用引用，否则用 Lambda 把意图写出来。',
+        '<b>问：Lambda 性能比匿名类差吗？</b><br>答：不能一概而论。无捕获 Lambda 通常只生成一个实例并复用，调用点链接后接近普通方法调用，JIT 还能内联；有捕获的会有一次对象分配，但可能被逃逸分析消除。匿名类同样有对象分配和类加载成本，而且每个匿名类都要单独加载。真正的开销常在看不见的地方：Stream 的管道与装箱、在 Lambda 里做阻塞 IO。与其纠结，不如先写清楚，再用 profiler 找热点。',
+        '<b>问：Lambda 里能递归调用自己吗？</b><br>答：不能直接递归，因为 Lambda 没有名字，体内无法引用自身。可以把 Lambda 赋给一个字段或数组元素，再在体内通过该字段调用（字段必须先初始化）；更推荐把递归逻辑写成普通私有方法，再用方法引用 <code>this::walk</code>。强行在局部变量的初始化表达式里引用自身，还会遇到「variable might not have been initialized」的编译错误。',
+      ] },
       { h: '5.14 自测与练习' },
       { ol: [
-        '把 <code>Collections.sort(list, new Comparator&lt;String&gt;() { ... })</code> 改写成 Lambda 与方法引用两个版本。',
-        '用 <code>Predicate</code> 组合实现“长度大于 3 且以字母 a 开头”的过滤条件，并用 <code>negate</code> 取反。',
-        '写一个 <code>ThrowingFunction</code> 适配器，把 <code>Files.readString</code> 包装成 <code>Function&lt;Path, String&gt;</code>，异常时返回空字符串。',
-        '用 <code>Comparator.comparing</code> 对一组订单按金额降序、金额相同按创建时间升序排序。',
-        '解释为什么 <code>for (int i = 0; i &lt; 3; i++) { list.add(() -&gt; i); }</code> 编译失败，并给出两种修改方式。'
+        '把 <code>Collections.sort(list, new Comparator&lt;String&gt;() { ... })</code> 改写成 Lambda 与方法引用两个版本。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：三个版本输出相同的排序结果；匿名类五六行，Lambda 一行，方法引用再短一些。<b>为什么</b>：Comparator 是函数式接口，唯一抽象方法 <code>compare(String, String)</code> 给出参数与返回类型，所以 <code>(x, y) -&gt; Integer.compare(x.length(), y.length())</code> 的类型可以直接推出来。<b>要点</b>：方法引用版本写成 <code>Comparator.comparingInt(String::length)</code>；<code>Collections.sort(list, c)</code> 也可以换成 <code>list.sort(c)</code>，日常更常用后者。</div></details>',
+        '用 <code>Predicate</code> 组合实现「长度大于 3 且以字母 a 开头」的过滤条件，并用 <code>negate</code> 取反。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：过滤后只剩长度大于 3 且以 a 开头的字符串；<code>p.negate()</code> 得到互补结果，原 p 不受影响。<b>为什么</b>：<code>and</code> 与 <code>negate</code> 都是返回新 Predicate 的默认方法，组合出来的对象无状态、可复用。<b>要点</b>：先给每个条件起变量名再 and，避免一长串链式难读；<code>startsWith("a")</code> 区分大小写，需要忽略就配 toLowerCase；短路顺序也会影响性能，开销小的条件放前面。</div></details>',
+        '写一个 <code>ThrowingFunction</code> 适配器，把 <code>Files.readString</code> 包装成 <code>Function&lt;Path, String&gt;</code>，异常时返回空字符串。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：文件存在时返回内容；路径不存在时返回空字符串、不抛异常，日志里能查到一条 IOException。<b>为什么</b>：自定义接口 <code>@FunctionalInterface interface ThrowingFunction&lt;T, R&gt; { R apply(T t) throws Exception; }</code> 允许 Lambda 声明受检异常，再由包装方法决定兜底策略。<b>要点</b>：包装方法必须返回标准 Function 才能继续用于 Stream；catch 里至少记一条日志，不要静默返回空串；大文件用 readString 会占内存。</div></details>',
+        '用 <code>Comparator.comparing</code> 对一组订单按金额降序、金额相同按创建时间升序排序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出按金额从大到小；金额相同的两笔按创建时间从早到晚。<b>为什么</b>：<code>Comparator.comparing(Order::amount).reversed().thenComparing(Order::createdAt)</code> 中 reversed 只翻转金额这一段，thenComparing 默认仍然是升序。<b>要点</b>：写成 <code>reversed().thenComparing(...).reversed()</code> 会把整体翻回去；金额用 BigDecimal 时 comparing 可以直接用，用 double 要注意精度；<code>comparingInt</code> 能避免装箱。key 可能为 null 时要写成 <code>Comparator.comparing(Person::getName, Comparator.nullsFirst(Comparator.naturalOrder()))</code>，只对 key 兜 null：key 为 null 的元素排最前，但对象本身不能是 null；要连对象一起兜住则写 <code>Comparator.nullsFirst(Comparator.comparing(Person::getName))</code>，对象为 null 也能参与排序。两者差别在于兜的是 key 还是对象。</div></details>',
+        '解释为什么 <code>for (int i = 0; i &lt; 3; i++) { list.add(() -&gt; i); }</code> 编译失败，并给出两种修改方式。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：报 <code>local variables referenced from a lambda expression must be final or effectively final</code>。<b>为什么</b>：i 每轮都在自增，不是 effectively final，编译器不允许捕获一个会变化的局部变量，否则 Lambda 里读到的值无法确定。<b>要点</b>：改法一是每轮复制 <code>int copy = i;</code> 再捕获 copy；改法二是用 <code>IntStream.range(0, 3).forEach(i -&gt; ...)</code>，此时 i 是每轮独立的参数；不要用长度为 1 的数组绕过，那只是把可变状态藏起来。</div></details>',
       ] },
-      { p: '如果某一题卡住，回到对应小节：第 1 题看 5.3 与 5.5，第 2 题看 5.7，第 3 题看 5.9，第 4 题看 5.10，第 5 题看 5.6。不要急着看答案，先让编译器报错，再根据错误信息定位规则，这种学习方式比背语法有效得多。' },
-      { p: '做完这五题，再回头看 5.1 的匿名类写法，你应该能立刻说出它“啰嗦在哪、Lambda 省掉了什么、编译器替你补了什么”。这就是本章要达到的掌握程度：不仅会用，还知道它为什么成立、边界在哪里。' },
-      { p: '自测时建议把每题都真正编译运行一遍，而不是只在脑子里过。Lambda 的很多规则（effectively final、目标类型、受检异常）只有让编译器报一次错，才会变成你自己的知识。遇到看不懂的报错，先看它指向的是“类型不匹配”还是“变量不是 final”，这两类占了初学阶段的绝大多数。' }
+      { note: '<b>练习提示：</b>卡住时回到对应小节：第 1 题看 5.3 与 5.5，第 2 题看 5.7，第 3 题看 5.9，第 4 题看 5.10，第 5 题看 5.6。每题都真正编译运行一遍——effectively final、目标类型、受检异常这些规则，只有让编译器报一次错才会变成你自己的知识；先看报错指向「类型不匹配」还是「变量不是 final」，这两类占了初学阶段的绝大多数。做完再回看 5.1 的匿名类写法，你应该能立刻说出它啰嗦在哪、Lambda 省掉了什么、编译器替你补了什么。' }
     ]
   };
 })();

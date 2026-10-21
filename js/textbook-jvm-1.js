@@ -137,20 +137,20 @@
 
       { h: '1.12 常见追问' },
       { list: [
-        '<b>栈和堆有什么区别？</b>栈线程私有、随方法调用自动进出、存放局部变量和调用现场；堆线程共享、由 GC 管理、存放对象。栈溢出是深度问题，堆溢出是容量或泄漏问题。',
-        '<b>为什么程序计数器不会 OOM？</b>它的大小在 JVM 启动时就固定了，只存一个指令地址，不随程序运行增长，规范也没有为它定义任何 OutOfMemoryError。',
-        '<b>元空间会 OOM 吗？</b>会。它默认不设上限，但受物理内存限制；动态生成大量类（反射、CGLIB、JSP 编译、热部署）或类加载器泄漏时，会抛 Metaspace 或 Compressed class space 溢出。',
-        '<b>堆外内存怎么排查？</b>看进程 RSS 与堆使用量的差值，结合 <code>-XX:MaxDirectMemorySize</code>、Netty 的缓冲区计数、<code>jcmd &lt;pid&gt; VM.native_memory</code>（需开启 NMT）定位。',
-        '<b>-Xms 和 -Xmx 为什么要设成一样？</b>避免运行中堆反复扩容收缩带来的性能抖动，也让内存占用可预测；代价是启动时就占满这些虚拟内存（通常不是物理内存）。'
+        '<b>问：栈和堆有什么区别？</b><br>答：栈线程私有，随方法调用自动进出，一个方法对应一个栈帧，里面放局部变量表、操作数栈、动态链接和返回地址，满了抛 <code>StackOverflowError</code>；堆线程共享，由 GC 管理，放对象实例和数组，满了抛 <code>OutOfMemoryError: Java heap space</code>。所以栈溢出是调用深度问题，先看递归终止条件，必要时调 <code>-Xss</code>；堆溢出是容量或泄漏问题，先看对象为什么回收不掉，再决定调不调 <code>-Xmx</code>。',
+        '<b>问：为什么程序计数器不会 OOM？</b><br>答：它只记录当前线程下一条要执行的字节码指令地址，大小在 JVM 启动时就固定，跑循环、走分支都不会让它增长，规范里也没有为这个区域定义任何 OutOfMemoryError。它是运行时数据区五个区域里唯一不会溢出的一个，代价是它确实很小；执行 native 方法时它的值甚至是未定义的，因为那段代码不由字节码解释器驱动。',
+        '<b>问：元空间会 OOM 吗？</b><br>答：会。它默认不设上限，只受物理内存约束，可以用 <code>-XX:MaxMetaspaceSize</code> 限制；开启指针压缩后还有一块 Compressed Class Space，默认上限 1GB，类特别多时它会先单独溢出。反射、CGLIB 动态代理、JSP 编译、热部署不断生成新类，或者类加载器泄漏导致类无法卸载时，就会抛 Metaspace 或 Compressed class space 溢出。',
+        '<b>问：堆外内存怎么排查？</b><br>答：先看进程 RSS 与堆使用量的差值，如果堆 dump 正常、GC 日志正常但 RSS 持续上涨，就按顺序查直接内存、线程栈、元空间、JNI 这四块。手段包括用 <code>-XX:MaxDirectMemorySize</code> 限制直接内存上限、统计 Netty 的缓冲区计数、用 <code>jcmd &lt;pid&gt; VM.native_memory</code>（需先加 <code>-XX:NativeMemoryTracking=summary</code> 开启，要更细的分类用 <code>detail</code>）看分类明细。报错信息是 <code>OutOfMemoryError: Direct buffer memory</code>。',
+        '<b>问：-Xms 和 -Xmx 为什么要设成一样？</b><br>答：初始值和最大值不同时，运行中堆会反复扩容和收缩，扩容往往伴随一次 Full GC，带来停顿抖动，内存占用也难以预估。设成一样就把这些动作提前到启动阶段，换来更稳定的延迟，代价是启动时就提交这么多内存，不过提交的是虚拟内存，物理内存仍按实际使用增长。容器里还要留出堆外空间，别把上限顶到容器限额。'
       ] },
 
       { h: '1.13 自测与练习' },
       { ol: [
-        '写一个方法，打印当前线程的栈深度，并在 main 里调用三层，观察输出顺序，说明为什么最上面的帧是最近调用的方法。',
-        '把 StackOverflowDemo 的 <code>-Xss</code> 从默认调到 2m，重新运行，记录栈深度的变化，并解释为什么不能靠调大栈来解决所有递归问题。',
-        '用 <code>-Xmx64m</code> 运行 HeapOOM，观察报错前打印的分配进度，再用 <code>-XX:+HeapDumpOnOutOfMemoryError</code> 生成 dump，用 MAT 找到占用最大的对象。',
-        '解释 PoolDemo 中五个比较结果各自的原因；如果把 <code>String g = f + "va"</code> 改成 <code>String g = "ja" + "va"</code>，结果会怎样变化？',
-        '（动手）给自己电脑上的一个 Java 程序加上 <code>-XX:+PrintCommandLineFlags</code> 运行，读出实际生效的堆、栈、收集器参数，并对照本章表格说明每个参数的作用。'
+        '写一个方法打印当前线程的栈深度，并在 main 里经三层方法调用后运行，观察输出顺序，说明为什么最上面的帧是最近调用的方法。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：深度为 5，从上到下依次是 <code>getStackTrace</code>、打印方法自己、第三层、第二层、第一层、<code>main</code>，最上面一条正是刚执行到的那一行。<b>为什么</b>：每调用一个方法就压入一个栈帧，栈是后进先出，最近调用的方法必然在最上面，最早进入的 <code>main</code> 在最下面。<b>要点</b>：用 <code>Thread.currentThread().getStackTrace()</code> 取调用链快照，数组长度就是当前帧数；把打印方法写成无限递归，长度会一路涨到 <code>StackOverflowError</code>。</div></details>',
+        '把 StackOverflowDemo 的 <code>-Xss</code> 从默认调到 2m 重新运行，记录栈深度变化，并解释为什么调大栈解决不了所有递归问题。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：深度明显变大，默认一万次上下，加 <code>-Xss2m</code> 后通常到两三万次甚至更多，报错类型仍是 <code>java.lang.StackOverflowError</code>。<b>为什么</b>：深度约等于「线程栈大小 ÷ 单个栈帧大小」，栈翻倍深度大致也翻倍，但它只是把崩溃点往后推，输入再大照样溢出。<b>要点</b>：命令形如 <code>java -Xss2m StackOverflowDemo</code>；每个线程都占这么大的栈，线程数一多物理内存会被吃掉，所以先改代码把递归转循环，再考虑调参数。</div></details>',
+        '用 <code>-Xmx64m</code> 运行 HeapOOM，观察报错前打印的分配进度，再用 <code>-XX:+HeapDumpOnOutOfMemoryError</code> 生成 dump，用 MAT 找占用最大的对象。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：先连续打印「已分配 10 MB」「已分配 20 MB」一直到几十 MB，堆快满时抛出 <code>java.lang.OutOfMemoryError: Java heap space</code>，进程退出码非 0，同时在指定目录留下一个 hprof 文件。<b>为什么</b>：<code>ArrayList</code> 以强引用持有每个 1MB 数组，对象始终可达，GC 收不掉，堆被吃满就溢出，这不是 GC 太慢而是内存真的不够或不该留。<b>要点</b>：命令 <code>java -Xmx64m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp HeapOOM</code>；MAT 里看 Dominator Tree，<code>byte[]</code> 占绝对多数，再沿 GC Roots 引用链追到那个 List，确认是持有方没释放。</div></details>',
+        '解释 PoolDemo 中五个比较结果各自的原因；如果把 <code>String g = f + "va"</code> 改成 <code>String g = "ja" + "va"</code>，结果会怎样变化？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原样运行输出 true、false、true、true、false；改完之后第五行 <code>a == g</code> 也变成 true。<b>为什么</b>：前四个分别对应字面量复用、<code>new</code> 强制在堆上新建、<code>intern()</code> 返回常量池引用、编译期常量折叠；第五行原本有变量参与只能在运行期拼接，改成两个字面量后 javac 直接折叠成常量池里的 <code>java</code>。<b>要点</b>：javac 只折叠编译期常量，任何变量参与都会退化成运行期拼接。</div></details>',
+        '（动手）给自己电脑上的一个 Java 程序加上 <code>-XX:+PrintCommandLineFlags</code> 运行，读出实际生效的堆、栈、收集器参数，并对照本章表格说明每个参数的作用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：启动时先打印一行以 <code>-XX:</code> 开头的参数，例如 <code>-XX:InitialHeapSize</code>、<code>-XX:MaxHeapSize</code>、<code>-XX:+UseG1GC</code>，数值是按机器内存推算出来的，不是你手写的。<b>为什么</b>：这些是 JVM 根据机器规格自动推导的结果，等价于「实际生效的启动配置」，在容器和大内存机器上和默认值差异最明显。<b>要点</b>：用 <code>java -XX:+PrintCommandLineFlags -version</code> 最省事；想看全部参数用 <code>-XX:+PrintFlagsFinal</code> 再过滤关键字，对照本章表格区分 <code>-Xms</code>、<code>-Xmx</code>、<code>-Xss</code> 各管哪块内存。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 4 题的关键是“编译期常量折叠”与“运行期拼接”的区别；第 5 题不需要改代码，只要在命令行加参数，观察 JVM 打印出来的最终配置。' },
     ]
@@ -297,20 +297,20 @@
 
       { h: '2.13 常见追问' },
       { list: [
-        '<b>为什么 Java 不用引用计数？</b>无法处理循环引用，而且每次引用赋值都要维护计数，开销大、容易出错；可达性分析一次性从根遍历，更可控。',
-        '<b>Minor GC 和 Full GC 有什么区别？</b>Minor GC 只回收新生代，速度快、停顿短；Full GC 回收整个堆和方法区，通常伴随整理，停顿长，应尽量避免。',
-        '<b>对象一定在 Eden 分配吗？</b>不一定。大对象可能直接进老年代或 Humongous 区；逃逸分析后的小对象可能被标量替换，根本不分配；TLAB 也只是 Eden 内的一块线程私有区域。',
-        '<b>G1 一定比 CMS 好吗？</b>不完全。G1 可预测停顿、有整理能力，适合大多数场景；但在小堆、低版本或特定负载下，CMS/Parallel 可能吞吐更高。选择要看堆大小、延迟要求和 JDK 版本。',
-        '<b>堆越大越好吗？</b>不是。堆越大，Full GC 扫描和整理的对象越多，单次停顿可能越长；超过物理内存还会触发 swap。要在容量和停顿之间取平衡。'
+        '<b>问：为什么 Java 不用引用计数？</b><br>答：引用计数处理不了循环引用，A 引用 B、B 又引用 A 时两边计数都不为零，即使外部已经没人引用它们也永远回收不掉；而且每次引用赋值都要维护计数，多线程下还得用原子操作，开销大、容易出错。可达性分析从 GC Roots 出发一次性遍历，能走到的是存活，走不到的一整条环可以一起回收，更可控。',
+        '<b>问：Minor GC 和 Full GC 有什么区别？</b><br>答：Minor GC（也叫 Young GC）只回收新生代的 Eden 和 Survivor，存活对象少、复制量小，通常几毫秒到几十毫秒；Full GC 回收整个堆和方法区，可能还带整理与类卸载，停顿往往成百上千毫秒。日志里 Full GC 会写 <code>Pause Full</code>，看到它就说明该查泄漏或堆容量，而不是继续调小停顿目标。频繁 Full GC 而老年代回收后占用不降，基本可以判定为泄漏。',
+        '<b>问：对象一定在 Eden 分配吗？</b><br>答：不一定。大对象可以绕过新生代直接进老年代，参数是 <code>-XX:PretenureSizeThreshold</code>，而且只对 Serial 和 ParNew 有效；G1 里超过 Region 一半的对象直接进 Humongous 区；逃逸分析判定不逃逸的小对象可能被标量替换，干脆不分配对象；即使分配在 Eden，也是先落到当前线程的 TLAB 里，TLAB 用完才申请新的一块。',
+        '<b>问：G1 一定比 CMS 好吗？</b><br>答：不一定。G1 按 Region 回收并自带整理能力，可以用 <code>-XX:MaxGCPauseMillis</code> 设停顿目标，从 JDK 9 起是默认收集器，适合大多数在线服务；但在小堆、老旧版本或纯吞吐型负载下，Parallel 系列可能更快，CMS 在低延迟老年代回收上也曾经很能打（JDK 14 已移除）。选型要看堆大小、停顿要求和 JDK 版本，不能只看新旧。',
+        '<b>问：堆越大越好吗？</b><br>答：不是。堆越大，一次 Full GC 要扫描和整理的对象越多，单次停顿可能反而更长；超过物理内存还会触发 swap，延迟从毫秒级掉到秒级。另外堆太大也会让 GC 线程的标记工作更分散。合理做法是先按业务峰值估容量，再用 GC 日志验证停顿，在「装得下」和「停顿可接受」之间取平衡，而不是把 <code>-Xmx</code> 顶到物理内存的九成。'
       ] },
 
       { h: '2.14 自测与练习' },
       { ol: [
-        '运行 CycleGC，把 WeakReference 换成强引用再跑一次，观察对象是否被回收，并解释可达性分析在这两次运行中的差别。',
-        '用 <code>-Xmx64m -Xlog:gc</code> 运行 GcLogDemo，把日志里每次 GC 的“回收前-&gt;回收后”抄下来，判断有没有对象在持续晋升。',
-        '运行 LeakDemo，用 jstat 观察 O 列和 FGC 的变化，再用 jmap -histo 找出占用最多的类，说出你的判断依据。',
-        '在一台机器上分别用 <code>-XX:+UseParallelGC</code> 和 <code>-XX:+UseG1GC</code> 跑同一个压测，对比吞吐和 P99 停顿，说明差异的原因。',
-        '（思考）如果你的服务堆只有 512MB，但要求 P99 小于 100ms，你会选哪个收集器？还需要关注哪些指标？'
+        '运行 CycleGC，把 WeakReference 换成 static 字段里的强引用（保证该引用在 System.gc() 之后仍被使用）再跑一次，观察对象是否被回收，并解释可达性分析在这两次运行中的差别。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原样输出 true（循环引用的对象被回收）；把弱引用换成 <code>static Node</code> 字段里的强引用、并保证该引用在 <code>System.gc()</code> 之后仍被使用，再跑输出 false，对象一直活着。<b>为什么</b>：静态字段是 GC Root，可达性分析从根出发能走到那两个对象，整条引用链都被判为存活；弱引用不阻止回收，外部引用清空后对象不可达，连成环的两个对象被一起清掉。<b>要点</b>：注意只把 <code>WeakReference</code> 换成局部变量不够——局部变量出了作用域就不可达，GC 仍可能回收它，这与有没有强引用无关，是变量作用域而不是引用强度在起作用；<code>System.gc()</code> 只是建议，要配合短暂 <code>Thread.sleep</code> 才观察得到。</div></details>',
+        '用 <code>-Xmx64m -Xlog:gc</code> 运行 GcLogDemo，把日志里每次 GC 的「回收前-&gt;回收后」抄下来，判断有没有对象在持续晋升。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：出现多行 <code>GC(0) Pause Young (Normal) (G1 Evacuation Pause) 24M-&gt;3M(64M) 2.113ms</code>，回收前用量随分配逐渐抬高，回收后都掉回几 MB，每行末尾是这次回收的耗时。<b>为什么</b>：循环每轮 <code>new byte[4 * 1024 * 1024]</code> 用完即弃，Eden 很快填满触发 Young GC，存活对象只有常量和小数组，所以回收后的数值一直很低。<b>要点</b>：命令 <code>java -Xmx64m -Xlog:gc GcLogDemo</code>；判断晋升看「回收后」的数值是否逐次抬升，稳定在低位就说明没有对象持续晋升。</div></details>',
+        '运行 LeakDemo，用 jstat 观察 O 列和 FGC 的变化，再用 jmap -histo 找出占用最多的类，说出你的判断依据。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>jstat -gcutil</code> 里 O 列迅速接近 100% 且一直不降，FGC 次数持续增长，GCT 占进程运行时间的比例越来越高；<code>jmap -histo:live</code> 排行前列是 <code>[B</code> 和 <code>java.util.HashMap$Node</code>，实例数与缓存条目数成正比。<b>为什么</b>：静态 <code>final HashMap</code> 只 put 不 remove，条目通过静态字段（GC Root）始终可达，GC 只能腾出 Eden 里那些临时对象。<b>要点</b>：先用 <code>jps -l</code> 拿 pid，再 <code>jstat -gcutil &lt;pid&gt; 1000</code> 连看几轮；O 只涨不降就是泄漏，调大堆只能推迟崩溃时间。</div></details>',
+        '在一台机器上分别用 <code>-XX:+UseParallelGC</code> 和 <code>-XX:+UseG1GC</code> 跑同一个压测，对比吞吐和 P99 停顿，说明差异的原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两组吞吐差距往往在百分之几以内，停工停顿的差距才明显——G1 单次停顿更短更平稳，ParallelGC 偶发几百毫秒的长停顿。<b>为什么</b>：Parallel 用多线程 STW 复制和整理，追求单位时间吞吐，堆越大单次停顿越长；G1 按 Region 回收，依 <code>-XX:MaxGCPauseMillis</code> 挑收益高的 Region，用一点吞吐换停顿可控。<b>要点</b>：日志加 <code>-Xlog:gc:file=gc.log</code>，统计每次停顿后排序取 P99，不要拿平均值下结论。</div></details>',
+        '（思考）如果你的服务堆只有 512MB，但要求 P99 小于 100ms，你会选哪个收集器？还需要关注哪些指标？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：这题没有唯一答案，能给出取舍理由即可：512MB 属于小堆，G1 通常够用，目标是让单次 Young GC 停在几十毫秒以内。<b>为什么</b>：小堆里 Region 数量少、单次待回收对象也少，G1 的停顿目标容易达成；ZGC 的低停顿优势在大堆才显现，小堆反而多付吞吐和额外内存的代价。<b>要点</b>：用 <code>-Xms512m -Xmx512m</code> 固定堆并给堆外留空间，关注 Young GC 频率（每秒几次）、单次停顿 P99、老年代回收后占用能否回落、FGC 是否为零，以及是否顶到容器内存上限被杀。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 3 题不要只看报错，重点是用 jstat 的数据建立“老年代只涨不降”的证据；第 5 题没有标准答案，能说出取舍理由比选出名字更重要。' },
     ]
@@ -447,20 +447,20 @@
 
       { h: '3.12 常见追问' },
       { list: [
-        '<b>双亲委派的好处是什么？</b>避免核心类被篡改，保证同一个类在同一个加载器下只加载一次，从而保证类型安全；同时让类加载职责分层，便于复用。',
-        '<b>如何打破双亲委派？</b>重写 loadClass 改变委派顺序（Tomcat 的子优先），或用线程上下文类加载器让父加载器请求子加载器加载（SPI）。',
-        '<b>两个类名相同、加载器不同，能互相转换吗？</b>不能直接强转，会抛 ClassCastException。可以通过序列化、反射逐字段复制，或让它们实现同一个由父加载器加载的接口。',
-        '<b>类什么时候会被卸载？</b>需要同时满足：该类的所有实例都被回收、加载它的 ClassLoader 被回收、对应的 Class 对象没有被引用。条件苛刻，所以热部署容易泄漏。',
-        '<b>Class.forName 和 ClassLoader.loadClass 有什么区别？</b>前者默认会初始化类（第二个参数可关），后者只加载不初始化，初始化要等首次主动使用。'
+        '<b>问：双亲委派的好处是什么？</b><br>答：一是保证核心类唯一，不管应用里写多少遍 <code>java.lang.String</code>，最终都由启动类加载器加载 JDK 里的那一份，避免核心类被伪造替换；二是保证类身份唯一，同一个加载器下同一个全限定名只会被加载一次，两次拿到的 Class 是同一个对象；三是让加载职责分层，父加载器负责通用类，子加载器只管自己的搜索路径，便于复用与隔离。',
+        '<b>问：如何打破双亲委派？</b><br>答：两条路。一是重写 <code>loadClass</code>，把「先委派父加载器」改成「先自己找」，Tomcat 的 WebAppClassLoader 就是子优先，让每个应用用自己那份库版本；二是保留委派顺序，改用线程上下文类加载器 <code>Thread.currentThread().getContextClassLoader()</code>，让父加载器反过来请求子加载器加载，JDBC 的 SPI 就是这么做的。模块化和热部署属于第三类，靠自定义加载器更换搜索范围实现。',
+        '<b>问：两个类名相同、加载器不同，能互相转换吗？</b><br>答：不能直接强转，会抛 <code>ClassCastException</code>，报错里两个类名一模一样，看着很荒谬。原因是类的身份等于「加载器 + 全限定名」，两个 Class 对象用双等号比较是 false，JVM 视它们为不同类型。可行做法是让双方实现同一个由父加载器加载的接口，或者通过序列化、反射逐字段复制数据。',
+        '<b>问：类什么时候会被卸载？</b><br>答：要同时满足三个条件：该类的所有实例都已被回收；加载它的 ClassLoader 已被回收；该类的 Class 对象没有被任何地方引用，包括反射缓存和常量池引用。三者缺一不可，所以「卸载类」实际上是「卸载加载器」。热部署最容易在这里翻车：漏掉一个静态引用或 ThreadLocal，旧加载器就永远回收不掉，元空间一路涨到 <code>OutOfMemoryError: Metaspace</code>。',
+        '<b>问：Class.forName 和 ClassLoader.loadClass 有什么区别？</b><br>答：<code>Class.forName</code> 默认会初始化类，也就是执行静态变量赋值和静态代码块；<code>loadClass</code> 只完成加载（必要时链接），不触发初始化，要等第一次主动使用才执行。所以 JDBC 注册驱动必须用前者，否则静态块里的 <code>DriverManager.registerDriver</code> 不会跑。想只加载不初始化，用三参数版本 <code>Class.forName(name, false, loader)</code> 并显式指定加载器。'
       ] },
 
       { h: '3.13 自测与练习' },
       { ol: [
-        '运行 ClassFileDemo，把输出的版本号和你本机 javac 的版本对应起来，再用 -target 8 编译一次，观察版本号变化。',
-        '运行 InitOrder，把 <code>Child.value</code> 改成 <code>new Child()</code>，预测并验证输出顺序，解释 clinit 与 init 的区别。',
-        '写一个自定义加载器加载 target/classes 下的类，分别用 parent=null 和 parent=应用加载器，观察 findClass 是否被调用。',
-        '运行 HotSwapDemo，把两个 Class 对象强转一次，捕获 ClassCastException，并解释为什么类名相同却不能转。',
-        '（思考）如果让你设计一个插件系统，插件之间需要互相调用，你会怎么划分类加载器和接口？说说如何避免类加载器泄漏。'
+        '运行 ClassFileDemo，把输出的版本号和你本机 javac 的版本对应起来，再用 <code>--release 8</code> 编译一次，观察版本号变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：默认编译输出类似「版本: 69.0」，major 版本随 JDK 而变；用 <code>--release 8</code> 重编后变成 52.0。<b>为什么</b>：class 文件头部的 major 版本号就是目标字节码版本，52 固定对应 Java 8，数字越大要求的 JDK 越新，用低版本 JVM 加载高版本 class 会直接抛 <code>UnsupportedClassVersionError</code>。<b>要点</b>：命令 <code>javac --release 8 ClassFileDemo.java</code>，再用 <code>javap -v</code> 或重跑程序确认；版本不一致是「本地能跑、服务器起不来」的头号原因。</div></details>',
+        '运行 InitOrder，把 <code>Child.value</code> 改成 <code>new Child()</code>，预测并验证输出顺序，解释 clinit 与 init 的区别。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原样运行只打印「Parent 初始化」和 100，没有「Child 初始化」；改成 <code>new Child()</code> 后先打印「Parent 初始化」，再打印「Child 初始化」。<b>为什么</b>：通过子类访问父类的静态字段只是被动引用，只初始化父类；而 <code>new</code> 是主动引用，初始化子类前必须先初始化父类。<b>要点</b>：<code>&lt;clinit&gt;</code> 由静态变量赋值和静态块按源码顺序合并而成，父类先执行且只执行一次；<code>&lt;init&gt;</code> 是实例构造逻辑，每次 new 都执行。</div></details>',
+        '写一个自定义加载器加载 target/classes 下的类，分别用 parent=null 和 parent=应用加载器，观察 findClass 是否被调用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>parent=null</code> 时 <code>findClass</code> 被调用并打印，类由你的加载器 define，<code>getClassLoader()</code> 返回自定义加载器；传应用加载器时 <code>findClass</code> 一次都不打印，类直接从 classpath 被父加载器加载。<b>为什么</b>：<code>loadClass</code> 默认先查已加载缓存，再委派父加载器，父加载器能加载成功就不会轮到子类的 <code>findClass</code>。<b>要点</b>：自定义加载器只重写 <code>findClass</code>，内部读字节流后调 <code>defineClass</code>；同一加载器对同一全限定名只能 define 一次。</div></details>',
+        '运行 HotSwapDemo，把两个 Class 对象造出的实例强转一次，捕获 ClassCastException，并解释为什么类名相同却不能转。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出「hello v1」和「hello v2」，两个 Class 是否相同为 false；把第二个类造出的对象强转成第一个类的类型时抛 <code>ClassCastException</code>，报错两侧类名完全相同。<b>为什么</b>：两个类由两个不同的加载器 define，类的身份是「加载器 + 全限定名」，JVM 判定它们是不同类型，所以不能互相赋值。<b>要点</b>：热替换靠丢弃旧加载器实现，必须清干净所有引用，否则每次替换泄漏一个加载器，最终 <code>OutOfMemoryError: Metaspace</code>。</div></details>',
+        '（思考）如果要设计一个插件系统，插件之间需要互相调用，你会怎么划分类加载器和接口？说说如何避免类加载器泄漏。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：合理设计是接口由父加载器加载、实现由每个插件自己的加载器加载，插件之间只通过共享接口通信，不传具体实现类型。<b>为什么</b>：接口在父加载器里只有一份，双方看到同一个 Class，强转才合法；实现放在各自加载器里，版本冲突被隔离，卸载时只丢一个加载器就够。<b>要点</b>：插件生命周期结束时清空静态引用、注销监听器、把 ThreadLocal remove 掉，用弱引用或显式销毁断开强引用，再用 <code>jcmd &lt;pid&gt; VM.metaspace</code> 观察类数量是否回落。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 3 题的重点是理解“父加载器能加载时，子加载器不会执行”；第 5 题要同时考虑隔离性（版本冲突）和通信（接口共享）这两个矛盾。' },
     ]
@@ -608,20 +608,20 @@
 
       { h: '4.13 常见追问' },
       { list: [
-        '<b>为什么 Java 比 C++ 慢？</b>启动阶段要解释执行，且有对象头、边界检查、GC 等开销；但长期运行的热点代码经 C2 优化后可以非常接近 C++，差距主要在内存布局和启动时间。',
-        '<b>什么是去优化（deoptimization）？</b>JIT 基于类型假设做了激进优化，一旦运行时发现假设不成立（比如新增了实现类），就退回解释执行并重新编译。日志里的 made not entrant 就是它。',
-        '<b>逃逸分析一定能栈上分配吗？</b>不一定。它只是让 JIT 有机会做标量替换或栈上分配，实际是否生效取决于方法复杂度、对象大小和编译层级，不要把它当作确定行为。',
-        '<b>JMH 结果和线上表现不一致怎么办？</b>微基准隔离了环境，线上还有缓存、IO、锁、GC 的交互。微基准用来比较两种写法的相对优劣，不能直接推算线上 QPS。',
-        '<b>-Xss 越大越好吗？</b>不是。栈越大，单线程占用越多，同样内存能创建的线程越少；递归深度需求和线程数要权衡。'
+        '<b>问：为什么 Java 比 C++ 慢？</b><br>答：差距集中在几处：启动阶段靠解释执行、对象多一个对象头、以及自动内存管理带来的 GC 停顿；边界检查、虚方法分派这些也有固定开销。但长期运行的热点代码经 C2 优化后能接近 C++，方法内联、标量替换、寄存器分配都会生效。所以「Java 慢」更多体现在冷启动和小对象密集的场景，不是所有场景都慢一个数量级。',
+        '<b>问：什么是去优化（deoptimization）？</b><br>答：JIT 会基于运行时收集的类型信息做激进假设，比如「这个调用点只会收到一种实现」，于是把方法直接内联进去。一旦假设被打破，比如新加载了实现类或类被重新定义，编译产物就失效，JVM 退回解释执行并重新编译。用 <code>-XX:+PrintCompilation</code> 看到的 made not entrant 就是它，反复出现的地方往往就是真正的性能热点。',
+        '<b>问：逃逸分析一定能栈上分配吗？</b><br>答：不一定。逃逸分析只是给 JIT 一个机会：判定对象不逃逸后，可能做标量替换（把对象拆成几个局部变量，根本不分配），也可能做栈上分配，是否真发生取决于方法复杂度、对象大小和编译层级，还要被 C2 真正编译到。对象一旦被返回、存进静态字段或传出方法就算逃逸。所以别指望它救糟糕的创建习惯。',
+        '<b>问：JMH 结果和线上表现不一致怎么办？</b><br>答：先接受这是常态。微基准隔离了缓存、IO、锁竞争和 GC 的交互，它只回答「两种写法谁相对更快」，不能直接推算线上 QPS。拿它做方向判断，再用压测和火焰图验证真实链路。如果线上与基准结论相反，优先怀疑：对象在线上真的逃逸了、锁竞争被基准忽略，或者 GC 停顿吃掉了全部收益。',
+        '<b>问：-Xss 越大越好吗？</b><br>答：不是。栈越大，单线程占用越多，同样内存能创建的线程越少，线程数一多就容易出现 <code>OutOfMemoryError: unable to create new native thread</code>；而且它只是把递归崩溃点往后推，输入再大照样溢出。合理做法是先把递归改成循环，只在确实需要深层调用时适度调大，并同步核算线程数乘栈大小的总占用。'
       ] },
 
       { h: '4.14 自测与练习' },
       { ol: [
-        '对 BytecodeDemo 执行 <code>javap -c -p BytecodeDemo</code>，逐行解释 add 方法每条指令的作用。',
-        '运行 ConcatDemo，把 n 改成 50000 再跑一次，记录耗时变化，说明为什么增长不是线性的。',
-        '把 BoxingDemo 的 Long 改成 long，对比耗时，并用 <code>-Xlog:gc</code> 观察 GC 次数的变化。',
-        '用 <code>-XX:+PrintCompilation</code> 运行一个循环密集的程序，找出被 C2 编译的方法，观察编译层级。',
-        '（思考）你的接口 P99 是 800ms，CPU 只有 30%，GC 正常，你会先查什么？列出至少三条排查路径。'
+        '对 BytecodeDemo 执行 <code>javap -c -p BytecodeDemo</code>，逐行解释 add 方法每条指令的作用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>add</code> 的 Code 段依次是 <code>0: iload_1</code>、<code>1: iload_2</code>、<code>2: iadd</code>、<code>3: istore_3</code>、<code>4: iload_3</code>、<code>5: iconst_2</code>、<code>6: imul</code>、<code>7: ireturn</code>。<b>为什么</b>：JVM 是栈式虚拟机，运算必须先把操作数压到操作数栈再弹出来算；实例方法第 0 槽固定是 <code>this</code>，所以参数 a、b 和局部变量 c 分别占 1、2、3 槽。<b>要点</b>：<code>iload_n</code> 的 n 是局部变量槽下标而不是参数序号；<code>istore_3</code> 把栈顶结果存回第 3 槽。上面的指令序列以本章 Demo 输出为准，自己跑一次 <code>javap -c -p</code> 逐行对照一遍，常量取值和槽位会随写法变化。</div></details>',
+        '运行 ConcatDemo，把 n 改成 50000 再跑一次，记录耗时变化，说明为什么增长不是线性的。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：n 为 20000 时加号拼接约几百毫秒，改成 50000 后耗时会涨到数秒甚至更久，而 StringBuilder 那一路仍只有几毫秒。<b>为什么</b>：每次 <code>+=</code> 都要新建一个 String 并把旧内容整体复制一遍，总复制量是平方级，n 涨 2.5 倍工作量约涨 6 倍多；StringBuilder 内部是可扩容数组，追加是摊销常数。<b>要点</b>：循环内拼接一律用 <code>new StringBuilder(n * 4)</code> 预估容量；单行拼接用加号没问题，JDK 9 起走 <code>invokedynamic</code> 已经很快。</div></details>',
+        '把 BoxingDemo 的 Long 改成 long，对比耗时，并用 <code>-Xlog:gc</code> 观察 GC 次数的变化。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：累加耗时从几十到上百毫秒降到几毫秒以内；<code>-Xlog:gc</code> 输出里 Young GC 的条数也明显减少。<b>为什么</b>：<code>Long sum = 0L; sum += i;</code> 每轮都要拆箱再装箱，一千万轮产生一千万个短命 Long（超出 -128 到 127 的缓存范围），全部成为垃圾，逼着 Young GC 频繁触发。<b>要点</b>：命令 <code>java -Xlog:gc BoxingDemo</code>；热路径上能用基本类型就别用包装类型，集合场景可考虑原始类型专用容器。</div></details>',
+        '用 <code>-XX:+PrintCompilation</code> 运行一个循环密集的程序，找出被 C2 编译的方法，观察编译层级。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：日志每行形如「时间戳 编译 id 层级 方法名 字节码大小」，层级 4 就是 C2 的产物，带百分号标记的是栈上替换（OSR）编译，带 s 的是 synchronized 方法。<b>为什么</b>：分层编译先用 C1 快速编译保启动，收集到足够类型信息后再交给 C2 做深度优化，所以同一个方法可能出现多次、层级逐步升高。<b>要点</b>：先过滤出含层级 3 或 4 的行，看到 made not entrant 说明发生了去优化，需要检查代码里的类型假设是否稳定。</div></details>',
+        '（思考）你的接口 P99 是 800ms，CPU 只有 30%，GC 正常，你会先查什么？列出至少三条排查路径。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：结论应指向「线程在等而不是在算」：CPU 不高说明瓶颈不在计算，先排除 GC 与容量问题。<b>为什么</b>：CPU 闲但接口慢，常见原因是锁竞争、线程池或连接池耗尽、下游依赖超时，以及磁盘和网络 IO 阻塞。<b>要点</b>：一是 <code>jstack &lt;pid&gt;</code> 连抓三次，看线程卡在哪个锁、哪个 socket；二是查线程池活跃数与队列长度、数据库连接池指标；三是查下游 RT 与超时设置，再看是否有临界区过大或共享的日期格式化对象争用。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 5 题的关键是“CPU 不高但慢”，优先怀疑锁竞争、线程池耗尽、下游依赖超时；先看线程栈和连接池指标，不要一上来就调 JVM 参数。' },
     ]
@@ -762,20 +762,20 @@
 
       { h: '5.12 常见追问' },
       { list: [
-        '<b>反射会破坏单例吗？</b>会。通过 setAccessible 调用私有构造器可以创建第二个实例。防护方法是在构造器里检查实例是否已存在并抛异常，或使用枚举单例。',
-        '<b>Class.forName 和 loadClass 的区别？</b>前者默认初始化类（执行静态块），后者只加载不初始化；JDBC 驱动注册依赖前者，所以必须用 forName。',
-        '<b>为什么反射调用接口默认方法会失败？</b>因为 getMethod 在实现类上找不到默认方法的声明，需要用接口的 Class 去查；或者用 MethodHandles 的 findSpecial。',
-        '<b>反射能拿到方法参数名吗？</b>默认拿到的是 arg0、arg1，除非编译时加 <code>-parameters</code>。Spring 6 要求加这个参数，否则构造器注入的参数名解析会出问题。',
-        '<b>LambdaMetafactory 怎么用？</b>它把一个方法句柄适配成函数式接口实例，启动时生成一次、之后就是普通接口调用；Spring 和 Jackson 用它替代部分反射。'
+        '<b>问：反射会破坏单例吗？</b><br>答：会。单例拦得住 <code>new</code>，拦不住反射：拿到私有构造器后 <code>setAccessible(true)</code> 再 <code>newInstance</code> 就能造出第二个实例。防护办法是在构造器里判断实例是否已存在，存在就抛异常；更彻底的是用枚举实现单例，JVM 保证枚举实例唯一，反射创建枚举对象会直接抛异常，反序列化也不会产生新实例。',
+        '<b>问：Class.forName 和 loadClass 的区别？</b><br>答：前者默认会初始化类，静态块立刻执行；后者只加载不初始化，初始化要等第一次主动使用。所以 JDBC 驱动注册必须用 <code>Class.forName</code>，因为注册动作写在驱动类的静态块里；如果只想探测类是否存在、又不想触发静态逻辑，就用 <code>loader.loadClass</code> 或三参数的 <code>Class.forName(name, false, loader)</code>。',
+        '<b>问：为什么反射调用接口默认方法会失败？</b><br>答：因为 <code>getMethod</code> 是在实现类上找的，而默认方法声明在接口里，实现类的反射视图里没有这条声明，于是抛 <code>NoSuchMethodException</code>。主解法是拿接口的 Class 去 <code>getMethod</code> 取到 Method（默认方法定义在接口上，用它才找得到），再在实现类实例上 <code>invoke</code>。补充一点：<code>MethodHandles.Lookup.findSpecial</code> 也调得到默认实现，但它要求调用方对目标接口有 private access，接口场景通常还得配合 <code>privateLookupIn</code>、模块也需要 open，属于绕访问检查的少数场景，不要当默认做法；能用正常多态调用就别用反射调默认方法。',
+        '<b>问：反射能拿到方法参数名吗？</b><br>答：默认只能拿到 <code>arg0</code>、<code>arg1</code> 这类合成名，因为参数名在编译后通常被丢弃。编译时加 <code>-parameters</code>（Maven 里配编译插件的 parameters 选项）才会写进 class 文件，这时 <code>Parameter.getName()</code> 才能拿到真实名字。Spring 6 起要求必须有参数名，否则构造器注入的解析会出问题，升级时最容易踩。',
+        '<b>问：LambdaMetafactory 怎么用？</b><br>答：它把已有方法适配成函数式接口实例：先用 <code>MethodHandles.lookup().findVirtual</code> 等方法拿到 <code>MethodHandle</code>，再调 <code>LambdaMetafactory.metafactory</code>，它的签名是 6 个参数、顺序为 <code>(lookup, name, invokedType, samMethodType, implMethod, instantiatedMethodType)</code>，也就是调用方 lookup、接口方法名、工厂签名、接口方法类型、目标方法句柄、实例化后的方法类型；返回的是一个工厂句柄，调用它才生成接口实例。之后每次调用都是普通接口调用，能被内联。关键是生成一次、复用实例，Spring 和 Jackson 正是这么替代部分反射的。'
       ] },
 
       { h: '5.13 自测与练习' },
       { ol: [
-        '运行 GetClassDemo，把 Class.forName 换成 loadClass，观察静态块是否还执行，并解释原因。',
-        '运行 InspectDemo，数一数 getMethods 返回的方法，和 getDeclaredMethods 对比，说明差异来源。',
-        '运行 InvokeDemo，去掉 setAccessible(true)，捕获异常并打印异常类型，理解访问检查。',
-        '运行 SpeedDemo，把 Method.invoke 的循环次数改成和直接调用一样，重新比较耗时，说明预热的影响。',
-        '（思考）如果让你写一个简易的 JSON 序列化器，只支持基本类型和 String 字段，你会用到哪些反射 API？如何处理 private 字段和继承字段？'
+        '运行 GetClassDemo，把 Class.forName 换成 loadClass，观察静态块是否还执行，并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原样运行先打印「1. 类名.class 完成」，再打印「User 静态块执行」，然后「2. Class.forName 完成」；换成 <code>loader.loadClass</code> 后，静态块那一行就消失了。<b>为什么</b>：<code>forName</code> 默认会初始化类，执行 <code>&lt;clinit&gt;</code>；<code>loadClass</code> 只完成加载和必要的链接，初始化要等第一次主动使用，比如 new、访问静态字段或静态方法。<b>要点</b>：三者拿到的 Class 对象是同一个，<code>c1 == c2</code> 为 true，差别只在是否触发初始化。</div></details>',
+        '运行 InspectDemo，数一数 getMethods 返回的方法，和 getDeclaredMethods 对比，说明差异来源。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>getDeclaredMethods</code> 只有本类声明的 <code>getName</code>、<code>secret</code> 等少数几个（含 private），<code>getMethods</code> 能返回十来个，示例里打印 11。<b>为什么</b>：带 Declared 的只返回本类声明的成员，不带 Declared 的返回本类及所有父类、接口的 public 成员，多出来的正是 <code>Object</code> 的 equals、hashCode、toString、getClass、三个 wait、notify 和 notifyAll。<b>要点</b>：这个数量随 JDK 版本可能变化，代码里不要写死；要拿继承来的非 public 方法，必须先用 Declared 在本类找，再沿父类逐层找。</div></details>',
+        '运行 InvokeDemo，去掉 setAccessible(true)，捕获异常并打印异常类型，理解访问检查。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：保留 <code>setAccessible(true)</code> 时输出「打折后: A100:180」和反射调用 summary 那一行；去掉之后调用私有方法 <code>discount</code> 直接抛 <code>java.lang.IllegalAccessException</code>，公有方法照常能调。<b>为什么</b>：反射默认执行访问权限检查，私有成员不允许被外部调用者 invoke；<code>setAccessible(true)</code> 只是关闭这个成员的访问检查，并不是把方法改成 public。<b>要点</b>：先捕获再打印 <code>e.getClass().getName()</code> 确认类型；JDK 17 起对 JDK 内部类深度反射还会抛 <code>InaccessibleObjectException</code>，要配 <code>--add-opens</code>。</div></details>',
+        '运行 SpeedDemo，把 Method.invoke 的循环次数改成和直接调用一样，重新比较耗时，说明预热的影响。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：原始输出像「直接调用: 3 ms / Method.invoke: 61 ms / MethodHandle: 15 ms」；把两边循环次数对齐并跑多轮后，反射的相对倍数会稳定在一个数量级左右，而不是几十倍。<b>为什么</b>：第一轮里 <code>Method.invoke</code> 包含方法解析、访问检查等初始化成本，还有 JIT 尚未编译这些调用点；多轮下来热点被 C2 编译，差距才反映真实开销。<b>要点</b>：用 <code>System.nanoTime()</code> 计时、前后各跑一轮预热；工程结论是缓存 Method、别在热路径反复 <code>getMethod</code>，精确量级交给 JMH。</div></details>',
+        '（思考）如果让你写一个简易的 JSON 序列化器，只支持基本类型和 String 字段，你会用到哪些反射 API？如何处理 private 字段和继承字段？<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：对一个普通 POJO 输出形如 <code>{"name":"tom","age":3}</code> 的字符串，字段即使是 private 也能读到值。<b>为什么</b>：序列化只需要读，用 <code>getDeclaredFields</code> 逐层向上遍历父类拿到全部字段，再对每个 <code>Field</code> 调 <code>setAccessible(true)</code> 后用 <code>get(obj)</code> 取值。<b>要点</b>：跳过 static 和 transient（<code>Modifier.isStatic</code>）、判空、String 要做引号和反斜杠转义、基本类型直接拼、遇到不支持的引用类型抛异常；把 Field 列表按类缓存起来，避免每次序列化都重新遍历。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 5 题先想清楚“遍历字段 → 判断类型 → 取值 → 拼字符串”的流程，再考虑循环引用、null 值、日期格式这些边界；能跑通一个最小版本，比追求完整更重要。' },
     ]
@@ -905,20 +905,20 @@
 
       { h: '6.13 常见追问' },
       { list: [
-        '<b>注解和接口有什么区别？</b>注解是特殊的接口（编译器生成 extends Annotation），但不能被实例化，只能作为元数据被读取；接口定义行为，注解定义标记。',
-        '<b>@Inherited 为什么对接口无效？</b>Java 规范规定它只影响类继承；接口上的注解不会被子接口或实现类继承，需要框架自己向上遍历。',
-        '<b>运行时注解会影响性能吗？</b>反射读取有开销，但只在读取时产生；框架通常在启动时读一次并缓存，运行期几乎没有成本。',
-        '<b>能不能在注解里写逻辑？</b>不能。注解元素只能是常量表达式，不能有方法体、不能调用方法、不能抛异常。',
-        '<b>Lombok 算不算“歪门邪道”？</b>它是工程取舍。它确实提升了开发效率，但增加了构建复杂度与升级风险；新项目可以优先考虑 record、构造器注入和 IDE 生成。'
+        '<b>问：注解和接口有什么区别？</b><br>答：注解在字节码层面确实是一种特殊的接口，编译器让它继承 <code>java.lang.annotation.Annotation</code>，但它不能被实例化，也不能被继承扩展，只能作为元数据被读取。接口定义的是「能做什么」，靠实现类提供行为；注解定义的是「标记了什么」，行为要另写处理器去读。所以注解本身不会让任何逻辑发生：加 <code>@Transactional</code> 不开事务，是代理开的。',
+        '<b>问：@Inherited 为什么对接口无效？</b><br>答：Java 规范里 <code>@Inherited</code> 只对类的继承生效，而且只沿父类链向上查找，不沿接口继承。接口上的注解不会被子接口或实现类「继承」，<code>getAnnotation</code> 在实现类上查不到。框架需要自己向上遍历接口层级找注解，Spring 的组合注解、AOP 找方法注解时都要做这一步，这也是自研框架常漏掉的点。',
+        '<b>问：运行时注解会影响性能吗？</b><br>答：反射读取确实有开销，<code>getAnnotation</code> 每次调用都可能创建注解代理对象，反复读会有成本；但开销只发生在读取时，注解贴在代码上不占运行时间。框架的通用做法是在启动期扫一遍类路径，把注解信息解析成元数据缓存起来，运行期只查表、不再反射。所以性能问题多半来自「在热路径上反复读注解」，而不是注解本身。',
+        '<b>问：能不能在注解里写逻辑？</b><br>答：不能。注解元素只能是常量表达式：基本类型、String、Class、枚举、注解，或它们的一维数组，可以有默认值，但不能有方法体、不能调方法、不能抛异常、不能引用变量。想要逻辑就得写处理器：编译期用注解处理器（Lombok、MapStruct），运行期用反射加代理（Spring 的 <code>@Transactional</code>）。注解负责声明，处理器负责干活。',
+        '<b>问：Lombok 算不算歪门邪道？</b><br>答：它是工程取舍，不是邪道也不是银弹。好处是省掉大量样板代码（getter、setter、构造器、日志字段），坏处是依赖 IDE 插件、升级 JDK 时容易不兼容、生成的方法在源码里看不见、新人容易困惑。新项目可以优先用 <code>record</code> 覆盖不可变的 DTO，需要可变 setter 或 builder 时再用 Lombok，并在团队规范里限制把 <code>@Data</code> 用在实体上。'
       ] },
 
       { h: '6.14 自测与练习' },
       { ol: [
-        '编译并运行 BuiltinDemo，观察 @Deprecated 的编译警告，再把 @SuppressWarnings 移到方法上，比较警告范围。',
-        '把 ApiLog 的 @Retention 改成 CLASS，重新运行 ApiLogUse，记录输出变化并解释原因。',
-        '扩展 Validator，增加 @Min 注解和 String 长度校验，处理 null 值与类型不匹配的情况。',
-        '写一个注解处理器，扫描所有带 @ApiLog 的方法并生成一个 Markdown 清单文件（提示：用 Filer 创建资源）。',
-        '（思考）如果你的 @Transactional 方法在同类内部被调用，事务没生效，你会怎么改？说出两种方案及各自的代价。'
+        '编译并运行 BuiltinDemo，观察 @Deprecated 的编译警告，再把 @SuppressWarnings 移到方法上，比较警告范围。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>javac BuiltinDemo.java</code> 会给出「使用了已过时且标记为待移除的 API」的警告，位置指向调用 <code>oldBark</code> 的那一行；未加注解的泛型强转会另给一条未检查转换的警告。<b>为什么</b>：<code>@Deprecated</code> 的保留策略是 RUNTIME，注解会写进 class 文件、运行时也能反射读到；而 javac 读的正是 class 文件里的注解属性，所以编译期就能给出告警，这两件事并不矛盾。真正只在编译期起作用的是 <code>@SuppressWarnings</code>，由编译器处理，作用域就是你标注的那个元素（类、方法或语句）。<b>要点</b>：把抑制未检查转换的注解从类上移到具体方法上，其余方法的警告会重新出现；运行结果是 wang、old bark、rawList 大小=0。</div></details>',
+        '把 ApiLog 的 @Retention 改成 CLASS，重新运行 ApiLogUse，记录输出变化并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：改成 <code>RetentionPolicy.CLASS</code> 后，读取注解的输出从「注解存在: 下单」变成 null 或「注解个数: 0」，<code>isAnnotationPresent</code> 返回 false，但编译毫无报错。<b>为什么</b>：CLASS 策略会把注解写进 class 文件，但 JVM 加载后运行时不可见，反射读不到；只有 RUNTIME 才会出现在 RuntimeVisibleAnnotations 段里。<b>要点</b>：用 <code>javap -v ApiLogUse</code> 看是 RuntimeVisibleAnnotations 还是 RuntimeInvisibleAnnotations，一眼确认保留策略；这是注解不生效最常见的原因。</div></details>',
+        '扩展 Validator，增加 @Min 注解和 String 长度校验，处理 null 值与类型不匹配的情况。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：给标了 <code>@Min(1)</code> 的 int 字段传 0、给字符串字段传空串或超长串时，错误列表出现对应提示；字段为 null 时只报非空约束，不再报范围和长度错误，也不会抛 <code>NullPointerException</code>。<b>为什么</b>：校验要按「先判 null、再判类型、最后判约束」的顺序短路；<code>Field.get</code> 返回包装类型，用 <code>instanceof Number</code> 判断后再取 longValue，避免把字符串当数字比。<b>要点</b>：每个约束先用 <code>isAnnotationPresent</code> 判断再取值；类型不匹配时给一条明确错误而不是让它抛异常；把 Field 列表按类缓存。</div></details>',
+        '写一个注解处理器，扫描所有带 @ApiLog 的方法并生成一个 Markdown 清单文件（提示：用 Filer 创建资源）。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：执行 <code>javac -processor ApiLogProcessor ...</code> 后，在输出目录的 <code>META-INF</code> 下出现 <code>apilog.md</code>，每个带注解的方法一行，含类名、方法名和 value；编译日志里那条「发现 @ApiLog」的注记是处理器自己打的。<b>为什么</b>：处理器在编译期拿到的是源码模型而不是反射对象，用 <code>roundEnv.getElementsAnnotatedWith(ApiLog.class)</code> 遍历，用 <code>processingEnv.getFiler().createResource</code> 在 CLASS_OUTPUT 下建文件。<b>要点</b>：别忘了在 <code>META-INF/services/javax.annotation.processing.Processor</code> 里注册，否则处理器根本不跑也不报错。</div></details>',
+        '（思考）如果你的 @Transactional 方法在同类内部被调用，事务没生效，你会怎么改？说出两种方案及各自的代价。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：自调用走的是 <code>this</code>，没有经过 Spring 创建的代理对象，注解根本没机会被拦截，事务、缓存、异步全部失效。<b>为什么</b>：这类注解靠代理增强，只有从代理入口进来的调用才会被拦截；同一实例内部的方法调用只是普通 Java 调用。<b>要点</b>：方案一是把带注解的方法拆到另一个 Bean，注入后调用，代价是多一个类但边界更清楚；方案二是注入自身代理或取当前代理，代价是与 Spring 耦合、可测试性变差。另外要确认方法不是 private、类不是 final。</div></details>'
       ] },
       { note: '<b>练习提示：</b>第 4 题先跑通“能生成一个空文件”，再逐步加内容；第 5 题的重点是理解“代理对象”和“this”的区别，而不是背结论。' },
     ]

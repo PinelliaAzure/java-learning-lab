@@ -279,20 +279,20 @@ public class OrderStats {
       ] },
       { h: '1.13 常见追问' },
       { list: [
-        '<b>stream() 和 for 循环哪个快？</b>简单遍历 for 通常更快；流的价值在可读性和组合性，性能要靠基准测试说话。',
-        '<b>为什么流不能重复使用？</b>流是对数据源的一次性视图，终端操作后已消费，设计上就不支持重放。',
-        '<b>中间操作顺序重要吗？</b>重要。filter 越靠前，后续处理的数据越少；sorted 是有状态操作，尽量放在过滤之后。',
-        '<b>forEach 能替代所有循环吗？</b>不能，它不能 break、不能 continue，也不保证顺序（并行时）。',
-        '<b>无限流怎么安全使用？</b>必须配合 limit 或短路操作（findFirst、anyMatch），否则永远不结束。'
+        '<b>问：流的遍历和 for 循环哪个快？</b><br>答：简单遍历 for 通常更快。流每个元素都要过一层管道（Spliterator、lambda 调用、可能的装箱），数据量小的时候差距更明显；它的价值在可读性和组合性——filter、map、groupingBy 连起来写，意图比「维护临时集合加嵌套 if」清楚得多。性能问题要用 JMH 这类基准测试说话，别凭感觉；真正的瓶颈通常在 IO、数据库和算法复杂度上，而不是遍历方式。',
+        '<b>问：为什么流不能重复使用？</b><br>答：流是对数据源的一次性视图，不是容器。终端操作会把元素消费掉，内部状态也走完了，设计上就不支持重放，再次调用会抛 <code>IllegalStateException: stream has already been operated upon or closed</code>。需要多次使用就每次从源重新创建：<code>list.stream()</code> 可以反复调用，因为 list 才是数据；如果中间结果值得复用，先用 <code>toList()</code> 收集成集合，再开新流。',
+        '<b>问：中间操作顺序重要吗？</b><br>答：重要，而且影响很大。中间操作是惰性的，但元素仍按「一个元素走完整条流水线」的顺序流过，把 filter 放在最前面，后续 map、sorted 处理的数据量才小。<code>sorted</code> 与 <code>distinct</code> 是有状态操作，需要缓冲全部元素，必须放在过滤之后；map 里如果有重计算，也应该排在 filter 之后，否则会白算一遍。给流水线排序时先想「哪一步能减少元素数」。',
+        '<b>问：forEach 能替代所有循环吗？</b><br>答：不能。它不能 break、不能 continue、不能用 return 跳出外层方法，并行时还不保证顺序；需要提前终止就用 <code>anyMatch</code>、<code>findFirst</code> 这类短路终端操作，需要索引就用 <code>IntStream.range</code>。在 forEach 里修改外部集合也不推荐，容易和并行流冲突。真正适合它的是「对每个元素做一件独立的事」，比如打印、发消息、写日志。',
+        '<b>问：无限流怎么安全使用？</b><br>答：必须配合 limit 或短路操作（<code>findFirst</code>、<code>anyMatch</code>、<code>takeWhile</code>），否则终端操作永远不返回，程序会一直算下去直到内存或时间耗尽。<code>Stream.iterate</code> 在 Java 9 之后有带判断条件的重载，<code>generate</code> 没有条件，只能靠 limit 截断。并行流上的无限流更危险，因为拆分时无法预知边界，尽量别这么写。',
       ] },
       { h: '1.14 自测与练习' },
       { ol: [
-        '把一个用 for 循环求平均分的程序改写成 IntStream 加 average，并处理空列表。',
-        '用 flatMap 把 List&lt;List&lt;Integer&gt;&gt; 拍平成 List&lt;Integer&gt;，再用 distinct 去重、sorted 排序。',
-        '用 groupingBy 统计一段文本里每个单词出现的次数（提示：下游用 counting）。',
-        '写一段代码复现 IllegalStateException，并说明如何修复。',
-        '构造一个 100 万元素的列表，分别用串行和并行求和，比较耗时并解释差异。',
-        '用 toMap 建立“学号 → 学生”的索引，处理重复学号并说明合并函数的作用。'
+        '把一个用 for 循环求平均分的程序改写成 IntStream 加 average，并处理空列表。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：非空列表输出平均值（如 87.5）；空列表时 <code>average()</code> 返回 <code>OptionalDouble.empty</code>，用 <code>orElse(0)</code> 才打印 0，而不是 NaN 或除零异常。<b>为什么</b>：average 用 OptionalDouble 表达「没有元素时平均值无意义」，把空列表变成显式的分支。<b>要点</b>：用 <code>mapToInt</code> 而不是 map 才能拿到 IntStream；<code>summaryStatistics()</code> 一次就能拿到 count、sum、min、max、average；分数是整数时先想清楚要不要转 double。统计之前记得先过滤掉缺考（分数记为 -1）的记录，否则平均值会被拉低一大截。</div></details>',
+        '用 flatMap 把 List&lt;List&lt;Integer&gt;&gt; 拍平成 List&lt;Integer&gt;，再用 distinct 去重、sorted 排序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>[[3, 1], [2, 1]]</code> 输出 <code>[1, 2, 3]</code>。<b>为什么</b>：<code>flatMap(List::stream)</code> 把每个子列表变成一个流再合并，是元素级操作；distinct 依赖 equals 与 hashCode，sorted 用自然序。<b>要点</b>：写成 <code>map(List::stream)</code> 会得到 <code>Stream&lt;Stream&lt;Integer&gt;&gt;</code>，收集不出来；对自定义对象去重前先确认 equals 实现；去重放排序前能少排一些元素。子列表是 null 时要先过滤，否则 List::stream 直接抛 NPE。</div></details>',
+        '用 groupingBy 统计一段文本里每个单词出现的次数（提示：下游用 counting）。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：文本「a b a」输出 <code>{a=2, b=1}</code>，键的顺序不保证（HashMap 无序）。<b>为什么</b>：<code>Collectors.groupingBy(w -&gt; w, Collectors.counting())</code> 先按分类函数分组，下游 counting 统计每组元素个数。<b>要点</b>：先按空白切分并过滤空串；大小写敏感，需要统一时先 toLowerCase；想要有序输出就传 <code>TreeMap::new</code> 作为 mapFactory。同一个句子按空格切开后还带标点，写个正则或替换掉再统计，结果才对得上肉眼。</div></details>',
+        '写一段代码复现 IllegalStateException，并说明如何修复。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Stream&lt;Integer&gt; s = list.stream(); s.count(); s.count();</code> 第二次调用抛 <code>java.lang.IllegalStateException: stream has already been operated upon or closed</code>。<b>为什么</b>：流是一次性视图，中间操作都是惰性的，只有终端操作才真正消费它，消费完内部状态就置为已操作，再调任何终端方法都会抛这个异常。<b>要点</b>：修复方式是每次重新 <code>list.stream()</code>；确实要复用中间结果就收集成列表，JDK 16 起 <code>toList()</code> 得到不可变列表，<code>Collectors.toList()</code> 得到可变 ArrayList，两者别混。必须在多处复用就用 <code>Supplier&lt;Stream&lt;T&gt;&gt;</code>，每次 get() 新建；把流存字段或当参数传来传去是这个错误最常见的诱因，编译器不会提醒。</div></details>',
+        '构造一个 100 万元素的列表，分别用串行和并行求和，比较耗时并解释差异。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：这个规模并行通常略快或持平，差距往往只有几十毫秒；把规模降到一万时，并行反而更慢。<b>为什么</b>：并行有拆分、任务调度、结果合并的固定开销，元素太少摊不平；元素是装箱的 Integer 时，拆箱与缓存局部性也会拖慢。<b>要点</b>：测量前先预热，用 <code>System.nanoTime</code> 或 JMH；<code>IntStream.sum</code> 比 reduce 更适合；并行下绝不能写共享可变状态。</div></details>',
+        '用 toMap 建立「学号 → 学生」的索引，处理重复学号并说明合并函数的作用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：学号唯一时得到 <code>{1=学生A, 2=学生B}</code>；有重复学号且不写合并函数时抛 <code>IllegalStateException: Duplicate key</code>。<b>为什么</b>：toMap 的第三个参数是 BinaryOperator，用来说明遇到重复键时保留哪一个。<b>要点</b>：<code>(a, b) -&gt; b</code> 保留后者，<code>(a, b) -&gt; a</code> 保留前者；需要保持源顺序时传 <code>LinkedHashMap::new</code>；键为 null 会抛 NPE。toMap 也不接受 null 值，遇到值为 null 的元素要先过滤，或换 collectingAndThen 处理。</div></details>',
       ] }
     ]
   };
@@ -589,22 +589,22 @@ public class OptionalInStream {
       ] },
       { h: '2.12 常见追问' },
       { list: [
-        '<b>Optional 能完全替代 null 吗？</b>不能，它只适合返回值；字段、参数、数组元素仍然用 null 或空集合表达。',
-        '<b>orElse 和 orElseGet 差在哪？</b>前者参数立即求值，后者只在需要时调用 Supplier，耗时操作必须用后者。',
-        '<b>为什么 get() 不推荐？</b>空时抛 NoSuchElementException，等于放弃 Optional 提供的类型信息。',
-        '<b>Optional 为什么不能序列化？</b>设计者认为它不该出现在长期存储或网络传输的结构里，避免版本与兼容问题。',
-        '<b>Optional.ofNullable 和 Optional.of 怎么选？</b>值一定非空用 of，来路不明用 ofNullable，明确没有用 empty。',
-        '<b>Optional 有性能问题吗？</b>每次创建多一个对象，普通业务可忽略，超热路径应改用 null 或基本类型。'
+        '<b>问：Optional 能完全替代 null 吗？</b><br>答：不能，它只适合做返回值，用来在类型上表达「这次查询可能没有结果」。字段、方法参数、数组元素、集合元素仍然用 null 或空集合表达：Optional 字段不能序列化、多一层包装，也违背「容器不该嵌套」的直觉。判断标准是「调用方是否必须意识到可能为空」——返回值是，字段不是。集合的空用 <code>List.of()</code> 表示，不要用 <code>Optional&lt;List&gt;</code>。',
+        '<b>问：orElse 和 orElseGet 差在哪？</b><br>答：前者参数立即求值，不管 Optional 有没有值，右边的表达式都会先算出来；后者接受 Supplier，只在空的时候才调用。<code>orElse(loadFromDb())</code> 每次都查库，即使值存在——这是最常见的性能陷阱；<code>orElseGet(this::loadFromDb)</code> 才是懒加载。字面量和常量用 orElse，需要计算、查库、new 对象的一律用 orElseGet；orElseThrow 同理，只在空时才构造异常。',
+        '<b>问：为什么 get() 不推荐？</b><br>答：空时抛 <code>NoSuchElementException</code>，等于把 Optional 提供的「可能没有」信息又扔掉了，调用方还是得靠异常分支处理，和直接用 null 没本质区别，只是换了个异常类型。推荐 orElse、orElseGet、orElseThrow(Supplier) 显式给出兜底或业务异常；确实要断言非空时用 <code>orElseThrow()</code> 并写清为什么不空。<code>isPresent()</code> 加 get 的组合也属于反模式。',
+        '<b>问：Optional 为什么不能序列化？</b><br>答：设计者认为它不该出现在长期存储或网络传输的结构里：Optional 是临时的返回值容器，一旦进了字段、DTO 或缓存，就变成契约的一部分，后续加字段、改语义都要考虑兼容；Jackson 之类的默认配置也不能直接处理它。需要传输就传值或 null，或者用可空对象配 <code>@JsonInclude</code>。把 Optional 当字段还会让 equals、toString 变得反直觉。',
+        '<b>问：Optional.ofNullable 和 Optional.of 怎么选？</b><br>答：值一定非空用 of，它是断言，传 null 立刻抛 <code>NullPointerException</code>，能帮你尽早发现「本该非空」的 bug；来路不明（可能来自 map、外部输入、其他方法返回值）用 ofNullable；明确没有结果用 <code>empty()</code>，比 <code>ofNullable(null)</code> 更能表达意图。不要为了「避免 NPE」到处 ofNullable，那只是把问题往后推。',
+        '<b>问：Optional 有性能问题吗？</b><br>答：每次创建多一个对象，普通业务请求里可以忽略；在超热路径、千万次调用的循环里，多出来的分配会增加 GC 压力，这时用 null 加注释，或者直接用基本类型（OptionalInt 也可能装箱，int 加哨兵值更省）。真正的性能问题往往来自 orElse 里做了昂贵计算，而不是 Optional 本身。别为了性能牺牲「可能为空」的表达力。',
       ] },
       { h: '2.13 自测与练习' },
-      { p: '下面的练习建议都在本地跑一遍，尤其是第 3 题，亲眼看到两个异常的类名和消息，比背文档印象深得多。做完之后再回头看本章的小结，应该能用自己的话解释每一条，而不是只记住方法名。' },
+      { p: '下面的练习建议都跑一遍，尤其是第 3 题：亲眼看到两个异常的类名和消息，比背文档印象深得多。' },
       { ol: [
-        '写一个方法按学号查学生，找不到返回 Optional.empty()，调用方分别用 orElse 和 orElseThrow 处理。',
-        '把一段三层嵌套的 if (a != null) 改写成 map 链，并说明哪一步必须用 flatMap。',
-        '故意写 Optional.of(null) 和 empty.get()，记录两个异常的完整类名与消息。',
-        '用 Optional.stream() 过滤一批字符串中的非法数字，只保留能解析的整数。',
-        '解释为什么 Optional 不适合做实体字段，并举出一个会报错的场景。',
-        '比较 orElse 与 orElseGet 在“默认值来自数据库”时的行为差异，写出测试代码验证。'
+        '写一个方法按学号查学生，找不到返回 Optional.empty()，调用方分别用 orElse 和 orElseThrow 处理。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：学号存在时两条路径都返回学生；不存在时 <code>orElse(new Student("未知"))</code> 返回占位对象，<code>orElseThrow(() -&gt; new IllegalArgumentException("学号不存在"))</code> 抛业务异常，异常类型由你自己决定。<b>为什么</b>：Optional 把「可能查不到」写进了签名，调用方必须明确选一种兜底策略。<b>要点</b>：查不到要返回 <code>Optional.empty()</code>，不要返回 null；orElseThrow 用 Supplier 才懒加载；判断存在性别用 isPresent 加 get。</div></details>',
+        '把一段三层嵌套的 if (a != null) 改写成 map 链，并说明哪一步必须用 flatMap。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Optional.ofNullable(order).map(Order::getUser).map(User::getAddress).map(Address::getCity).orElse("未知")</code> 遇到任意一环为 null 都返回「未知」，全程不抛 NPE。<b>为什么</b>：map 内部遇到 null 直接返回 empty，链在这里断掉，后面的 map 只是空转，不会抛 NPE；链尾用 orElse 给出兜底值，整条链从头到尾没有一个显式判空。<b>要点</b>：某一步本身就返回 Optional（例如 <code>findCity()</code>）时必须用 flatMap，否则得到 <code>Optional&lt;Optional&lt;String&gt;&gt;</code>；<code>Optional.of(null)</code> 直接抛 NPE，入参可能是 null 就用 ofNullable。别在链尾用 <code>get()</code>，空时抛 <code>NoSuchElementException</code>，用 orElse、orElseGet 或 orElseThrow；Optional 只适合做返回值，别当字段或方法参数。</div></details>',
+        '故意写 Optional.of(null) 和 empty.get()，记录两个异常的完整类名与消息。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Optional.of(null)</code> 立刻抛 <code>java.lang.NullPointerException</code>；<code>Optional.empty().get()</code> 抛 <code>java.util.NoSuchElementException: No value present</code>。<b>为什么</b>：前者是「你保证非空却给了 null」，属于契约违背；后者是「明知可能空却强行取值」。<b>要点</b>：把完整类名和消息抄进笔记，遇到日志时能一眼区分「构造期错误」和「取值期错误」；生产代码里这两处分别改成 ofNullable 加 orElseThrow。</div></details>',
+        '用 Optional.stream() 过滤一批字符串中的非法数字，只保留能解析的整数。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入 <code>["1", "x", "3"]</code>，最终收集到 <code>[1, 3]</code>。<b>为什么</b>：<code>Optional.stream()</code> 把有值转成单元素流、空转成空流，再 <code>flatMap(Optional::stream)</code> 正好把空的丢掉。<b>要点</b>：解析本身要 try-catch，因为 parseInt 抛的是 NumberFormatException，先用一个返回 Optional 的私有方法包住；Optional.stream 是 Java 9 才有的；别在 lambda 里吞掉异常。被过滤掉的非法项最好记录一条日志，否则线上数据错了都不知道丢在哪。</div></details>',
+        '解释为什么 Optional 不适合做实体字段，并举出一个会报错的场景。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：给 JPA 实体加 <code>Optional&lt;String&gt; name</code> 字段能编译通过，但启动或查询时映射失败——Hibernate 不把它当普通属性；给 DTO 加字段时，默认没注册 jackson-datatype-jdk8（Jdk8Module）的 Jackson 无法构造 <code>java.util.Optional</code>，反序列化会直接失败。<b>为什么</b>：Optional 没有实现 Serializable，也不是 JavaBean 的常规类型，框架拿不到「值或 null」的语义。<b>要点</b>：字段用普通类型配非空约束，只在查询方法上返回 Optional；即使注册了模块，Optional 字段在线协议里也表达不了「没给这个字段」与「给了 null」的区别。对外 DTO 用可空引用加显式 <code>@JsonInclude</code>，别把 Optional 当传输类型，它只适合方法返回值。</div></details>',
+        '比较 orElse 与 orElseGet 在「默认值来自数据库」时的行为差异，写出测试代码验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：值存在时，<code>orElse(queryDb())</code> 仍然查了一次库（用计数器或 Mockito verify 能验证），<code>orElseGet(this::queryDb)</code> 一次都没查。<b>为什么</b>：orElse 的参数是普通表达式，调用前就求值；orElseGet 收 Supplier，只有空时才执行。<b>要点</b>：判据是「默认值是否昂贵」；单测里用 verify 断言调用次数，比看输出更可靠；Sonar 规则 S4276 也会提示这个坑。</div></details>',
       ] }
     ]
   };
@@ -817,22 +817,22 @@ public class StreamChainDemo {
       ] },
       { h: '3.13 常见追问' },
       { list: [
-        '<b>字节流和字符流能互相转换吗？</b>能，InputStreamReader 把字节流转成字符流，OutputStreamWriter 反过来。',
-        '<b>为什么 read() 返回 int 而不是 byte？</b>需要用 -1 表示流结束，byte 的取值范围不够。',
-        '<b>FileReader 为什么容易乱码？</b>它用平台默认编码，跨环境不一致，应改用 InputStreamReader 指定字符集。',
-        '<b>flush 和 close 有什么区别？</b>flush 只把缓冲推下去，流还能继续用；close 刷完并释放资源，之后不能再写。',
-        '<b>关闭外层流，内层会自动关吗？</b>会，处理流的 close 会转发给被包装的流，所以只需要关最外层。',
-        '<b>复制图片能用字符流吗？</b>不能，编码转换会破坏字节，必须用字节流。'
+        '<b>问：字节流和字符流能互相转换吗？</b><br>答：能。<code>InputStreamReader</code> 把字节流按指定字符集解码成字符流，<code>OutputStreamWriter</code> 反过来编码；必须显式传字符集，例如 <code>new InputStreamReader(in, StandardCharsets.UTF_8)</code>，否则用平台默认编码，换个环境就乱码。字符流读写的本质仍是字节流加编解码器，所以要始终清楚「哪一层在解码」。二进制数据（图片、压缩包）只能走字节流，文本才走字符流。',
+        '<b>问：为什么 read() 返回 int 而不是 byte？</b><br>答：因为要用 -1 表示流结束，而 byte 的取值范围是 -128 到 127，没有多余的值表示 EOF。<code>read()</code> 实际返回的是 0 到 255 的无符号字节值，读完返回 -1，所以循环写成 <code>while ((n = in.read(buf)) != -1)</code>。拿到 int 后写回时只取低 8 位，所以不会溢出。注意判断条件必须和 -1 比，和 0 比是错的——0 是合法的字节值。',
+        '<b>问：FileReader 为什么容易乱码？</b><br>答：它用平台默认编码解码（Windows 中文环境常见 GBK，Linux 与 macOS 多为 UTF-8），文件实际编码和默认编码不一致就乱码，而代码里看不到任何编码痕迹，换台机器才复现。正确写法是 <code>new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8)</code>，或者直接用 <code>Files.newBufferedReader(path, UTF_8)</code>。读之前先确认文件编码，IDE 右下角、file 命令都能看。',
+        '<b>问：flush 和 close 有什么区别？</b><br>答：flush 只把缓冲区里的数据推给下游，流还能继续用；close 先 flush 再释放句柄，之后不能再写。缓冲流不 flush 就结束，缓冲区里的数据会丢，进程崩溃时同样可能丢。实践上不需要手动 flush——close 和 try-with-resources 会帮你做；只有在「必须让对端立刻看到」时才手动调用，例如请求响应式的网络协议。',
+        '<b>问：关闭外层流，内层会自动关吗？</b><br>答：会。处理流（BufferedInputStream、InputStreamReader 等）的 close 会转发给被包装的流，逐层向下直到节点流，所以只需要关最外层，这也是装饰器模式的约定。自己写包装类时必须实现这一点，否则资源会泄漏。try-with-resources 里如果内外层都声明了，关闭顺序是逆序，内层会被关两次；按规范第二次 close 不产生效果，但自己实现的类未必如此。',
+        '<b>问：复制图片能用字符流吗？</b><br>答：不能。图片是二进制，字节序列在某个编码下可能非法，解码时被替换成问号或 U+FFFD，再编码写回去数据就损坏了，文件打不开。任何不是文本的数据都必须用字节流：图片、音视频、zip、class 文件、序列化后的对象。判断标准很简单：这个文件用文本编辑器打开能不能正常显示、且你不介意编码转换——不能就说明要用字节流。',
       ] },
       { h: '3.14 自测与练习' },
-      { p: '这一章的练习都围绕“亲手看到字节和字符的差别”展开，建议每道题都真的跑一遍，观察输出和文件大小，比读十遍概念管用。' },
+      { p: '这一章的练习都围绕「亲手看到字节和字符的差别」展开：每道题都真跑一遍，观察输出与文件大小，比读十遍概念管用。' },
       { ol: [
-        '用字节流把一个 txt 文件复制一份，再用字符流复制一份，比较两个副本的大小是否与原文件一致。',
-        '把“中文”分别用 UTF-8 和 GBK 编码，打印字节数组，解释为什么长度不同。',
-        '故意把 write(buf, 0, n) 改成 write(buf)，复制一个非整缓冲区大小的文件，观察副本末尾多出了什么。',
-        '写一段代码，用 GBK 读取一个 UTF-8 文件，再从现象反推是哪种乱码。',
-        '用 CloseDemo 的写法改写 FileCopyBytes，去掉 try-with-resources，体会代码长了多少。',
-        '解释为什么 InputStream.read() 返回 -1 而不是抛异常表示结束，这样设计有什么好处。'
+        '用字节流把一个 txt 文件复制一份，再用字符流复制一份，比较两个副本的大小是否与原文件一致。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：字节流副本与原文件字节数完全相同；字符流复制纯 UTF-8 中文文本时大小通常一致，但复制图片或带 BOM 的文件时大小会变，甚至打不开。<b>为什么</b>：字符流要解码再编码，非法序列被替换、BOM 可能被丢弃或重复写入。<b>要点</b>：用 <code>Files.size</code> 对比三个数字；字符流两侧显式指定同一字符集；结论写成「文本可往返、二进制不可」。</div></details>',
+        '把「中文」分别用 UTF-8 和 GBK 编码，打印字节数组，解释为什么长度不同。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：UTF-8 得到 6 个字节（每个汉字 3 个），GBK 得到 4 个字节（每个汉字 2 个），打印出来是两组十进制或十六进制序列。<b>为什么</b>：UTF-8 对基本汉字用三字节变长编码，GBK 固定双字节，两套编码互不兼容，用错就乱码。<b>要点</b>：<code>"中文".getBytes(StandardCharsets.UTF_8)</code> 与 <code>Charset.forName("GBK")</code> 对比；用 <code>Arrays.toString</code> 打印；GBK 不在 StandardCharsets 常量里，得用 Charset.forName。</div></details>',
+        '故意把 write(buf, 0, n) 改成 write(buf)，复制一个非整缓冲区大小的文件，观察副本末尾多出了什么。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：副本字节数比原文件大，末尾多出上一次读取残留的内容，看起来像一段重复数据。<b>为什么</b>：<code>write(buf)</code> 总是写满整个数组，最后一次 read 只填了前 n 个字节，后面的槽位还是上一轮的数据。<b>要点</b>：必须写 <code>out.write(buf, 0, n)</code>；用 30 字节左右的文件配 8KB 缓冲区最容易复现；用 <code>Files.mismatch</code> 或 cmp 验证差异。</div></details>',
+        '写一段代码，用 GBK 读取一个 UTF-8 文件，再从现象反推是哪种乱码。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：中文变成「涓枃」这类莫名其妙但仍是汉字的内容，英文和数字完全正常。<b>为什么</b>：UTF-8 的三字节序列被按 GBK 的两个字节切分，恰好拼成了别的合法汉字，这就是 mojibake。<b>要点</b>：看到「乱码仍是汉字加英文正常」，优先怀疑编码不匹配而不是文件损坏；用十六进制看前几个字节确认（EF BB BF 表示带 BOM）；修复是两端统一 UTF-8。</div></details>',
+        '用 CloseDemo 的写法改写 FileCopyBytes，去掉 try-with-resources，体会代码长了多少。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：代码从约十行变成近二十行，finally 里要 close 两个流，还要额外处理 close 自身抛出的 IOException，或者再套一层 try-catch。<b>为什么</b>：TWR 由编译器生成关闭逻辑，并保证逆序关闭与异常压制；手写 finally 容易漏判空、漏吞异常。<b>要点</b>：对比时注意「读失败时 finally 里的 in 可能还没初始化」，那是 NPE 的经典来源；JDK 9 之后可以直接 <code>try (in; out)</code> 写已有变量。</div></details>',
+        '解释为什么 InputStream.read() 返回 -1 而不是抛异常表示结束，这样设计有什么好处。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：读到文件末尾返回 -1，循环自然结束；只有真正的 IO 错误（磁盘坏道、连接中断）才抛 IOException。<b>为什么</b>：读完文件是正常结束而不是异常情况，用返回值表达属于正常分支，既避免用异常做流程控制，也省掉每次读完都创建异常对象的开销。<b>要点</b>：<code>read()</code> 与 <code>read(buf)</code> 都以 -1 表示结束；返回 0 只在 <code>read(buf, off, len)</code> 且 len 为 0 时出现。</div></details>',
       ] }
     ]
   };
@@ -1023,22 +1023,22 @@ public class WordCount {
       ] },
       { h: '4.11 常见追问' },
       { list: [
-        '<b>缓冲流能不能完全替代手动数组？</b>能，缓冲流内部就是数组，而且处理了边界情况，优先用它。',
-        '<b>为什么关闭外层就能关闭内层？</b>处理流的 close 会转发给被包装的流，逐层向下直到节点流。',
-        '<b>try-with-resources 能用于非 IO 资源吗？</b>能，只要实现 AutoCloseable，锁、连接、线程池都可以。',
-        '<b>close 调用两次会怎样？</b>规范要求已关闭的流再 close 不产生效果，但自定义实现未必，别依赖这个行为。',
-        '<b>为什么我的文件是空的？</b>最常见原因是没 flush 或没关闭，其次是写到了另一个路径。',
-        '<b>BufferedReader 和 Scanner 怎么选？</b>按行快速读用 BufferedReader，需要解析数字或分词再用 Scanner。'
+        '<b>问：缓冲流能不能完全替代手动数组？</b><br>答：能，缓冲流内部就是数组，而且帮你处理了「最后一次读不满」这类边界情况：<code>read(buf)</code> 返回实际字节数，写的时候只写有效部分。手写数组容易犯两个错——<code>write(buf)</code> 写满整个数组导致文件变大，以及忘记处理 read 返回 -1。缓冲流还会在合适的时机合并系统调用。除非要做零拷贝、内存映射或自定义协议解析，否则优先用 Buffered 系列。',
+        '<b>问：为什么关闭外层就能关闭内层？</b><br>答：处理流的 close 会转发给被包装的流，逐层向下直到节点流，这是装饰器模式的约定，BufferedInputStream.close 内部就调用了 <code>in.close()</code>。所以 <code>new BufferedReader(new FileReader(f))</code> 只需要关最外层。自己写包装类时必须遵守这个约定，否则使用者按惯例只关外层就会泄漏文件句柄。同时声明内外层时是逆序关闭，内层会被关两次。',
+        '<b>问：try-with-resources 能用于非 IO 资源吗？</b><br>答：能，只要实现 <code>AutoCloseable</code>（<code>Closeable</code> 是它的子接口，close 声明 throws IOException）。锁、数据库连接、线程池、网络会话都可以用，例如 <code>ReentrantLock</code> 需要自己包一层。注意 close 的语义是「释放」而不是「提交」——事务要在 close 之前 commit。多个资源用分号分隔，关闭顺序与声明相反。',
+        '<b>问：close 调用两次会怎样？</b><br>答：规范要求已关闭的流再 close 不产生效果，Buffered 与 File 系列都遵守；但自定义实现未必，可能重复 flush、重复释放句柄甚至抛异常。所以不要依赖「多关一次没关系」，用 try-with-resources 保证只关一次。如果确实要在 finally 里关，先判空，并吞掉或用日志记录 close 的 IOException，避免它覆盖真正的主异常。',
+        '<b>问：为什么我的文件是空的？</b><br>答：最常见原因是既没 flush 也没 close：数据还躺在 BufferedOutputStream 的数组里，进程结束就丢了。其次是写到了另一个路径——相对路径以工作目录为准，和你想的不是一个目录。排查顺序：打印 <code>path.toAbsolutePath()</code> 确认路径，加上 try-with-resources，再用 <code>Files.size</code> 看大小。用 IDE 运行时工作目录通常是项目根，而不是源码目录。',
+        '<b>问：BufferedReader 和 Scanner 怎么选？</b><br>答：按行快速读、数据量大事用 BufferedReader（<code>readLine</code> 返回 null 表示结束，空行返回空串）；需要按类型解析（nextInt、nextDouble）、按分隔符分词，或者从 System.in 交互读，用 Scanner 更方便，但它更慢，还有 nextInt 之后换行符残留的坑。读大文件时 Scanner 的正则分词开销很明显。现代代码里文本文件也可以直接用 <code>Files.newBufferedReader</code> 加 <code>lines()</code>。',
       ] },
       { h: '4.12 自测与练习' },
-      { p: '下面的练习建议用真实文件做，尤其要亲手制造一次“文件是空的”，把 flush 的作用记牢。做完后对照本章小结，确认每条都能用自己的话解释。' },
+      { p: '下面的练习建议用真实文件做，尤其要亲手制造一次「文件是空的」，把 flush 的作用记牢；做完对照本章小结，确认每条都能用自己的话解释。' },
       { ol: [
-        '用缓冲流复制一个 100MB 的文件，分别设置 8KB 和 1MB 缓冲区，比较耗时。',
-        '故意去掉 close，只写三行文本就结束程序，观察文件内容并解释原因。',
-        '把 ReadLines 的循环条件从 != null 改成 !line.isEmpty()，运行后看看哪个空行被跳过了。',
-        '用 try-with-resources 同时管理 BufferedReader 和 BufferedWriter，实现文件转大写。',
-        '写一个自定义 AutoCloseable，在 work 和 close 里各抛一个异常，打印 getSuppressed 的内容。',
-        '解释为什么在 try 块里 return 一个打开的流是错误用法，应该怎么改。'
+        '用缓冲流复制一个 100MB 的文件，分别设置 8KB 和 1MB 缓冲区，比较耗时。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：两者都比不用缓冲快一到两个数量级；8KB 与 1MB 之间通常差 10% 到 30%，1MB 略快但不是线性。<b>为什么</b>：系统调用次数从百万级降到千级，瓶颈转向磁盘或页缓存；缓冲区再大也受 IO 带宽限制。<b>要点</b>：用 <code>System.nanoTime</code> 计时，先跑一次预热；复制后用 <code>Files.size</code> 与 <code>Files.mismatch</code> 验证完整性；默认 8KB 已够用，除非实测有收益。</div></details>',
+        '故意去掉 close，只写三行文本就结束程序，观察文件内容并解释原因。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：文件存在但大小是 0，或者只写进去一部分；程序正常退出、没有任何报错。<b>为什么</b>：<code>BufferedOutputStream</code> 的数据还在内存数组里，只有 close（内部先 flush）才真正写出；JVM 退出不会替你 flush。<b>要点</b>：换成 try-with-resources 后三行完整出现；用 <code>Files.size</code> 或 cat 验证；这是「写完一定要 close」最直观的演示。</div></details>',
+        '把 ReadLines 的循环条件从 != null 改成 !line.isEmpty()，运行后看看哪个空行被跳过了。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出少了若干行——所有空行都被跳过；文件末尾若无换行，最后一行仍能读到。<b>为什么</b>：<code>readLine</code> 用 null 表示「没有更多行」，空行是长度为 0 的字符串，用它当结束条件既漏掉空行，又永远等不到 null，最终 NPE 或死循环。<b>要点</b>：正确条件始终是 <code>!= null</code>；要跳过空行就在循环体内 <code>if (line.isBlank()) continue;</code>。</div></details>',
+        '用 try-with-resources 同时管理 BufferedReader 和 BufferedWriter，实现文件转大写。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出文件每行都变成大写，中文不受影响；中途抛异常时两个文件也都能正常关闭。<b>为什么</b>：try 括号里声明两个资源，离开块时逆序关闭（先 writer 后 reader），保证缓冲区被 flush。<b>要点</b>：用 <code>toUpperCase(Locale.ROOT)</code> 避免土耳其语 i 问题；换行用 <code>newLine()</code>；不要在同一次 try 里读写同一个文件，会互相覆盖。</div></details>',
+        '写一个自定义 AutoCloseable，在 work 和 close 里各抛一个异常，打印 getSuppressed 的内容。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：work 抛 RuntimeException("work")，close 抛 RuntimeException("close")，最终 catch 到的是 work，<code>getSuppressed().length</code> 为 1，其中正是 close 的异常。<b>为什么</b>：TWR 把 close 的异常压制到主异常上，避免覆盖真正的失败原因。<b>要点</b>：手写 finally 关闭时结果相反，close 的异常会覆盖 work；打印时用 <code>for (Throwable t : e.getSuppressed())</code>；这就是不手写 finally close 的实证。另一个常见误区是以为 System.gc() 或 finalize 会帮你 flush，两者都不可靠。</div></details>',
+        '解释为什么在 try 块里 return 一个打开的流是错误用法，应该怎么改。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：方法返回了流对象，但原方法的 try-with-resources 已经把它关闭，调用方一读就抛 <code>IOException: Stream Closed</code>。<b>为什么</b>：资源的作用域就是这个块，返回出去的是已关闭的句柄。<b>要点</b>：把消费逻辑放进来（回调，或者直接返回已读完的 byte[]、String）；必须返回流时由调用方负责关闭，例如 return <code>Files.lines(path)</code> 并让调用方用 try-with-resources 包住。</div></details>',
       ] }
     ]
   };
@@ -1304,22 +1304,22 @@ public class CleanOldLogs {
       ] },
       { h: '5.13 常见追问' },
       { list: [
-        '<b>Path 和 File 能互相转换吗？</b>能，file.toPath() 与 path.toFile()，但非默认文件系统的 Path 不能转 File。',
-        '<b>为什么 Files.list 要关闭？</b>它持有目录句柄，不关会泄漏，Windows 上还会导致目录无法删除。',
-        '<b>readString 和 readAllLines 怎么选？</b>要整体处理用 readString，要逐行处理用 readAllLines，文件大则两者都别用。',
-        '<b>ATOMIC_MOVE 为什么有时失败？</b>跨文件系统不支持原子改名，会抛 AtomicMoveNotSupportedException。',
-        '<b>exists 返回 false 就一定是文件不存在吗？</b>不一定，也可能是没权限，或者路径是断开的符号链接。',
-        '<b>normalize 会解析符号链接吗？</b>不会，它只做字符串层面的化简，解析链接要用 toRealPath。'
+        '<b>问：Path 和 File 能互相转换吗？</b><br>答：能。<code>file.toPath()</code> 与 <code>path.toFile()</code> 是标准互转，但只有默认文件系统的 Path 才能转成 File；zip 文件系统里的 Path 调用 toFile 会抛 <code>UnsupportedOperationException</code>。新代码优先用 Path 加 Files：异常更具体（NoSuchFileException、AccessDeniedException），支持符号链接相关的选项，还能直接配 Stream。File 只在对接老 API 时才需要。',
+        '<b>问：为什么 Files.list 要关闭？</b><br>答：它返回的 Stream 持有目录句柄，不关会泄漏文件描述符，Windows 上还会导致目录无法删除，报「另一个程序正在使用此文件」。<code>Files.walk</code>、<code>Files.find</code>、<code>Files.lines</code> 同理，都要放进 try-with-resources。终端操作不会自动关闭流，这一点和集合的 stream() 不同——集合流背后没有句柄，目录流有。',
+        '<b>问：readString 和 readAllLines 怎么选？</b><br>答：要整体处理（正则匹配、JSON 解析、全文搜索）用 readString；要逐行处理用 readAllLines；两者都会把整个文件读进内存，大文件都别用——改用 <code>Files.lines</code>（惰性，且要关闭）或 <code>newBufferedReader</code> 循环读。默认字符集是 UTF-8（Java 18 起明确），需要别的编码就传 Charset。写文件对应 writeString，默认创建文件并覆盖内容。',
+        '<b>问：ATOMIC_MOVE 为什么有时失败？</b><br>答：原子改名要求源和目标在同一个文件系统或卷上，跨设备（例如从 /tmp 到别的挂载点）会抛 <code>AtomicMoveNotSupportedException</code>，某些网络文件系统也不支持。同时给 ATOMIC_MOVE 和 REPLACE_EXISTING 时，原子语义优先。实践方案是把临时文件建在目标目录里，用 <code>Files.createTempFile(target.getParent(), ...)</code> 保证同卷，再原子改名。',
+        '<b>问：exists 返回 false 就一定是文件不存在吗？</b><br>答：不一定。也可能是没有父目录的读或执行权限（返回 false 而不是抛异常）、路径是断开的符号链接，或者路径写法本身有问题。要区分就用 <code>Files.notExists</code>、<code>Files.isReadable</code>、<code>Files.isSymbolicLink</code> 组合判断，或者直接 <code>Files.readAttributes</code> 让异常告诉你原因。权限问题在生产环境很常见，别只看 exists。',
+        '<b>问：normalize 会解析符号链接吗？</b><br>答：不会。normalize 只做字符串层面的化简：去掉点号、合并 <code>a/../b</code>，不访问磁盘，也不判断路径是否真实存在；解析符号链接要用 <code>toRealPath()</code>，它会跟随链接并返回绝对的真实路径，并要求路径存在。<code>toAbsolutePath</code> 只补全工作目录，同样不访问磁盘。防 <code>../</code> 逃逸的安全校验，应该 normalize 之后再判断前缀。',
       ] },
       { h: '5.14 自测与练习' },
-      { p: '练习建议在临时目录里做，避免误删项目文件。每道题都先想清楚“失败时会发生什么”，再动手运行，这样对异常的理解会比只看文档深得多。' },
+      { p: '练习建议在临时目录里做，避免误删项目文件；每道题先想清楚「失败时会发生什么」，再动手运行。' },
       { ol: [
-        '用 Path.of 解析一个多层路径，打印文件名、父目录、段数和根。',
-        '用 Files.walk 找出某目录下所有 .java 文件，按大小排序输出前五个。',
-        '实现“把 a.txt 复制为 b.txt，若 b.txt 已存在则覆盖”，只用一行 Files 调用。',
-        '写一个方法递归删除目录，要求目录非空也能删，说明为什么必须倒序。',
-        '用临时文件加 ATOMIC_MOVE 实现原子写配置，模拟写入中途抛异常，验证目标文件仍是旧内容。',
-        '解释 Files.exists 返回 false 的三种可能原因，并写出分别如何确认。'
+        '用 Path.of 解析一个多层路径，打印文件名、父目录、段数和根。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>Path.of("/tmp/data/logs/app.log")</code> 的 getFileName 是 <code>app.log</code>，getParent 是 <code>/tmp/data/logs</code>，getNameCount 是 4，getRoot 是 <code>/</code>。<b>为什么</b>：Path 由根和若干名字元素组成，getNameCount 不包含根，所以这个绝对路径是四段；getFileName 与 getParent 只是切分名字元素，不会碰磁盘，路径写错也不报错。<b>要点</b>：用 <code>Path.of</code> 是 Java 11 的写法，Java 7 的 <code>Paths.get</code> 完全等价；解析以斜杠结尾的目录时最后一段为空，getNameCount 会多出一段，判断是不是目录要看 <code>Files.isDirectory</code> 而不是数段数。<code>Path.of("/")</code> 的 getFileName 返回 null，要判空；相对路径的 getRoot 也是 null。拼接用 <code>Path.of(dir, "app.log")</code>，别手拼斜杠，Windows 上根是盘符加反斜杠。</div></details>',
+        '用 Files.walk 找出某目录下所有 .java 文件，按大小排序输出前五个。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输出五行「大小 路径」，从大到小；文件不足五个时全部输出。<b>为什么</b>：walk 深度优先遍历整棵子树，filter 按后缀筛，sorted 按 <code>Files.size</code> 排序，limit 截断。<b>要点</b>：walk 返回的 Stream 必须关闭；<code>Files.size</code> 抛受检异常，lambda 里要包 try-catch；能限定深度时用 <code>Files.find</code> 加 maxDepth 更快。walk 默认会跟随符号链接，可能死循环，需要时自己传 FileVisitOption 并控制深度。</div></details>',
+        '实现「把 a.txt 复制为 b.txt，若 b.txt 已存在则覆盖」，只用一行 Files 调用。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：b.txt 存在时被覆盖为新内容，不存在时新建，一行 <code>Files.copy(a, b, StandardCopyOption.REPLACE_EXISTING)</code> 即可。<b>为什么</b>：copy 的默认行为是目标存在就抛 <code>FileAlreadyExistsException</code>，显式给 REPLACE_EXISTING 才覆盖；它只搬内容不搬时间戳，属性要另加 COPY_ATTRIBUTES，默认还会跟随符号链接，复制链接本身要加 NOFOLLOW_LINKS。<b>要点</b>：复制目录要自己递归，Files.copy 不会帮你遍历子目录；移动用 <code>Files.move</code>；需要原子替换就写临时文件再 <code>Files.move(tmp, target, ATOMIC_MOVE)</code>，跨文件系统时会抛 <code>AtomicMoveNotSupportedException</code>，要捕获后退回普通 move。Java 11 之后小文本文件直接用 <code>Files.readString</code> 与 <code>Files.writeString</code> 更省代码。</div></details>',
+        '写一个方法递归删除目录，要求目录非空也能删，说明为什么必须倒序。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：目录及其所有子项被删干净；若先删父目录会抛 <code>DirectoryNotEmptyException</code>。<b>为什么</b>：目录必须先清空才能删除，所以要先遍历子项、再删自身，也就是按深度倒序处理。<b>要点</b>：<code>Files.walk(dir).sorted(Comparator.reverseOrder())</code> 再逐个 <code>Files.delete</code>；walk 流要关闭；生产代码不要对用户输入的路径直接递归删除，先校验根路径。</div></details>',
+        '用临时文件加 ATOMIC_MOVE 实现原子写配置，模拟写入中途抛异常，验证目标文件仍是旧内容。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：写入过程中抛异常时，目标配置仍是旧内容，没有出现半截文件；成功时被一次性替换。<b>为什么</b>：写临时文件不影响目标，改名是原子操作，要么全成要么全不成。<b>要点</b>：临时文件必须建在目标同目录，跨卷不支持原子移动；用 <code>Files.move(tmp, target, ATOMIC_MOVE, REPLACE_EXISTING)</code>；异常分支里记得 <code>Files.deleteIfExists(tmp)</code>，别留下垃圾。</div></details>',
+        '解释 Files.exists 返回 false 的三种可能原因，并写出分别如何确认。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：能写出三种原因并给出确认手段——文件真不存在（<code>Files.notExists</code> 为 true）、没有父目录的读或执行权限（readAttributes 抛 AccessDeniedException，isReadable 为 false）、路径是断开的符号链接（isSymbolicLink 为 true 而 exists 为 false）。<b>为什么</b>：exists 把「不存在」和「无法判断」折叠成了同一个 false。<b>要点</b>：用 <code>Files.readAttributes(path, BasicFileAttributes.class)</code> 让异常暴露真实原因；exists 与 notExists 同时为 false 表示「无法确定」。</div></details>',
       ] }
     ]
   };
@@ -1637,23 +1637,23 @@ public class OrderJsonDemo {
         "原生序列化有体积、跨语言、版本和安全四方面的问题，对外一律不要用。",
         "JSON 只有六种值，转义是生成的核心，解析则应该交给 Jackson、Gson 这类成熟库。"
       ] },
-      { h: "6.13 常见追问" },
+      { h: '6.13 常见追问' },
       { list: [
-        "问：Serializable 是空接口，为什么实现了就能序列化？答：它只是标记，JVM 在序列化时会检查这个标记，通过了才允许写入；真正的读写逻辑在 ObjectOutputStream 和 ObjectInputStream 里。",
-        "问：既然反序列化不调用构造器，那字段校验怎么办？答：在类里写一个 private void readObject(ObjectInputStream in) 方法，先调用 in.defaultReadObject() 再自己做校验，这是标准做法。",
-        "问：transient 和 static 有什么区别？答：transient 修饰实例字段，表示这个字段不写进流；static 字段属于类，本来就不写。两者读回来都不会恢复你期望的值。",
-        "问：JSON 里的 null 和字段缺失一样吗？答：不一样。null 表示这个键存在但值是空；缺失表示这个键根本没有。Jackson 里可以用 @JsonInclude 控制是否输出 null。",
-        "问：为什么金额不建议用 double？答：二进制浮点无法精确表示 0.1 这类十进制小数，累加会积累误差；用 BigDecimal，或者干脆用\"分\"为单位的整数。",
-        "问：原生序列化真的不能用吗？答：可以用在可信的、同版本的本地缓存场景；只要数据会跨进程、跨语言、跨版本，或者来源不可信，就换成 JSON 或二进制协议。"
+        '<b>问：Serializable 是空接口，为什么实现了就能序列化？</b><br>答：它只是标记接口，没有任何方法。JVM 在序列化时检查对象类型是否实现了这个标记，通过了才允许写入；真正的读写逻辑在 ObjectOutputStream 和 ObjectInputStream 里，它们通过反射拿字段值、写类描述符。标记的意义是「作者明确同意把对象持久化」——序列化会绕过构造器、暴露私有字段，所以需要一个显式声明。没实现就抛 NotSerializableException。',
+        '<b>问：既然反序列化不调用构造器，那字段校验怎么办？</b><br>答：在类里写 <code>private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException</code>，先 <code>in.defaultReadObject()</code>，再校验字段，不合法就抛 <code>InvalidObjectException</code>。这是标准做法，也是唯一能在反序列化之后保证不变量的位置。它必须是 private、签名完全一致才会被调用；同理 writeObject 可以控制写出逻辑，readResolve 可以返回单例。',
+        '<b>问：transient 和 static 有什么区别？</b><br>答：transient 修饰实例字段，表示这个字段不写进流，读回来是类型默认值（0、false、null）；static 字段属于类，本来就不参与序列化，读回来是当前 JVM 里该类的值，不是文件里的值。两者读回都不会恢复你期望的内容，区别在于 transient 是作者有意排除，static 是语言层面不属于对象。密码、句柄、缓存适合 transient，并能在 readObject 里重新算出来。',
+        '<b>问：JSON 里的 null 和字段缺失一样吗？</b><br>答：不一样。null 表示键存在但值为空，缺失表示这个键根本没有出现；对「部分更新」的语义差别很大——把缺失当 null 处理会把用户没提交的字段清空。Jackson 里可以用 <code>@JsonInclude(NON_NULL)</code> 控制输出是否省略 null，区分「没给」和「给了 null」则属于库层约定：Jackson 生态常用的做法是 <code>jackson-databind-nullable</code> 提供的 <code>JsonNullable</code> 包装类型，或者自己写合并逻辑判断；标准 Java 序列化与 record 都没有这个语义，选型前先确认团队用的库版本是否支持。设计 PATCH 接口时必须写清用哪种语义。',
+        '<b>问：为什么金额不建议用 double？</b><br>答：二进制浮点无法精确表示 0.1 这类十进制小数，例如 0.1 加 0.2 得到 0.30000000000000004，累加会积累误差，对账时对不上。金额用 <code>BigDecimal</code>，而且构造时传字符串，<code>new BigDecimal("0.1")</code>，不要用 double 构造器；或者干脆用以「分」为单位的 long。序列化时 BigDecimal 写字符串，读回来再解析，避免精度在 JSON 层丢失。',
+        '<b>问：原生序列化真的不能用吗？</b><br>答：可以用在可信的、同版本的本地缓存场景，比如进程内临时落盘、测试夹具；只要数据会跨进程、跨语言、跨版本，或者来源不可信，就换 JSON、Protobuf 这类协议。原生序列化的四个问题是：体积大（带类描述符）、不可跨语言、版本脆弱、反序列化可被构造 gadget 链导致远程代码执行。对外接口和消息队列里一律不要用。',
       ] },
-      { h: "6.14 自测与练习" },
+      { h: '6.14 自测与练习' },
       { ol: [
-        "写一个类实现 Serializable，把对象写入文件再读回来，打印每个字段，确认值一致。",
-        "给上面的类加一个 transient 字段和一个 static 字段，观察读回来之后它们分别是什么值。",
-        "把 serialVersionUID 从 1 改成 2，用旧文件反序列化，读出完整的异常信息并解释每一部分的含义。",
-        "手写一个 JSON 转义函数，让它正确处理双引号、反斜杠、换行和制表符，并用一段含特殊字符的文本验证。",
-        "用 Jackson 把一个 List 写进文件再读回来，然后故意在 JSON 里加一个不存在的字段，观察异常并关掉对应配置。",
-        "设计一个订单与用户的 JSON 结构，要求不出现循环引用，写出对应的 Java 类并说明每个字段为什么这样设计。"
+        '写一个类实现 Serializable，把对象写入文件再读回来，打印每个字段，确认值一致。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：读回来的对象每个字段与写入时一致；没有重写 equals 时两个对象用 equals 比较是 false（不同实例），但字段值相同。<b>为什么</b>：序列化保存的是字段值，不保存对象身份；反序列化不调用构造器，直接按流里的字段赋值。<b>要点</b>：类必须实现 Serializable，且所有非 transient 字段都可序列化；用 try-with-resources 包 ObjectOutputStream；先 writeObject 再让它 close。</div></details>',
+        '给上面的类加一个 transient 字段和一个 static 字段，观察读回来之后它们分别是什么值。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：transient 字段读回来是默认值（int 为 0、对象为 null）；static 字段是当前 JVM 里的值，而不是写入时的值。<b>为什么</b>：transient 不写进流，static 属于类，根本不参与对象序列化。<b>要点</b>：需要恢复 transient 字段就在 readObject 里重新计算；测试时先改 static 字段再读，能看出它来自内存而非文件；别忘了显式写 serialVersionUID。</div></details>',
+        '把 serialVersionUID 从 1 改成 2，用旧文件反序列化，读出完整的异常信息并解释每一部分的含义。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：抛 <code>java.io.InvalidClassException</code>，消息形如 <code>local class incompatible: stream classdesc serialVersionUID = 1, local class serialVersionUID = 2</code>。<b>为什么</b>：流里记录了写入时的版本号，读取时与当前类比对，不一致直接拒绝。<b>要点</b>：消息里两个数字分别对应「流」和「本地」；兼容性改动（加字段）应保持版本号不变，破坏性改动才升；不显式声明时版本号由编译器计算，改类就可能变。</div></details>',
+        '手写一个 JSON 转义函数，让它正确处理双引号、反斜杠、换行和制表符，并用一段含特殊字符的文本验证。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：输入含双引号、反斜杠、换行、制表符的文本，输出里这些都变成以反斜杠开头的转义序列，控制字符变成 <code>u00XX</code> 形式；输出能被真实 JSON 解析器读回原字符串。<b>为什么</b>：JSON 字符串规定这几个字符和控制字符必须转义，否则解析器直接报错。<b>要点</b>：先处理反斜杠再处理引号，否则会重复转义；用 StringBuilder 逐字符拼；写完用 Jackson 读回来对比原串才算通过。</div></details>',
+        '用 Jackson 把一个 List 写进文件再读回来，然后故意在 JSON 里加一个不存在的字段，观察异常并关掉对应配置。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：默认配置下多出的字段会抛 <code>UnrecognizedPropertyException</code>；关掉之后正常读回，未知字段被忽略。<b>为什么</b>：FAIL_ON_UNKNOWN_PROPERTIES 从 Jackson 2.0 起默认就是 true；Spring Boot 的自动配置会把它默认关掉，所以同一个类在纯 Jackson 项目里抛异常、在 Boot 项目里却没事，排查时先看谁在配这个 mapper。<b>要点</b>：用 <code>objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)</code>，或类上加 <code>@JsonIgnoreProperties(ignoreUnknown = true)</code>；读 List 不能写 <code>List&lt;Book&gt;.class</code>（编译不过），要配 <code>new TypeReference&lt;List&lt;Book&gt;&gt;() {}</code>。这个开关只挡住多余字段，字段类型不匹配照样抛 <code>MismatchedInputException</code>。</div></details>',
+        '设计一个订单与用户的 JSON 结构，要求不出现循环引用，写出对应的 Java 类并说明每个字段为什么这样设计。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：订单里只存 userId 与必要的用户快照（昵称），用户里存订单 id 列表或不存，序列化不会无限递归，也不会抛 StackOverflowError。<b>为什么</b>：双向对象引用在 JSON 里必然成环，序列化器会一直往下写。<b>要点</b>：用 id 关联代替对象引用；确实要嵌套时加 <code>@JsonIgnore</code> 或 @JsonManagedReference；金额用字符串或分，时间用 ISO-8601 字符串，避免格式歧义。时间字段统一按 UTC 存、展示时再转时区，避免跨时区对账时差八小时。结构定完再用一个小工具把 JSON 序列化出来看一眼，确认没有多余的空对象和重复字段。</div></details>',
       ] }
     ]
   };

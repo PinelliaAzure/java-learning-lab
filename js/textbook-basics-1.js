@@ -21,7 +21,7 @@
       { p: '装完 JDK 后，打开安装目录会看到 bin、conf、include、jmods、lib 等文件夹。知道它们各自放什么，排查问题时能快速定位，而不是只会重装。' },
       { list: ['<code>bin</code>：java、javac、jar、javadoc、jshell 等可执行命令，PATH 要指向这里。', '<code>conf</code>：JVM 和运行时配置，如 security、net.properties。', '<code>include</code>：JNI 头文件，写 native 扩展时才用。', '<code>jmods</code>：JDK 模块文件，jlink 裁剪运行时用。', '<code>lib</code>：核心类库和工具依赖，不要手动改。'] },
       { h: '1.3 版本号怎么读，该选哪个版本与发行版' },
-      { p: '先学会读版本号。JDK 的版本形如 21.0.4+7，前面是主版本，中间是补丁号，加号后面是构建号。<code>java -version</code> 输出的第一行里，引号中的那串就是它。2018 年以后 Oracle 改成半年发一版：每年三月和九月各出一个功能版，主版本号加一；每隔几个版本挑一个作为 LTS（长期支持），目前常见的是 8、11、17、21、25，其中 25 是当前 LTS，21 是上一代 LTS；8、11、17 已停止或即将停止 OSS 支持。非 LTS 版本只维护到下一个版本发布，本质上是预览通道，不适合当作学习或生产环境的底座。' },
+      { p: '先学会读版本号。JDK 的版本形如 21.0.4+7，前面是主版本，中间是补丁号，加号后面是构建号。<code>java -version</code> 输出的第一行里，引号中的那串就是它。2018 年以后 Oracle 改成半年发一版：每年三月和九月各出一个功能版，主版本号加一；每两年挑一个作为 LTS（长期支持，当前是 25），其余为只支持半年的特性版本；目前常见的是 8、11、17、21、25，其中 25 是当前 LTS，21 是上一代 LTS；8、11、17 已停止或即将停止 OSS 支持。非 LTS 版本只维护到下一个版本发布，本质上是预览通道，不适合当作学习或生产环境的底座。' },
       { p: '学习阶段选 25 就够了，17/21 可以作过渡。25 发布于 2025 年 9 月，是当前 LTS，虚拟线程、记录类、模式匹配等特性都已经转正；17 发布于 2021 年，生态最稳，大量公司仍在用，21 发布于 2023 年，是上一代 LTS。这些版本的基础语法完全一样，你在 17 上写的代码搬到 25 基本不用改；反过来在 25 上用了新语法再拿回 17 编译，就会遇到“无效的源发行版”或“找不到符号”。' },
       { p: '这里有一种典型错误写法：教程基于 JDK 8，你装了 21，然后照着抄 <code>List.of</code>、<code>var</code>、文本块。JDK 8 里没有这些语法，编译器直接报错，你会误以为是自己写错了。修正方法不是退回 8，而是先确认教程对应的版本，遇到不认识的语法就查它从哪个版本开始支持。另一种错误是把“Java 21”和“Java 1.8”混着叫，配置里写 <code>1.8</code>、命令行却装着 21，最后两边永远对不上。' },
       { p: '还要留意“编译版本”和“运行版本”是两件事。同一个 JDK 既能编译也能运行，但你可以用 21 编译出兼容 17 的产物，办法是加 <code>--release 17</code>。这个参数比 <code>-source 17 -target 17</code> 更可靠，因为它连核心类库的签名也一起按 17 校验，不会出现“编译通过、运行缺方法”的情况。' },
@@ -111,9 +111,21 @@
       { h: '本章小结' },
       { list: ['开发装 JDK，运行可只装 JRE；JVM 负责执行字节码。', 'JAVA_HOME 指向 JDK 根目录，PATH 加入 %JAVA_HOME%\\bin。', 'javac 编译，java 运行；文件名必须与 public 类名一致。', '报错先看完整信息：找不到命令查 PATH，找不到类查目录和类名。'] },
       { h: '常见追问' },
-      { list: ['装了多个 JDK 怎么切换？IDE 里可以为每个项目单独选择 SDK；命令行通过 JAVA_HOME 和 PATH 控制。', '为什么服务器只要 JRE？服务器只运行编译好的程序，不需要 javac；但现代部署多用 JDK 镜像，方便排查。', 'JDK 需要设置 CLASSPATH 吗？普通项目不需要，Maven/Gradle 会管理；手动设置错误反而添乱。', '安装路径能带空格吗？可以，但命令行引用要加引号，建议避免中文和空格。', '卸载旧 JDK 会影响项目吗？可能，项目可能依赖旧版本编译；先确认项目 JDK 配置。'] },
+      { list: [
+        '<b>问：装了多个 JDK 怎么切换？</b><br>答：IDE 里按项目单独选 SDK，互不影响；命令行只认 PATH 和 JAVA_HOME，所以这两个必须整组一起换，只改一个就会出现 java 与 javac 版本不一致，编译出来的 class 运行期报版本错误。Linux 用 update-alternatives --config java 统一切换，macOS 可以让 JAVA_HOME 指向 /usr/libexec/java_home -v 25 的输出，或在 shell 里写个函数切换。切完用 java -version 和 javac -version 各确认一次，两行版本号一致才算切对了。',
+        '<b>问：为什么服务器只要 JRE？</b><br>答：服务器只运行编译好的字节码，不需要 javac，所以 JRE 够用。但有两个坑：Oracle 从 JDK 11 起不再单独发布 JRE 安装包，现在能下载到的独立 JRE 基本是第三方厂商的打包（例如 Eclipse Temurin 也出 JRE 版），功能上就是 JDK 去掉 javac 等开发工具，版本与补丁节奏跟着各自的厂商走；精简运行时里没有 jps、jcmd、jstack 这些诊断工具，线程卡住时无从下手。生产上更稳妥的做法是装完整 JDK，或者用 jlink 裁出运行时，另留一份 JDK 专门排查问题。',
+        '<b>问：JDK 需要设置 CLASSPATH 吗？</b><br>答：一般不需要，也建议不设。classpath 应该由具体命令或构建工具给出：命令行写 java -cp out com.example.Hello，Maven/Gradle 自己管理依赖树。把 CLASSPATH 设成全局变量后它对所有项目生效，依赖顺序和老 jar 混在一起，典型症状是明明加了包却报 NoClassDefFoundError。确实需要临时加依赖时，用 -cp 或 -classpath 追加一次，影响范围只到这一条命令。',
+        '<b>问：安装路径能带空格吗？</b><br>答：能，但命令行和脚本里必须整体加引号，否则路径会被空格切成两段，javac 收到的是半个目录名。更麻烦的是中文路径：Windows 用户名是中文时默认装进用户目录，老工具、构建脚本和日志都可能乱码，排查时连报错都读不懂。安装时挑一个短路径，比如 D 盘下的 jdk-25，不放进 Program Files，能省掉一大半莫名其妙的故障。',
+        '<b>问：卸载旧 JDK 会影响项目吗？</b><br>答：可能会。有的项目锁定旧版本编译，有的工具链（老 Gradle、老 Tomcat）只认特定大版本，卸载后构建直接失败。动手前先看项目配置：IDE 的 SDK 设置、pom.xml 里的 maven.compiler.release、gradle.properties 里的 Java 版本，再确认没有服务或进程正在用这个 JDK。确认无人依赖后再卸载，升级过的部分用 javac --release 重编一遍验证。',
+      ] },
       { h: '自测与练习' },
-      { ol: ['用命令行完成 Hello.java 的编译和运行，再删掉 .class 观察报错。', '故意把文件名改成 hello.java，记录编译器的完整报错。', '在 IDE 中新建项目，找到它使用的 JDK 路径，与终端 java -version 对比。', '解释 PATH 和 JAVA_HOME 的区别，以及为什么改完要重开终端。'] }
+      { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
+      { ol: [
+        '用命令行完成 Hello.java 的编译和运行，再删掉 .class 观察报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>javac Hello.java</code> 生成 Hello.class，<code>java Hello</code> 输出 Hello, Java!；删掉 class 再运行，报「错误: 找不到或无法加载主类 Hello」，后面往往还跟着 Caused by: java.lang.ClassNotFoundException: Hello。<b>为什么</b>：java 只加载 class 文件，源码不会被直接执行，所以删掉产物后 JVM 在 classpath 里找不到入口类。<b>要点</b>：命令是 <code>javac -encoding UTF-8 Hello.java</code> 与 <code>java Hello</code>，运行时后面不能加 .class。顺手记下 class 文件生成的位置，默认与源码同目录，找不到产物先看这一点。</div></details>',
+        '故意把文件名改成 hello.java，记录编译器的完整报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>javac hello.java</code> 报「错误: 类 Hello 是公共的, 应在名为 Hello.java 的文件中声明」，英文是 class Hello is public, should be declared in a file named Hello.java。<b>为什么</b>：public 类的类名必须与文件名完全一致，大小写也算，javac 靠文件名定位 public 类，IDE 与构建工具也依赖这条规则找源码。<b>要点</b>：改回 Hello.java 即可；一个文件只放一个 public 类，非 public 类虽可不同名，仍建议保持一致。</div></details>',
+        '在 IDE 中新建项目，找到它使用的 JDK 路径，与终端 java -version 对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：IDE 的项目设置里显示一个 SDK 路径，例如 /Library/Java/JavaVirtualMachines/jdk-25.jdk，而终端 <code>java -version</code> 打印的版本可能与之不同，甚至差好几个大版本。<b>为什么</b>：IDE 用自己配置的 SDK 启动编译和运行，不读终端 PATH；JAVA_HOME 只是给其他工具看的约定变量。<b>要点</b>：macOS 用 <code>/usr/libexec/java_home -V</code> 列出全部 JDK，Linux 用 <code>readlink -f $(which java)</code>；发现不一致先统一 JAVA_HOME，再重启 IDE。</div></details>',
+        '解释 PATH 和 JAVA_HOME 的区别，以及为什么改完要重开终端。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：在同一个窗口里 export 之后 java 立刻可用，但新开的窗口、或从桌面图标启动的 IDE，用的还是旧版本。<b>为什么</b>：PATH 决定输入 java 时系统去哪些目录找可执行文件，JAVA_HOME 只是一个约定变量，供 Maven、Tomcat、IDE 拼出 JDK 路径。终端进程启动时继承父进程的环境变量快照，父进程没重启就读不到新值。<b>要点</b>：Windows 用 <code>echo %PATH%</code> 检查，macOS 用 <code>export JAVA_HOME=$(/usr/libexec/java_home -v 25)</code>；改完关掉终端和 IDE 重开，别在旧窗口里继续试。</div></details>'
+      ] }
     ]
   };
 
@@ -244,10 +256,20 @@
       { h: '本章小结' },
       { list: ['源码 → 字节码 → JVM 翻译 → 机器码，两次翻译实现跨平台。', 'javac 负责编译期检查，JVM 负责运行期执行。', 'JDK ⊃ JRE ⊃ JVM；class 版本必须与运行 JDK 匹配。', '解释器负责启动，JIT 负责热点代码性能。'] },
       { h: '常见追问' },
-      { list: ['JVM 是操作系统吗？不是，它是运行在操作系统上的虚拟机进程。', '字节码是机器码吗？不是，字节码是 JVM 的指令集，需要解释或 JIT 编译。', 'JDK 里包含 JRE 吗？包含，所以开发机不用再单独装 JRE。', 'java 命令后面能加 .class 吗？不能，只写类名；包内的类要写全限定名。', '为什么同一个类在不同机器上行为不同？可能 JDK 版本、默认编码、时区或 native 库不同。'] },
-      { list: ['为什么 class 文件能跨平台？因为它面向 JVM 指令集，不面向具体 CPU。', 'JVM 是用什么写的？HotSpot 主要由 C++ 实现，本身也是运行在操作系统上的程序。', 'java 命令和 javaw 有什么区别？javaw 在 Windows 上不弹控制台窗口，适合 GUI 程序。', '同一个类会被加载多次吗？同一个类加载器下只会加载一次，不同加载器可能各有一份。', 'JDK 21 编译的 class 能在 JDK 17 跑吗？不能，class 版本更高，运行时会拒绝。'] },
+      { list: [
+        '<b>问：JVM 是操作系统吗？它是用什么写的？</b><br>答：不是。JVM 是一个普通的用户态进程，和你的程序一起跑在操作系统之上，内存、线程、文件句柄都要向操作系统申请，所以它能被 kill、会被容器限额、受时区与编码影响。HotSpot 主要由 C++ 实现，少量关键路径用汇编，另有一部分用 Java 写。也正因为它只是进程，平台线程才会一对一映射到操作系统线程，调度权在内核手里，虚拟线程则另走一套调度。',
+        '<b>问：java 和 javaw 有什么区别？</b><br>答：两者都启动 JVM，差别在 Windows 上：java 附带控制台窗口，javaw 不附带，适合 GUI 程序。代价是输出和报错都看不见，所以双击 jar 或用 javaw 启动时，程序打印的痕迹无处可查，启动失败也只是一个没反应的窗口。要排查就用 java -jar 在命令行跑一遍；另外关掉控制台窗口不等于进程退出，重装或换端口前先去任务管理器确认。',
+        '<b>问：为什么同一份代码在两台机器上表现不一样？</b><br>答：先怀疑环境而不是代码。JDK 版本不同会让默认 GC、日期时区和 API 行为变化；源文件与终端编码不一致会让中文变问号，虽然 JDK 18 起默认字符集已是 UTF-8，但文件读写、控制台、构建脚本仍可能各自用 GBK；依赖的 native 库随平台不同；换行符和文件名大小写敏感度也不一样。排查顺序是 java -version、locale 与 file.encoding、依赖树里的版本，最后才看代码。',
+        '<b>问：JDK 25 编译的 class 能在 JDK 21 上跑吗？</b><br>答：不能。类文件版本只向上兼容：高版本编译的 class 在低版本 JVM 上会抛 UnsupportedClassVersionError，报错里直接写明 class file version 69.0 与 up to 65.0，这是加载期的字节码校验，改任何启动参数都没用。要么换 25 的运行时，要么用 javac --release 21 重新编译，让语法和 API 都按 21 的核心类库校验，避免编译通过却在运行期抛 NoSuchMethodError。',
+      ] },
       { h: '自测与练习' },
-      { ol: ['用 javap -verbose 查看一个 class 文件的 major version，并换算对应的 JDK 版本。', '画出一段源码从 .java 到机器码的完整链路，标出哪一步在开发机、哪一步在运行机。', '故意用 JDK 21 编译、JDK 8 运行，记录报错信息。', '解释为什么“换操作系统不用重新编译”不等于“所有 Java 程序都天然跨平台”。'] }
+      { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
+      { ol: [
+        '用 javap -verbose 查看一个 class 文件的 major version，并换算对应的 JDK 版本。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：<code>javap -verbose Hello | grep major</code> 输出 major version: 69，说明它是 JDK 25 编译的。<b>为什么</b>：主版本号从 45（Java 1.1）起算，每加一个大版本加 1：JDK 8=52、11=55、17=61、21=65、25=69，其余按 44 + 主版本号推算；JVM 只接受不高于自己的版本。<b>要点</b>：完整命令是 <code>javac -d out Hello.java</code> 加 <code>javap -v -cp out Hello</code>；批量排查时可以解开 jar 读每个 class 开头的主版本号。版本号偏低说明用了旧的 --release，偏高说明构建机的 JDK 比你以为的新。</div></details>',
+        '画出一段源码从 .java 到机器码的完整链路，标出哪一步在开发机、哪一步在运行机。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：Hello.java 经 javac 在开发机变成 Hello.class（常量池加字节码），拷到运行机后由 java 启动 JVM：类加载、验证、准备、解析、初始化，再由解释器执行，热点方法交给 JIT 编成机器码缓存起来。<b>为什么</b>：编译只做到字节码这一层，真正的翻译发生在运行期，所以同一份产物能交给不同 CPU 架构执行。<b>要点</b>：用 <code>javap -c</code> 看字节码，用 <code>-XX:+PrintCompilation</code> 看 JIT 编译了哪些方法。</div></details>',
+        '故意用 JDK 25 编译、JDK 21 运行，记录报错信息。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：运行时报 Exception in thread "main" java.lang.UnsupportedClassVersionError: Hello has been compiled by a more recent version of the Java Runtime (class file version 69.0), this version of the Java Runtime only recognizes class file versions up to 65.0。<b>为什么</b>：字节码版本校验发生在加载阶段，是规范层面的拒绝，不是配置问题，改堆大小或加参数都不会生效。<b>要点</b>：用 <code>javac --release 21 Hello.java</code> 重编；在构建脚本里固定 release 版本，能让这类问题提前暴露。反过来说，运行期参数救不了它，唯一有效的改法就是重编。</div></details>',
+        '解释为什么「换操作系统不用重新编译」不等于「所有 Java 程序都天然跨平台」。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同一个 jar 拷到 Windows 和 Linux，纯计算程序输出一致，但涉及文件路径、默认编码、时区、换行或 native 库的程序结果不同，甚至直接启动失败。<b>为什么</b>：JVM 抽象了 CPU 与指令集，却没有抽象操作系统行为：路径分隔符、行尾、文件名大小写、时区、字符集、JNI 依赖的本地库都要程序自己处理。<b>要点</b>：路径用 java.nio 的 Path，编码显式写 UTF-8，换行用 %n 或 System.lineSeparator()，不要依赖平台默认值。</div></details>'
+      ] }
     ]
   };
 })();
