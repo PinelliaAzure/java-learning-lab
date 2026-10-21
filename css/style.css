@@ -542,8 +542,8 @@ a { color: inherit; }
   border-radius: 4px;
 }
 
-/* ---------- 代码块 ---------- */
-.code-block {
+/* ---------- 统一代码块 .cb（教材 / 答案 / 练习共用） ---------- */
+.cb {
   border: 1px solid var(--line);
   border-radius: 13px;
   overflow: hidden;
@@ -551,7 +551,7 @@ a { color: inherit; }
   margin: 20px 0;
 }
 
-.code-head {
+.cb-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -561,37 +561,82 @@ a { color: inherit; }
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
-.code-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px rgba(242, 166, 90, 0.6); }
+.cb-dots { display: inline-flex; align-items: center; gap: 4px; flex: none; }
 
-.copy-btn {
+.cb-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(242, 166, 90, 0.6);
+}
+
+.cb-dots i:nth-child(2) { opacity: 0.62; }
+.cb-dots i:nth-child(3) { opacity: 0.34; }
+
+.cb-lang {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.cb-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.cb-copy {
   margin-left: auto;
+  flex: none;
+  min-width: 54px;
+  height: 22px;
+  padding: 0 8px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
+  font-family: inherit;
   font-size: 10.5px;
-  padding: 4px 9px;
+  line-height: 20px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
-.copy-btn:hover { color: var(--text-soft); border-color: var(--line-strong); }
+.cb-copy:hover { color: var(--text-soft); border-color: var(--line-strong); background: rgba(255, 255, 255, 0.06); }
+.cb-copy:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
 
-pre.code {
+pre.cb-pre {
   margin: 0;
   padding: 16px 18px;
   overflow-x: auto;
   font-family: var(--mono);
   font-size: 12.5px;
-  line-height: 1.78;
+  line-height: 1.8;
   color: #cdd3e0;
+  white-space: pre;
   tab-size: 4;
 }
 
-pre.code::-webkit-scrollbar { height: 7px; }
-pre.code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 99px; }
+pre.cb-pre::-webkit-scrollbar { height: 7px; }
+pre.cb-pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 99px; }
+
+/* 命令块：暗底不变，语言标签与提示符走强调色，内容不着色 */
+.cb--shell .cb-lang { color: var(--teal); border-color: rgba(94, 234, 212, 0.32); }
+.cb--shell .cb-dots i { background: var(--teal); box-shadow: 0 0 8px rgba(94, 234, 212, 0.5); }
+.cb--shell pre.cb-pre { color: #d8f4ef; }
+.cb-prompt { color: var(--teal); user-select: none; }
+.cb-out { color: #8a90a0; }        /* 命令块里的程序输出 / 注释行：不加提示符，压暗 */
+.cb--text .cb-lang { color: var(--muted); border-color: var(--line); }
 
 .tok-kw { color: #d3a4ff; }
 .tok-type { color: #7dd3fc; }
@@ -1778,11 +1823,10 @@ pre.code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); borde
 [data-theme="light"] .lesson-link.done { color: var(--text-soft); }
 
 /* 深色“代码画布”在日间主题下保持深色，但内部变量换成深色主题的一套 */
-[data-theme="light"] .code-block,
+[data-theme="light"] .cb,
 [data-theme="light"] .player,
 [data-theme="light"] .widget,
-[data-theme="light"] .diagram,
-[data-theme="light"] .tb-code {
+[data-theme="light"] .diagram {
   --text: #ece8e0;
   --text-soft: #c9c6bf;
   --muted: #9b9dab;
@@ -1802,7 +1846,7 @@ pre.code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); borde
 
 [data-theme="light"] .player-bar { background: #151a2a; }
 [data-theme="light"] .player-note { color: #c9c6bf; }
-[data-theme="light"] .code-head { color: #9b9dab; }
+[data-theme="light"] .cb-head { color: #9b9dab; }
 [data-theme="light"] .widget input[type="text"] { color: #ece8e0; }
 [data-theme="light"] .dnode { background: rgba(21, 26, 42, 0.94); }
 
@@ -2209,47 +2253,6 @@ pre.code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); borde
 .tb-ol { list-style: decimal; }
 .tb-list li::marker, .tb-ol li::marker { color: var(--amber); }
 
-.tb-code {
-  margin: 18px 0;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  overflow: hidden;
-  background: #06080e;
-}
-
-.tb-code-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  font-family: var(--mono);
-  font-size: 11px;
-  color: #9b9dab;
-}
-
-.tb-code-head .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #f2a65a;
-  box-shadow: 0 0 8px rgba(242, 166, 90, 0.6);
-}
-
-.tb-code pre {
-  margin: 0;
-  padding: 16px 18px;
-  overflow-x: auto;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.85;
-  color: #cdd3e0;
-  tab-size: 4;
-}
-
-.tb-code pre::-webkit-scrollbar { height: 7px; }
-.tb-code pre::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 99px; }
 
 .tb-out {
   margin: -6px 0 20px;
@@ -2735,25 +2738,34 @@ label.btn { cursor: pointer; display: inline-flex; align-items: center; justify-
 
 @media print {
   .tb-ans > .ans-body { display: block; }
+  .cb { break-inside: avoid; }
+  .cb-copy { display: none; }
+  .cb pre.cb-pre { overflow-x: visible; white-space: pre-wrap; }
 }
 
 
-/* ---------- 自测与练习：代码题的答案块（轻量、可横向滚动、不参与语法高亮） ---------- */
-.tb-ans > .ans-body pre.tb-ans-code {
+/* ---------- 自测与练习：答案里的代码块沿用 .cb，只收窄边距（tb-ans-code 保留为兼容标记） ---------- */
+.tb-ans > .ans-body .cb {
   margin: 3px 0 9px;
-  padding: 11px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: #06080e;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.8;
-  color: #cdd3e0;
-  overflow-x: auto;
-  white-space: pre;
-  tab-size: 4;
+  border-radius: 9px;
 }
 
-.tb-ans > .ans-body pre.tb-ans-code:last-child { margin-bottom: 0; }
+.tb-ans > .ans-body .cb pre.tb-ans-code {
+  padding: 11px 13px;
+  font-size: 12px;
+  line-height: 1.82;
+}
+
+.tb-ans > .ans-body .cb:last-child { margin-bottom: 0; }
 .tb-ans > .ans-body pre.tb-ans-code::-webkit-scrollbar { height: 6px; }
 .tb-ans > .ans-body pre.tb-ans-code::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 99px; }
+
+/* ---------- 统一代码块：窄屏下头部不换行、语言标签与按钮不重叠 ---------- */
+@media (max-width: 430px) {
+  .cb { margin: 14px 0; }
+  .cb-head { gap: 6px; padding: 8px 10px; }
+  .cb-lang { font-size: 9.5px; padding: 0 5px; }
+  .cb-title { font-size: 10.5px; }
+  .cb-copy { min-width: 48px; padding: 0 6px; }
+  pre.cb-pre { padding: 13px 12px; font-size: 12px; }
+}

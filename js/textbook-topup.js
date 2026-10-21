@@ -78,19 +78,19 @@
 
   appendTo('jdk', '包、classpath 与 main 方法', [
     { p: '把散在几节里的命令集中列一次，方便对照。真正的项目会用 Maven/Gradle 包装这些步骤，但底层仍然是编译、打包、运行三件事。' },
-    { code: 'javac Hello.java                 # 编译单个文件\njavac -d out src/**/*.java        # 编译到指定目录（需 shell 展开）\njava Hello                       # 运行默认包类\njava -cp out com.example.Hello   # 运行带包的类\njar -cvf app.jar -C out .        # 打包\njava -jar app.jar                # 运行可执行 jar', title: 'Commands' },
+    { lang: 'shell', code: 'javac Hello.java                 # 编译单个文件\njavac -d out src/**/*.java        # 编译到指定目录（需 shell 展开）\njava Hello                       # 运行默认包类\njava -cp out com.example.Hello   # 运行带包的类\njar -cvf app.jar -C out .        # 打包\njava -jar app.jar                # 运行可执行 jar', title: 'Commands' },
     { p: '打包这一行要和入口类一起看：<code>jar -cvf</code> 只是把目录压成 zip，清单里没有 Main-Class，<code>java -jar</code> 会报 “no main manifest attribute”。要直接运行，就在打包时用 <code>jar -cfe app.jar com.example.Hello</code> 指定入口，或者交给构建工具的 mainClass 配置。' }
   ]);
 
   appendTo('vars', '类型选择的实用清单', [
     { p: '把一组相关变量组织起来，就能描述一个业务对象。下面用变量表示一本书，注意类型选择和命名：价格用 double 只是演示，真实金额应该用 BigDecimal；库存用 int；是否在售用 boolean。' },
-    { code: 'String title = "Java 编程思想";\nString author = "Bruce Eckel";\ndouble price = 99.0;\nint stock = 12;\nboolean onSale = true;\nlong isbn = 9787111213826L;\n\nSystem.out.printf("《%s》 %s %.2f 元，库存 %d%n", title, author, price, stock);', title: 'BookVars.java' },
+    { lang: 'java', code: 'String title = "Java 编程思想";\nString author = "Bruce Eckel";\ndouble price = 99.0;\nint stock = 12;\nboolean onSale = true;\nlong isbn = 9787111213826L;\n\nSystem.out.printf("《%s》 %s %.2f 元，库存 %d%n", title, author, price, stock);', title: 'BookVars.java' },
     { p: '命名要能直接读出含义：title、author、stock 比 a、b、c 好得多。类型要匹配取值范围：ISBN 有 13 位，超过 int，所以用 long；而 int 装不下的金额、精度不能丢的比例，都该用 BigDecimal。' }
   ]);
 
   appendTo('operators', '优先级与括号', [
     { p: '规则背不下来，就用几道小题练手感：先把结果写在纸上，再运行对照。下面这几行覆盖整数除法、类型提升、取余、自增和三元，正好是实际写代码时最容易算错的地方。' },
-    { code: 'int a = 5, b = 2;\nSystem.out.println(a / b);            // 2\nSystem.out.println(a / 2.0);          // 2.5\nSystem.out.println(a % b);            // 1\nSystem.out.println(a++ + ++b);        // 5 + 3 = 8，a=6, b=3\nSystem.out.println(a > b ? "大" : "小"); // 大', title: 'Eval.java' },
+    { lang: 'java', code: 'int a = 5, b = 2;\nSystem.out.println(a / b);            // 2\nSystem.out.println(a / 2.0);          // 2.5\nSystem.out.println(a % b);            // 1\nSystem.out.println(a++ + ++b);        // 5 + 3 = 8，a=6, b=3\nSystem.out.println(a > b ? "大" : "小"); // 大', title: 'Eval.java' },
     { table: { head: ['表达式', '结果', '关键点'], rows: [
       ['5 / 2', '2', '整数除法截断'],
       ['5 / 2.0', '2.5', '提升为 double'],
@@ -110,13 +110,13 @@
 
   appendTo('control', '四个基础算法', [
     { p: '把数组、循环、分支揉在一起的最小学生作业是成绩统计：遍历数组求和、按分数段计数，最后算平均。这个例子几乎用到了本章所有语法，写通了，循环和数组就算过关了。' },
-    { code: 'int[] scores = {88, 92, 75, 60, 95};\nint sum = 0, pass = 0, excellent = 0;\nfor (int s : scores) {\n    sum += s;\n    if (s >= 60) pass++;\n    if (s >= 90) excellent++;\n}\ndouble avg = (double) sum / scores.length;\nSystem.out.printf("平均 %.1f，及格 %d 人，优秀 %d 人%n", avg, pass, excellent);', title: 'ScoreStats.java' },
+    { lang: 'java', code: 'int[] scores = {88, 92, 75, 60, 95};\nint sum = 0, pass = 0, excellent = 0;\nfor (int s : scores) {\n    sum += s;\n    if (s >= 60) pass++;\n    if (s >= 90) excellent++;\n}\ndouble avg = (double) sum / scores.length;\nSystem.out.printf("平均 %.1f，及格 %d 人，优秀 %d 人%n", avg, pass, excellent);', title: 'ScoreStats.java' },
     { p: '注意 <code>(double) sum / scores.length</code>：两边都是 int 时平均值会被截断。遍历用增强 for 更简洁，但需要下标时还得用普通 for；计数和求和写在同一个循环里，比遍历两遍更常见。' }
   ]);
 
   appendTo('class-object', '综合案例：银行账户对象', [
     { p: '把同样的套路换到订单上，取舍会更清楚：一个 Order 有订单号、商品名、单价、数量，创建后总价由对象自己算。哪些字段应该 final，哪些结果该由方法算出来而不是存成字段，这道题专门练这两件事。' },
-    { code: 'public class Order {\n    private final String id;\n    private final String product;\n    private final double price;\n    private final int quantity;\n\n    public Order(String id, String product, double price, int quantity) {\n        if (quantity <= 0) throw new IllegalArgumentException("数量必须为正");\n        this.id = id;\n        this.product = product;\n        this.price = price;\n        this.quantity = quantity;\n    }\n\n    public double total() { return price * quantity; }\n}', title: 'Order.java' },
+    { lang: 'java', code: 'public class Order {\n    private final String id;\n    private final String product;\n    private final double price;\n    private final int quantity;\n\n    public Order(String id, String product, double price, int quantity) {\n        if (quantity <= 0) throw new IllegalArgumentException("数量必须为正");\n        this.id = id;\n        this.product = product;\n        this.price = price;\n        this.quantity = quantity;\n    }\n\n    public double total() { return price * quantity; }\n}', title: 'Order.java' },
     { p: '订单号、商品、单价、数量在创建后不该变，所以用 final；总价由 total() 算出来，而不是存一个可能过期的字段。这样对象始终自洽，也就不会出现“改了数量忘了改总价”的 bug。' }
   ]);
 

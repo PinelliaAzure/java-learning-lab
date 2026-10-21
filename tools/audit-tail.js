@@ -120,9 +120,11 @@ function auditChapter(id, tb) {
       if (item.slice(d).indexOf('<details') >= 0 && item.slice(d + 1).indexOf('<details') >= 0) errs.push('第 ' + (q + 1) + ' 题出现嵌套 details');
       var body = item.slice(d);
       body = body.replace(/^<details class="tb-ans"><summary>参考答案<\/summary>/, '').replace(/<\/details>[\s\S]*$/, '');
-      var PRE = '<pre class="tb-ans-code">';
+      // 两种形态都要认：<pre class="tb-ans-code"> 与 <pre class="tb-ans-code" data-lang="java">
+      var PRE = '<pre class="tb-ans-code"';
       if (body.indexOf(PRE) >= 0) {
-        var ca = body.indexOf(PRE) + PRE.length;
+        var preTagEnd = body.indexOf('>', body.indexOf(PRE));
+        var ca = preTagEnd < 0 ? body.length : preTagEnd + 1;
         var cb = body.indexOf('</pre>', ca);
         if (cb < 0) errs.push('第 ' + (q + 1) + ' 题的代码块未闭合');
         else {

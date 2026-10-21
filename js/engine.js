@@ -134,6 +134,139 @@
   }
 
   /* ------------------------------------------------------------------
+     统一代码块组件 .cb：教材 code 块 / 答案 tb-ans-code / 练习 code-block 共用
+     ------------------------------------------------------------------ */
+  var CB_LABELS = {
+    java: 'Java', shell: '命令', sql: 'SQL', xml: 'XML',
+    props: '配置', http: 'HTTP', docker: 'Dockerfile', text: '文本'
+  };
+
+  /* 命令表：只有首词命中这些命令的行才加 "$ " 提示符，其余行按程序输出显示 */
+  var CB_CMDS = {};
+  ('javac java javap jdeps jps jcmd jmap jstack jstat jfr jshell jar mvn mvnw gradle gradlew git docker curl npm npx ' +
+    'openssl keytool mysql psql redis-cli ss netstat lsof kill export cd ls mkdir rm cp mv source which readlink unzip tar grep ' +
+    'sed awk chmod ulimit sysctl top ps wrk ab jq ' +
+    'echo type where set setx chcp cls del copy start').split(' ').forEach(function (w) { CB_CMDS[w] = 1; });
+
+  /* 未知或缺省的语言按纯文本处理（不做高亮、不加提示符） */
+  function cbLang(lang) {
+    var l = String(lang == null ? '' : lang).toLowerCase();
+    return CB_LABELS[l] ? l : 'text';
+  }
+
+  /* 命令块单行：命令行给 "$ " 提示符（数据里自带的 "$ " 不重复显示），程序输出 / 注释行包一层 .cb-out */
+  function cbShellLine(line) {
+    if (!/\S/.test(line)) return '';                  /* 空行照旧，不加提示符也不包 .cb-out */
+    var body = line.replace(/^\s+/, '');
+    var isCmd = false;
+    if (body.charAt(0) === '$') {
+      body = body.slice(1).replace(/^ /, '');           /* 数据里自带 "$ " 的去重，避免显示成 "$ $ " */
+      isCmd = true;
+    } else if (/^::/.test(body) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(body)) {
+      isCmd = true;                                   /* Windows cmd 注释 / VAR=值 开头的环境变量行 */
+    } else if (CB_CMDS[body.split(/\s+/)[0]]) {
+      isCmd = true;
+    }
+    if (isCmd) return '<span class="cb-prompt">$</span> ' + esc(body);
+    return '<span class="cb-out">' + esc(line) + '</span>';   /* 程序输出 / 注释：不加提示符，压暗显示 */
+  }
+
+  /* 命令块整块：逐行带状态——上一行（去尾空白）以 \ 结尾时，本行是命令的续行，
+     不加第二个提示符也不压暗，只包 .cb-cont 让断言与样式能区分 */
+  function cbShellBlock(text) {
+    var prevCont = false;
+    return text.split('\n').map(function (line) {
+      var isCont = prevCont;
+      prevCont = /\\$/.test(line.replace(/\s+$/, ''));
+      if (isCont) return '<span class="cb-cont">' + esc(line) + '</span>';
+      return cbShellLine(line);
+    }).join('\n');
+  }
+
+  /* pre 内容：java 逐行高亮；shell 逐行判定命令 / 输出；其它语言（含 text）整块转义成纯文本 */
+  function cbCodeHtml(lang, raw) {
+    var l = cbLang(lang);
+    var text = String(raw == null ? '' : raw);
+    if (l === 'java') {
+      return text.split('\n').map(function (line) { return highlightLine(line); }).join('\n');
+    }
+    if (l === 'shell') {
+      return cbShellBlock(text);
+    }
+    return esc(text);
+  }
+
+  function cbHeadHtml(lang, title) {
+    var l = cbLang(lang);
+    return '<div class="cb-head"><span class="cb-dots"><i></i><i></i><i></i></span>' +
+      '<span class="cb-lang">' + CB_LABELS[l] + '</span>' +
+      (title ? '<span class="cb-title">' + esc(title) + '</span>' : '') +
+      '<button class="cb-copy" type="button">复制</button></div>';
+  }
+
+  function codeBlockHtml(lang, raw, title, attrs) {
+    var l = cbLang(lang);
+    return '<div class="cb cb--' + l + '" data-lang="' + l + '"' + (attrs || '') + '>' +
+      cbHeadHtml(l, title) +
+      '<pre class="cb-pre"><code>' + cbCodeHtml(l, raw) + '</code></pre></div>';
+  }
+
+  /* 复制用的纯文本：命令块逐行剥掉行首 "$ "（渲染层每个命令行只加了一个提示符，剥掉即回到正文） */
+  function codeCopyText(lang, text) {
+    var t = String(text == null ? '' : text);
+    if (cbLang(lang) !== 'shell') return t;
+    return t.split('\n').map(function (line) { return line.replace(/^\s*\$\s?/, ''); }).join('\n');
+  }
+
+  var CB_COPY_BACK = 1400;
+
+  /* 委托绑定：每个 .cb-copy 复制自己所在块 pre 的纯文本，按钮文字 1.4s 后复原 */
+  function bindCodeCopy(root) {
+    if (!root || root.__cbCopyBound) return;
+    root.__cbCopyBound = true;
+    root.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('.cb-copy') : null;
+      if (!btn || !root.contains(btn)) return;
+      var box = btn.closest('.cb');
+      var pre = box ? box.querySelector('.cb-pre') : null;
+      if (!pre) return;
+      copyText(codeCopyText(box.getAttribute('data-lang'), pre.textContent), '已复制');
+      btn.textContent = '已复制';
+      clearTimeout(btn.__cbTimer);
+      btn.__cbTimer = setTimeout(function () { btn.textContent = '复制'; }, CB_COPY_BACK);
+    });
+  }
+
+  /* 答案块装饰：把 pre.tb-ans-code 包进 .cb 并补头部；java 重新高亮（pre 里是已转义 HTML，先取 textContent） */
+  function decorateCodeBlocks(root) {
+    if (!root) return 0;
+    var done = 0;
+    $all('.ans-body pre.tb-ans-code', root).forEach(function (pre) {
+      if (pre.getAttribute('data-cb') === '1') return;    /* 已装饰过，重复渲染不再套娃 */
+      var lang = cbLang(pre.getAttribute('data-lang'));
+      var raw = pre.textContent;
+      var box = document.createElement('div');
+      box.className = 'cb cb--' + lang;
+      box.setAttribute('data-lang', lang);
+      box.innerHTML = cbHeadHtml(lang, '');
+      pre.parentNode.insertBefore(box, pre);
+      box.appendChild(pre);
+      pre.setAttribute('data-cb', '1');
+      pre.classList.add('cb-pre');
+      if (lang === 'java') {
+        pre.innerHTML = raw.split('\n').map(function (line) { return highlightLine(line); }).join('\n');
+      }
+      done++;
+    });
+    if (done) bindCodeCopy(root);
+    return done;
+  }
+  /* 对外导出（供无浏览器验收）：__cbHtml(lang, raw, title) / __cbCopy(lang, raw) / __cbDecorate(root) */
+  window.__cbHtml = codeBlockHtml;
+  window.__cbCopy = codeCopyText;
+  window.__cbDecorate = decorateCodeBlocks;
+
+  /* ------------------------------------------------------------------
      主题：light / dark / auto
      ------------------------------------------------------------------ */
   var THEME_KEY = 'java-lab-theme';
@@ -537,6 +670,10 @@
     if (state.tab === 'learn') renderLearn(panel);
     else renderQuiz(panel);
 
+    /* 两个分支渲染完才统一装饰答案块、绑一次复制（幂等，切换标签页不会重复套娃） */
+    decorateCodeBlocks(panel);
+    bindCodeCopy(panel);
+
     applyTbJump();
   }
 
@@ -598,11 +735,7 @@
       if (b.p) return '<p class="tb-p"' + at + '>' + b.p + '</p>';
       if (b.list) return '<ul class="tb-list"' + at + '>' + b.list.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>';
       if (b.ol) return '<ol class="tb-ol"' + at + '>' + b.ol.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ol>';
-      if (b.code) {
-        var lines = String(b.code).split('\n').map(function (l) { return highlightLine(l); }).join('\n');
-        return '<div class="tb-code"' + at + '><div class="tb-code-head"><span class="dot"></span>' + esc(b.title || '示例代码') +
-          '</div><pre><code>' + lines + '</code></pre></div>';
-      }
+      if (b.code) return codeBlockHtml(b.lang, b.code, b.title, at);
       if (b.out) return '<div class="tb-out"' + at + '><b>运行结果</b><pre>' + esc(b.out) + '</pre></div>';
       if (b.note) return '<div class="tb-note"' + at + '>' + b.note + '</div>';
       if (b.flow) {
@@ -717,16 +850,14 @@
       btn.addEventListener('click', function () { switchTab(btn.dataset.go); });
     });
 
-    $all('.copy-btn', panel).forEach(function (btn) {
-      btn.addEventListener('click', function () { copyText(lesson.code, '示例代码已复制'); });
-    });
+    /* toggleDone 会直接重渲染讲解页，这里也补一次装饰与复制绑定（两者都幂等） */
+    decorateCodeBlocks(panel);
+    bindCodeCopy(panel);
   }
 
+  /* 练习/示例代码：统一组件 .cb 的薄包装（默认 Java） */
   function codeBlock(code, title) {
-    var lines = code.split('\n').map(function (l) { return highlightLine(l); }).join('\n');
-    return '<div class="code-block"><div class="code-head"><span class="dot"></span><span>' + esc(title) +
-      '</span><button class="copy-btn" type="button">复制</button></div>' +
-      '<pre class="code"><code>' + lines + '</code></pre></div>';
+    return codeBlockHtml('java', code, title);
   }
 
   function toggleDone() {

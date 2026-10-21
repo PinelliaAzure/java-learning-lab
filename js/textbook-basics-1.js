@@ -38,7 +38,7 @@
       { p: 'Windows 还有一个容易误解的点：系统变量和用户变量是两套。启动程序时 PATH 的实际值是由系统 Path 和用户 Path 拼接出来的，系统部分通常排在前面。所以在用户变量里配了新 JDK，而系统变量里还留着旧 JDK 的路径时，旧版本依然会赢。遇到这种怎么改都没用的情况，两处都要看，别只盯用户变量。' },
       { p: '下载 .msi 安装包后一路下一步即可。安装完成后打开“系统属性 → 高级 → 环境变量”，新建系统变量 <code>JAVA_HOME</code>，值为 JDK 根目录，例如 <code>C:\\Program Files\\Eclipse Adoptium\\jdk-25</code>。' },
       { p: '然后编辑 <code>Path</code>，新增一项 <code>%JAVA_HOME%\\bin</code>。注意是 bin 目录，不是 JDK 根目录；变量引用用百分号。保存后一定要重新打开命令行窗口，旧窗口读的是旧环境变量。' },
-      { code: ':: 在 cmd 中验证\njava -version\njavac -version\n\n:: 查看 JAVA_HOME\n echo %JAVA_HOME%', title: 'Windows 验证' },
+      { lang: 'shell', code: ':: 在 cmd 中验证\njava -version\njavac -version\n\n:: 查看 JAVA_HOME\n echo %JAVA_HOME%', title: 'Windows 验证' },
       { out: 'java version "21.0.x" ...\njavac 21.0.x' },
       { p: '如果 java 能用但 javac 不能用，通常是把 JRE 的 bin 配进了 PATH，或者只装了 JRE。开发环境必须指向 JDK。' },
       { h: '1.5 macOS：安装与配置' },
@@ -48,7 +48,7 @@
       { p: '还有一个隐蔽问题：系统可能自带一个旧版 Java 的包装器，<code>/usr/bin/java</code> 就是个转发脚本。它不一定是错，但如果你配的 JAVA_HOME 没进 PATH 前面，敲 java 命中的仍是它。用 <code>type -a java</code> 看完整解析链，比只看 <code>java -version</code> 更能定位问题。' },
       { p: '下载 .pkg 安装包双击安装，或者用 Homebrew：<code>brew install --cask temurin@25</code>。安装后系统会把 JDK 放在 <code>/Library/Java/JavaVirtualMachines/</code> 下。' },
       { p: 'macOS 可以用 <code>/usr/libexec/java_home -V</code> 查看所有 JDK，用 <code>$(/usr/libexec/java_home -v 25)</code> 取路径。建议在 <code>~/.zshrc</code> 里配置：' },
-      { code: 'export JAVA_HOME=$(/usr/libexec/java_home -v 25)\nexport PATH="$JAVA_HOME/bin:$PATH"', title: '~/.zshrc' },
+      { lang: 'shell', code: 'export JAVA_HOME=$(/usr/libexec/java_home -v 25)\nexport PATH="$JAVA_HOME/bin:$PATH"', title: '~/.zshrc' },
       { p: '改完执行 <code>source ~/.zshrc</code>，再打开新终端验证。macOS 自带一个旧版 Java 命令包装器，如果版本不对，用 <code>which java</code> 和 <code>java_home</code> 检查实际指向。' },
       { h: '1.6 环境变量到底在做什么' },
       { p: '环境变量不是“配一次永久生效”的魔法，而是每个进程启动时从父进程复制来的一份键值表。你在系统设置里改变量，只影响之后新启动的进程；已经开着的终端、IDEA、编辑器都还拿着旧表。这就是“明明配好了却还是旧版本”的根源，重开窗口往往比反复修改更有效。' },
@@ -75,11 +75,11 @@
       { p: '常用操作：Step Over 执行当前行不进入方法；Step Into 进入方法内部；Step Out 执行完当前方法返回；Resume 继续到下一个断点。配合 Watch 观察表达式，能快速定位空指针和逻辑错误。' },
       { p: 'IntelliJ IDEA Community 或 VS Code + Java 插件都可以。新建 Java 项目时选择刚安装的 JDK，项目结构通常是 src 放源码，out 或 target 放编译产物。' },
       { p: '包名对应 src 下的子目录，例如 <code>com.example</code> 对应 <code>src/com/example</code>。IDE 会自动编译、补全、报错和调试，但底层仍然是 javac 和 java，理解命令行流程能帮你在 IDE 出问题时定位。' },
-      { code: 'src/\n└── com/example/\n    └── Hello.java\nout/\n└── com/example/\n    └── Hello.class', title: '项目结构' },
+      { lang: 'text', code: 'src/\n└── com/example/\n    └── Hello.java\nout/\n└── com/example/\n    └── Hello.class', title: '项目结构' },
       { h: '1.9 第一个程序：从 javac 到 java 的完整流程' },
       { p: '新建 Hello.java，文件名必须与 public 类名一致。先不要用 IDE 的运行按钮，手动执行一次 javac 和 java，理解每个命令的作用。' },
-      { code: 'public class Hello {\n    public static void main(String[] args) {\n        System.out.println("Hello, Java!");\n    }\n}', title: 'Hello.java' },
-      { code: 'javac Hello.java     # 生成 Hello.class\njava Hello           # 运行，后面不要加 .class', title: '编译与运行' },
+      { lang: 'java', code: 'public class Hello {\n    public static void main(String[] args) {\n        System.out.println("Hello, Java!");\n    }\n}', title: 'Hello.java' },
+      { lang: 'shell', code: 'javac Hello.java     # 生成 Hello.class\njava Hello           # 运行，后面不要加 .class', title: '编译与运行' },
       { out: 'Hello, Java!' },
       { p: 'javac 负责编译，java 负责启动 JVM。编译成功会在同目录生成 Hello.class；运行 java Hello 时，JVM 在当前目录找 Hello.class，加载后执行 main 方法。' },
       { p: '不带包名的类最简单：<code>javac Hello.java</code> 生成 Hello.class，再 <code>java Hello</code> 运行。一旦加了 package 声明，规则立刻变严：编译要用 <code>-d</code> 指定输出目录，运行要用完整类名，而且 classpath 要指向包的根目录。' },
@@ -121,9 +121,9 @@
       { h: '自测与练习' },
       { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
       { ol: [
-        '用命令行完成 Hello.java 的编译和运行，再删掉 .class 观察报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code">// Hello.java\npublic class Hello {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}\n\n# 编译、运行、删掉产物再运行\njavac -encoding UTF-8 Hello.java\njava Hello\nrm Hello.class\njava Hello</pre><b>要点</b>：运行时只写类名 <code>java Hello</code>，加 .class 反而报错；删掉产物后报\n「错误: 找不到或无法加载主类 Hello」，class 默认生成在源码同目录。</div></details>',
-        '故意把文件名改成 hello.java，记录编译器的完整报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code">// 内容不变，文件名存成 hello.java\npublic class Hello {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}\n\n# 文件名与 public 类名不一致，javac 直接拒绝\njavac hello.java</pre><b>要点</b>：报「错误: 类 Hello 是公共的, 应在名为 Hello.java 的文件中声明」。\npublic 类名必须与文件名逐字一致，大小写也算；改回 Hello.java 即可。</div></details>',
-        '在 IDE 中新建项目，找到它使用的 JDK 路径，与终端 java -version 对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code"># macOS：列出全部已安装 JDK 及其路径\n/usr/libexec/java_home -V\njava -version\n\n# Linux / Git Bash：java 到底指向哪个 JDK\nreadlink -f "$(which java)"\n\n# Windows：两个命令各查一次\nwhere java\necho %JAVA_HOME%</pre><b>要点</b>：IDE 用项目里单独配置的 SDK 编译运行，完全不读终端的 PATH，\n所以两边版本差好几个大版本很常见；不一致时先统一 JAVA_HOME，再重启 IDE。</div></details>',
+        '用命令行完成 Hello.java 的编译和运行，再删掉 .class 观察报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code" data-lang="java">// Hello.java\npublic class Hello {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}\n\n# 编译、运行、删掉产物再运行\njavac -encoding UTF-8 Hello.java\njava Hello\nrm Hello.class\njava Hello</pre><b>要点</b>：运行时只写类名 <code>java Hello</code>，加 .class 反而报错；删掉产物后报\n「错误: 找不到或无法加载主类 Hello」，class 默认生成在源码同目录。</div></details>',
+        '故意把文件名改成 hello.java，记录编译器的完整报错。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code" data-lang="java">// 内容不变，文件名存成 hello.java\npublic class Hello {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}\n\n# 文件名与 public 类名不一致，javac 直接拒绝\njavac hello.java</pre><b>要点</b>：报「错误: 类 Hello 是公共的, 应在名为 Hello.java 的文件中声明」。\npublic 类名必须与文件名逐字一致，大小写也算；改回 Hello.java 即可。</div></details>',
+        '在 IDE 中新建项目，找到它使用的 JDK 路径，与终端 java -version 对比。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code" data-lang="java"># macOS：列出全部已安装 JDK 及其路径\n/usr/libexec/java_home -V\njava -version\n\n# Linux / Git Bash：java 到底指向哪个 JDK\nreadlink -f "$(which java)"\n\n# Windows：两个命令各查一次\nwhere java\necho %JAVA_HOME%</pre><b>要点</b>：IDE 用项目里单独配置的 SDK 编译运行，完全不读终端的 PATH，\n所以两边版本差好几个大版本很常见；不一致时先统一 JAVA_HOME，再重启 IDE。</div></details>',
         '解释 PATH 和 JAVA_HOME 的区别，以及为什么改完要重开终端。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：在同一个窗口里 export 之后 java 立刻可用，但新开的窗口、或从桌面图标启动的 IDE，用的还是旧版本。<b>为什么</b>：PATH 决定输入 java 时系统去哪些目录找可执行文件，JAVA_HOME 只是一个约定变量，供 Maven、Tomcat、IDE 拼出 JDK 路径。终端进程启动时继承父进程的环境变量快照，父进程没重启就读不到新值。<b>要点</b>：Windows 用 <code>echo %PATH%</code> 检查，macOS 用 <code>export JAVA_HOME=$(/usr/libexec/java_home -v 25)</code>；改完关掉终端和 IDE 重开，别在旧窗口里继续试。</div></details>'
       ] }
     ]
@@ -149,7 +149,7 @@
       { h: '2.3 javac 做了什么：从源码到字节码' },
       { p: 'javac 不是简单的“翻译”，它要做词法分析、语法分析、语义检查、字节码生成。你看到的“找不到符号”“缺少返回值”“不兼容的类型”，都是编译器在语义检查阶段发现的。' },
       { p: '编译期能发现的问题，尽量不要留到运行期。比如泛型、重载、访问权限、受检异常，都是编译器帮你把关。理解这一点，就不会把“能编译”当成“没问题”，也不会把编译错误当成玄学。' },
-      { code: 'javac -encoding UTF-8 -d out src/com/example/Hello.java\n# -encoding 指定源码编码\n# -d 指定 class 输出目录', title: '常用编译参数' },
+      { lang: 'shell', code: 'javac -encoding UTF-8 -d out src/com/example/Hello.java\n# -encoding 指定源码编码\n# -d 指定 class 输出目录', title: '常用编译参数' },
       { p: 'javac 的流水线粗分四步：词法分析把字符流切成 token，语法分析把 token 组装成抽象语法树，语义分析做类型检查、符号解析和泛型推断，最后生成字节码写入 class 文件。报错里的行号列号，就是它在语法树阶段记下的位置。' },
       { p: '编译时不少语法糖会被拆掉，这叫脱糖。泛型在编译后被擦除，<code>List&lt;String&gt;</code> 运行期只是 List；增强 for 变成迭代器调用；lambda 变成 invokedynamic 加一个引导方法；字符串加号拼接在 JDK 9 之后也改走 invokedynamic。理解了脱糖，才能解释为什么泛型不能 new、为什么 lambda 的异常栈会多一层。' },
       { p: '一个源文件里有多个类，编译后会生成多个 class 文件，内部类还会变成 <code>Outer$Inner.class</code>。错误做法是把产物当成“一个程序一个文件”手工管理，正确做法是用 <code>-d</code> 让 javac 按包结构输出，或者交给构建工具。' },
@@ -158,10 +158,10 @@
       { h: '2.4 class 文件里有什么' },
       { p: '一个 .class 文件包含魔数、版本号、常量池、访问标志、字段表、方法表、属性表等。方法体里是字节码指令，例如 aload、iload、iadd、invokevirtual、return。' },
       { p: '常量池保存字符串、类名、方法名等符号引用；类加载的“解析”阶段会把这些符号引用替换成内存地址。javap -c 可以反汇编 class 文件，看到方法对应的字节码。' },
-      { code: 'javap -c -p Hello.class\n# 输出方法字节码，例如：\n# getstatic java/lang/System.out\n# ldc "Hello, Java!"\n# invokevirtual java/io/PrintStream.println', title: '反汇编' },
+      { lang: 'shell', code: 'javap -c -p Hello.class\n# 输出方法字节码，例如：\n# getstatic java/lang/System.out\n# ldc "Hello, Java!"\n# invokevirtual java/io/PrintStream.println', title: '反汇编' },
       { h: '2.5 字节码指令长什么样' },
       { p: '字节码是 JVM 的指令集，类似汇编但更抽象。每条指令一个字节的操作码，后面跟操作数。方法体里的局部变量、常量、方法调用都对应具体指令。' },
-      { code: 'public static int add(int a, int b) { return a + b; }\n\n// javap -c 输出（简化）：\n// iload_0     把第 0 个 int 局部变量压栈\n// iload_1     把第 1 个 int 局部变量压栈\n// iadd        弹出两个 int 相加，结果压栈\n// ireturn     返回栈顶 int', title: 'Bytecode.java' },
+      { lang: 'java', code: 'public static int add(int a, int b) { return a + b; }\n\n// javap -c 输出（简化）：\n// iload_0     把第 0 个 int 局部变量压栈\n// iload_1     把第 1 个 int 局部变量压栈\n// iadd        弹出两个 int 相加，结果压栈\n// ireturn     返回栈顶 int', title: 'Bytecode.java' },
       { table: { head: ['指令', '作用'], rows: [
         ['aload/iload', '把引用/整数局部变量压入操作数栈'],
         ['getstatic/putstatic', '读写静态字段'],
@@ -236,7 +236,7 @@
       { p: '裁剪是最实际的收益。用 jlink 只保留程序真正用到的模块，可以做出几十兆的运行时，比完整 JDK 小一个数量级。但前提是依赖关系清晰；如果代码靠反射动态加载类，jlink 分析不出来，运行时就会缺模块，这时要用 <code>--add-modules</code> 显式补上。' },
       { h: '2.14 包、classpath 与 main 方法' },
       { p: '真实项目不会把类放在默认目录，而是放在包里。包名对应目录，编译时用 -d 指定输出根目录，运行时要写全限定类名。classpath 告诉 JVM 去哪里找这些 class 和依赖。' },
-      { code: 'src/com/example/Hello.java\n\njavac -d out src/com/example/Hello.java\njava -cp out com.example.Hello\n# -d 生成 out/com/example/Hello.class\n# -cp 指定 classpath，运行 com.example.Hello', title: '包与命令' },
+      { lang: 'java', code: 'src/com/example/Hello.java\n\njavac -d out src/com/example/Hello.java\njava -cp out com.example.Hello\n# -d 生成 out/com/example/Hello.class\n# -cp 指定 classpath，运行 com.example.Hello', title: '包与命令' },
       { p: '如果运行时提示“找不到或无法加载主类”，依次检查：classpath 是否包含 out 目录、包名是否与目录一致、类名是否写全、class 文件是否真的生成。用 <code>java -verbose:class</code> 可以看到类加载过程，快速定位加载了哪个 jar。' },
       { p: '依赖第三方 jar 时，classpath 用冒号（macOS/Linux）或分号（Windows）分隔多个路径。Maven/Gradle 会在打包时把依赖放进 fat jar 或 lib 目录，避免手写长 classpath。' },
       { p: '<code>public static void main(String[] args)</code> 的每个部分都有原因：public 让 JVM 能访问；static 让 JVM 不用创建对象就能调用；void 表示不返回值；String[] args 接收命令行参数。JVM 启动时按这个固定签名查找入口，签名写错就提示“找不到 main 方法”。' },
@@ -265,9 +265,9 @@
       { h: '自测与练习' },
       { p: '先自己写一遍，再展开答案对照，差别比记住答案更有用。' },
       { ol: [
-        '用 javap -verbose 查看一个 class 文件的 major version，并换算对应的 JDK 版本。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code"># 编译到 out 目录，再读主版本号\njavac -d out Hello.java\njavap -v -cp out Hello | grep \'major version\'\n\n# Windows 把 grep 换成 findstr\njavap -v -cp out Hello | findstr major</pre><b>要点</b>：主版本号 45 对应 Java 1.1，之后每个大版本加 1：8=52、11=55、17=61、\n21=65、25=69。偏低说明用了旧的 --release，偏高说明构建机 JDK 更新。</div></details>',
+        '用 javap -verbose 查看一个 class 文件的 major version，并换算对应的 JDK 版本。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code" data-lang="shell"># 编译到 out 目录，再读主版本号\njavac -d out Hello.java\njavap -v -cp out Hello | grep \'major version\'\n\n# Windows 把 grep 换成 findstr\njavap -v -cp out Hello | findstr major</pre><b>要点</b>：主版本号 45 对应 Java 1.1，之后每个大版本加 1：8=52、11=55、17=61、\n21=65、25=69。偏低说明用了旧的 --release，偏高说明构建机 JDK 更新。</div></details>',
         '画出一段源码从 .java 到机器码的完整链路，标出哪一步在开发机、哪一步在运行机。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：Hello.java 经 javac 在开发机变成 Hello.class（常量池加字节码），拷到运行机后由 java 启动 JVM：类加载、验证、准备、解析、初始化，再由解释器执行，热点方法交给 JIT 编成机器码缓存起来。<b>为什么</b>：编译只做到字节码这一层，真正的翻译发生在运行期，所以同一份产物能交给不同 CPU 架构执行。<b>要点</b>：用 <code>javap -c</code> 看字节码，用 <code>-XX:+PrintCompilation</code> 看 JIT 编译了哪些方法。</div></details>',
-        '故意用 JDK 25 编译、JDK 21 运行，记录报错信息。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code"># 1. 用 JDK 25 编译，主版本号 69\njavac -d out Hello.java\njavap -v -cp out Hello | grep major\n\n# 2. 换成 JDK 21 运行同一份 class\nJ21=$(/usr/libexec/java_home -v 21)\n"$J21/bin/java" -cp out Hello</pre><b>要点</b>：运行时报 UnsupportedClassVersionError: class file version 69.0，\n而该 JRE 最高只认 65.0。这是加载阶段的拒绝，调堆大小、加参数都救不了，\n唯一改法是 <code>javac --release 21 Hello.java</code> 重编。</div></details>',
+        '故意用 JDK 25 编译、JDK 21 运行，记录报错信息。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><pre class="tb-ans-code" data-lang="shell"># 1. 用 JDK 25 编译，主版本号 69\njavac -d out Hello.java\njavap -v -cp out Hello | grep major\n\n# 2. 换成 JDK 21 运行同一份 class\nJ21=$(/usr/libexec/java_home -v 21)\n"$J21/bin/java" -cp out Hello</pre><b>要点</b>：运行时报 UnsupportedClassVersionError: class file version 69.0，\n而该 JRE 最高只认 65.0。这是加载阶段的拒绝，调堆大小、加参数都救不了，\n唯一改法是 <code>javac --release 21 Hello.java</code> 重编。</div></details>',
         '解释为什么「换操作系统不用重新编译」不等于「所有 Java 程序都天然跨平台」。<details class="tb-ans"><summary>参考答案</summary><div class="ans-body"><b>预期现象</b>：同一个 jar 拷到 Windows 和 Linux，纯计算程序输出一致，但涉及文件路径、默认编码、时区、换行或 native 库的程序结果不同，甚至直接启动失败。<b>为什么</b>：JVM 抽象了 CPU 与指令集，却没有抽象操作系统行为：路径分隔符、行尾、文件名大小写、时区、字符集、JNI 依赖的本地库都要程序自己处理。<b>要点</b>：路径用 java.nio 的 Path，编码显式写 UTF-8，换行用 %n 或 System.lineSeparator()，不要依赖平台默认值。</div></details>'
       ] }
     ]

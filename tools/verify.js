@@ -593,7 +593,8 @@ rule(13, '附加：章尾倒数第二节「常见追问」为 1 flow（可选）
 rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可选 1 p 前置 + 1 note 后置）；每题折叠答案要么三段式、要么是代码块（代码题不写「预期现象」）', function (r) {
   const ids = chapterIds();
   const bad = [];
-  const PRE_OPEN = '<pre class="tb-ans-code">';
+  // 两种形态都要认：<pre class="tb-ans-code"> 与 <pre class="tb-ans-code" data-lang="java">
+  const PRE_OPEN = '<pre class="tb-ans-code"';
   let withOl = 0; let total = 0; let okQ = 0; let proseQ = 0; let codeQ = 0;
   ids.forEach(function (id) {
     const secs = tailSections(TEXTBOOK[id]);
@@ -629,9 +630,11 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
       const cut = body.indexOf('</div></details>');
       if (cut >= 0) body = body.slice(0, cut);
       if (/<p[ >]/.test(body)) bad.push(id + '：自测第 ' + n + ' 题答案内含 <p>（answer 里只放行内标签）');
-      if (body.indexOf(PRE_OPEN) >= 0) {
+      const preAt = body.indexOf(PRE_OPEN);
+      if (preAt >= 0) {
         codeQ++;
-        const ca = body.indexOf(PRE_OPEN) + PRE_OPEN.length;
+        const gt = body.indexOf('>', preAt);
+        const ca = gt < 0 ? body.length : gt + 1;
         const cb = body.indexOf('</pre>', ca);
         if (cb < 0) bad.push(id + '：自测第 ' + n + ' 题的代码块未闭合');
         else {
@@ -657,6 +660,193 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
   bad.slice(0, 40).forEach(function (s) { r.issues.push(s); });
   if (bad.length > 40) r.issues.push('……另有 ' + (bad.length - 40) + ' 条同类问题省略');
 });
+/* ============================================================
+   附加规则 15/16 的公共零件：lang 允许集、命令表、首行判定
+   ★ 常量 CODE_LANGS / LANG_CMDS 与函数 meaningfulLine / shellHead /
+     javaHead / langIssue 在 tools/tag-audit.js 里有一份刻意的副本。
+     本轮文件边界只允许动 verify.js / audit-tail.js / tag-audit.js，
+     没有可新建的公共模块，所以只能重复；改命令表或改判定必须两处同步
+     （tag-audit.js 文件头有同样的备注）。
+   ============================================================ */
+const CODE_LANGS = ['java', 'shell', 'sql', 'xml', 'props', 'http', 'docker', 'text'];
+const LANG_CMDS = ('javac java javap jps jcmd jmap jstack jstat jfr jshell jar jdeps jlink jarsigner jpackage jconsole jdb ' +
+  'mvn mvnw gradle gradlew git ' +
+  'docker curl npm npx openssl keytool mysql psql redis-cli ss netstat lsof kill export echo cd ls mkdir rm cp mv ' +
+  'source which readlink unzip tar grep sed awk chmod ulimit sysctl top ps wrk ab jq ' +
+  // 补充项：基线表之外、但同样会出现在命令块首行的常用命令（降低误报，不影响判定方向）
+  'cat less more head tail tee touch ln pwd env printenv printf find xargs sort uniq wc cut tr diff make ' +
+  'sudo su apt apt-get brew yum dnf rpm dpkg systemctl service launchctl ssh scp rsync telnet nc ping dig ' +
+  'nslookup whoami id hostname uname date file base64 shasum sha256sum node python python3 pip pip3 pnpm yarn go ' +
+  'wait sleep time nohup seq open code vim nano exit true false').split(' ');
+
+/* 取出正文里所有 <pre class="tb-ans-code" ...> 代码块（含 data-lang） */
+function answerPres(html) {
+  const out = [];
+  let at = 0;
+  for (;;) {
+    const i = html.indexOf('<pre class="tb-ans-code"', at);
+    if (i < 0) break;
+    const gt = html.indexOf('>', i);
+    if (gt < 0) break;
+    const tag = html.slice(i, gt + 1);
+    const m = /data-lang="([^"]*)"/.exec(tag);
+    const close = html.indexOf('</pre>', gt + 1);
+    out.push({ tag: tag, lang: m ? m[1] : '', start: gt + 1, end: close < 0 ? html.length : close, closed: close >= 0 });
+    at = close < 0 ? html.length : close + 6;
+  }
+  return out;
+}
+
+/* 首个「非空非注释行」；shell 用 # 注释，java 用 // * 注释；反斜杠续行合并到同一行 */
+function meaningfulLine(code, commentRe) {
+  const lines = String(code == null ? '' : code).replace(/\r\n?/g, '\n').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].replace(/\s+$/, '');
+    let t = line.trim();
+    if (!t) continue;
+    if (commentRe && commentRe.test(t)) continue;
+    while (t.slice(-1) === '\\' && i + 1 < lines.length) {
+      i++;
+      line = t.slice(0, -1) + ' ' + lines[i].trim();
+      t = line.trim();
+    }
+    return t;
+  }
+  return '';
+}
+
+/* shell 块首行判定：返回 '' 合规，否则返回原因 */
+function shellHead(line) {
+  let s = String(line).trim();
+  if (!s) return '取不到首个非空非注释行（空块或整块只有注释）';
+  if (s.indexOf('$ ') === 0) return '';
+  for (let guard = 0; guard < 8; guard++) {
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(s);
+    if (!m) break;
+    let rest = s.slice(m[0].length);
+    if (rest.slice(0, 2) === '$(') {
+      let depth = 0; let j = 0;
+      for (; j < rest.length; j++) {
+        const c = rest.charAt(j);
+        if (c === '(') depth++;
+        else if (c === ')') { depth--; if (!depth) { j++; break; } }
+      }
+      rest = rest.slice(j);
+    } else {
+      const v = /^\S*/.exec(rest);
+      rest = rest.slice(v[0].length);
+    }
+    s = rest.replace(/^\s+/, '');
+    if (!s) return '';
+  }
+  const w = /^[^\s;|&<>]+/.exec(s);
+  if (!w) return '首行取不到命令：「' + short(line, 40) + '」';
+  if (LANG_CMDS.indexOf(w[0]) < 0) return '首行首个命令「' + w[0] + '」不在命令表内';
+  return '';
+}
+
+/* java 块首行判定：不得是 "$ " 提示符或命令行 */
+function javaHead(line) {
+  const t = String(line).trim();
+  if (!t) return '';
+  if (t.charAt(0) === '$') return 'java 块首行以「' + short(t, 12) + '」命令提示符开头';
+  const w = /^(\S+)/.exec(t);
+  if (!w) return '';
+  const word = w[1];
+  if (/[().;="'%{}\[\]]/.test(word)) return '';
+  if (LANG_CMDS.indexOf(word) >= 0) return 'java 块首行首个词是命令「' + word + '」';
+  return '';
+}
+
+function langIssue(code, lang) {
+  /* 注释口径：# 与 // 注释行跳过；另认 Windows cmd 的 :: 与 REM（教材有 cmd 版命令块） */
+  if (lang === 'shell') return shellHead(meaningfulLine(code, /^(#|\/\/|::|rem\b)/i));
+  /* lang=text（目录树 / ASCII 图 / 纯文本）不做内容断言 */
+  if (lang === 'java') return javaHead(meaningfulLine(code, /^(\/\/|\/\*|\*)/));
+  return '';
+}
+
+/* ---------- 附加规则 15：每个 code 块 / 答案代码块都显式写合法 lang ---------- */
+rule(15, '附则：每个教材 code 块与每条答案代码块都显式声明合法 lang（' + CODE_LANGS.join(' / ') + '）', function (r) {
+  const ids = chapterIds();
+  const bad = [];
+  const tbHist = {}; const ansHist = {};
+  CODE_LANGS.forEach(function (k) { tbHist[k] = 0; ansHist[k] = 0; });
+  let tbAll = 0; let tbMissing = 0; let tbIllegal = 0;
+  let ansAll = 0; let ansMissing = 0; let ansIllegal = 0;
+  const norm = function (v) { return v == null ? '' : String(v).trim(); };
+
+  ids.forEach(function (id) {
+    const blocks = (TEXTBOOK[id] && TEXTBOOK[id].blocks) || [];
+    blocks.forEach(function (b, i) {
+      if (!Object.prototype.hasOwnProperty.call(b, 'code')) return;
+      tbAll++;
+      const lang = norm(b.lang);
+      const where = id + ' #' + i + (b.title ? '（标题「' + b.title + '」）' : '');
+      if (!lang) { tbMissing++; bad.push(where + '：教材 code 块缺 lang'); return; }
+      if (CODE_LANGS.indexOf(lang) < 0) { tbIllegal++; bad.push(where + '：教材 code 块 lang「' + lang + '」不在允许集'); return; }
+      tbHist[lang]++;
+    });
+    blocks.forEach(function (b, i) {
+      if (!Object.prototype.hasOwnProperty.call(b, 'ol')) return;
+      b.ol.forEach(function (item, q) {
+        answerPres(String(item)).forEach(function (pre) {
+          ansAll++;
+          const lang = norm(pre.lang);
+          const where = id + ' #' + i + ' 第 ' + (q + 1) + ' 题';
+          if (!lang) { ansMissing++; bad.push(where + '：答案代码块缺 data-lang'); return; }
+          if (CODE_LANGS.indexOf(lang) < 0) { ansIllegal++; bad.push(where + '：答案 data-lang「' + lang + '」不在允许集'); return; }
+          ansHist[lang]++;
+        });
+      });
+    });
+  });
+
+  r.facts.push('教材 code ' + tbAll + ' 块：' + CODE_LANGS.map(function (k) { return k + '=' + tbHist[k]; }).join(' ') +
+    '／缺 lang ' + tbMissing + '／非法 ' + tbIllegal);
+  r.facts.push('答案代码块 ' + ansAll + ' 块：' + CODE_LANGS.map(function (k) { return k + '=' + ansHist[k]; }).join(' ') +
+    '／缺 data-lang ' + ansMissing + '／非法 ' + ansIllegal);
+  bad.slice(0, 10).forEach(function (s) { r.issues.push(s); });
+  if (bad.length > 10) r.issues.push('……共 ' + bad.length + ' 处，另有 ' + (bad.length - 10) + ' 处省略');
+});
+
+/* ---------- 附加规则 16：lang 与内容自洽（防贴错标签） ---------- */
+rule(16, '附则：lang 与内容自洽——shell 块首行必须是已知命令或「$ 」提示符，java 块不得是命令行', function (r) {
+  const ids = chapterIds();
+  const bad = [];
+  let tbShell = 0; let tbJava = 0; let ansShell = 0; let ansJava = 0;
+  const check = function (code, lang, where) {
+    const msg = langIssue(code, lang);
+    if (msg) bad.push(where + ' lang=' + lang + '：' + msg + '（首行「' + short(meaningfulLine(code, lang === 'shell' ? /^#/ : /^(\/\/|\/\*|\*)/), 50) + '」）');
+  };
+
+  ids.forEach(function (id) {
+    const blocks = (TEXTBOOK[id] && TEXTBOOK[id].blocks) || [];
+    blocks.forEach(function (b, i) {
+      if (!Object.prototype.hasOwnProperty.call(b, 'code')) return;
+      const lang = b.lang == null ? '' : String(b.lang).trim();
+      if (lang !== 'shell' && lang !== 'java') return;
+      if (lang === 'shell') tbShell++; else tbJava++;
+      check(b.code, lang, id + ' #' + i);
+    });
+    blocks.forEach(function (b, i) {
+      if (!Object.prototype.hasOwnProperty.call(b, 'ol')) return;
+      b.ol.forEach(function (item, q) {
+        answerPres(String(item)).forEach(function (pre) {
+          const lang = String(pre.lang == null ? '' : pre.lang).trim();
+          if (lang !== 'shell' && lang !== 'java') return;
+          if (lang === 'shell') ansShell++; else ansJava++;
+          check(String(item).slice(pre.start, pre.end), lang, id + ' #' + i + ' 第 ' + (q + 1) + ' 题');
+        });
+      });
+    });
+  });
+
+  r.facts.push('教材：shell ' + tbShell + ' 块 / java ' + tbJava + ' 块；答案：shell ' + ansShell + ' 块 / java ' + ansJava + ' 块');
+  bad.slice(0, 10).forEach(function (s) { r.issues.push(s); });
+  if (bad.length > 10) r.issues.push('……共 ' + bad.length + ' 处，另有 ' + (bad.length - 10) + ' 处省略');
+});
+
 /* ============================================================
    四、输出
    ============================================================ */
