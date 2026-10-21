@@ -78,7 +78,7 @@
       { p: '全角空格 U+3000 同样是个隐形杀手。Java 正则里的 \\s 只匹配 ASCII 的空格、制表、换行等字符，不认全角空格；从网页或文档里复制来的数据常常带着它，于是 split 切不开、trim 去不掉，明明“看起来一模一样”却匹配失败。处理办法是先把它替换成半角空格，再切分。' },
       { p: '某些环境里 System.console() 返回 null，比如在 IDE 的运行窗口里、或者标准输入被重定向时，拿它读密码会直接空指针。而且用标准输入读密码本来就会回显，命令行工具应该用 Console.readPassword，Scanner 做不到隐藏输入。' },
       { h: '5.10 除了 Scanner，还有哪些读法' },
-      { p: '小文件可以一次读完：Files.readString(Path) 返回整个文件的字符串，适合配置文件；Files.readAllLines(Path) 返回 List<String>，一行一个元素，适合几百行的数据。两者都抛 IOException，而且都会把内容全部装进内存，所以不适合大文件。' },
+      { p: '小文件可以一次读完：Files.readString(Path) 返回整个文件的字符串，适合配置文件；Files.readAllLines(Path) 返回 List&lt;String&gt;，一行一个元素，适合几百行的数据。两者都抛 IOException，而且都会把内容全部装进内存，所以不适合大文件。' },
       { p: '大文件用 BufferedReader：try (BufferedReader br = Files.newBufferedReader(path, StandardCharsets.UTF_8)) 之后循环 String line = br.readLine()，读到 null 表示结束。注意是 null 而不是空串，空行返回的是长度为 0 的字符串；把这两个混淆，循环就会提前结束或者永远不结束。' },
       { p: '最底层是 InputStream.read()，一次返回一个字节（0 到 255），读到结尾返回 -1。中文在 UTF-8 里占三个字节，直接按字节转字符一定乱码，所以中间必须经过 InputStreamReader 解码。理解了这一层，就明白为什么 Scanner 一定要知道字符集。' },
       { p: '怎么选：交互式少量输入用 Scanner，代码最短；大文件逐行处理用 BufferedReader，速度快；小配置文件整体读入用 Files.readString，最省事。没有“最好的类”，只有和场景匹配的类。' },

@@ -521,7 +521,7 @@ Object.assign(window.LESSON_EXTRA, {
       q: '<code>class Box&lt;T&gt; { T value; }</code>，执行 <code>Box&lt;String&gt; b = new Box&lt;&gt;();</code> 后，<code>b.value</code> 的编译期类型是？',
       options: ['Object', 'String', 'T', 'Class'],
       answer: 1,
-      explain: '创建 Box<String> 后，类型参数 T 被确定为 String，字段 value 和方法的返回类型在编译期都按 String 检查，取出时不需要强转。'
+      explain: '创建 Box&lt;String> 后，类型参数 T 被确定为 String，字段 value 和方法的返回类型在编译期都按 String 检查，取出时不需要强转。'
     }
   ],
   'erasure': [
@@ -534,7 +534,7 @@ Object.assign(window.LESSON_EXTRA, {
         'List&lt;String&gt;.class.isInstance(obj)'
       ],
       answer: 2,
-      explain: '泛型在运行时被擦除，instanceof 和 .class 都不能带泛型参数，List<String>.class 甚至无法通过编译；只能判断原始类型 List，无法判断元素是不是 String。'
+      explain: '泛型在运行时被擦除，instanceof 和 .class 都不能带泛型参数，List&lt;String>.class 甚至无法通过编译；只能判断原始类型 List，无法判断元素是不是 String。'
     }
   ],
 
@@ -549,7 +549,7 @@ Object.assign(window.LESSON_EXTRA, {
         '(a, b) -> a.length() - b.length()'
       ],
       answer: 3,
-      explain: 'Comparator<String> 的抽象方法 compare(String a, String b) 接收两个参数、返回 int。A 参数个数不对，B 只有一个参数，C 参数过多。'
+      explain: 'Comparator&lt;String> 的抽象方法 compare(String a, String b) 接收两个参数、返回 int。A 参数个数不对，B 只有一个参数，C 参数过多。'
     }
   ],
   'optional': [

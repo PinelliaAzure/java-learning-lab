@@ -470,9 +470,9 @@ System.out.println(s);`, [
           },
           {
             q: '下面哪个是泛型的不合法用法？',
-            options: ['Box<String> b = new Box<>();', 'new T[10]', 'static <T> T id(T t)', 'List<? super Integer> list'],
+            options: ['Box&lt;String> b = new Box&lt;>();', 'new T[10]', 'static &lt;T> T id(T t)', 'List<? super Integer> list'],
             answer: 1,
-            explain: '泛型类型参数在运行时被擦除，无法创建泛型数组 new T[]；通常用 List<T> 或反射替代。'
+            explain: '泛型类型参数在运行时被擦除，无法创建泛型数组 new T[]；通常用 List&lt;T> 或反射替代。'
           }
         ]
       },

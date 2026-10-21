@@ -67,7 +67,7 @@ public class StreamCreate {
     }
 }`, title: 'StreamCreate.java' },
       { out: '3\n10\n[1, 2, 4, 8, 16]' },
-      { p: '代码第 10 行的 Arrays.stream 接收的是 String 数组，得到 Stream<String>；第 12 行的 range(1, 5) 不包含 5，所以 sum 是 1+2+3+4=10；第 13 行的 iterate 从 1 开始不断乘 2，如果没有 limit(5)，这行代码本身不会死循环，但后面任何终端操作都会永远跑下去。两个细节值得单独记：Stream.of(new int[]{1,2,3}) 得到的是一个元素的流，元素类型是 int[]，因为可变参数把整个数组当成了一个参数，基本类型数组必须用 Arrays.stream；无限流必须截断，否则终端操作不会结束。' },
+      { p: '代码第 10 行的 Arrays.stream 接收的是 String 数组，得到 Stream&lt;String&gt;；第 12 行的 range(1, 5) 不包含 5，所以 sum 是 1+2+3+4=10；第 13 行的 iterate 从 1 开始不断乘 2，如果没有 limit(5)，这行代码本身不会死循环，但后面任何终端操作都会永远跑下去。两个细节值得单独记：Stream.of(new int[]{1,2,3}) 得到的是一个元素的流，元素类型是 int[]，因为可变参数把整个数组当成了一个参数，基本类型数组必须用 Arrays.stream；无限流必须截断，否则终端操作不会结束。' },
       { p: '实际读取文件时，Files.lines(path) 返回的流持有文件句柄，必须用 try-with-resources 关闭；这一点和集合流不同，集合流没有需要释放的资源，BufferedReader.lines() 也一样。忘记关闭在 Windows 上会表现为文件删不掉，在 Linux 上则可能耗尽文件描述符，这类问题排查起来比语法错误麻烦得多。' },
       { note: '<b>提示：</b>集合的 <code>stream()</code> 是默认方法，任何 <code>Collection</code> 实现都有；Map 没有，需要先 <code>map.entrySet().stream()</code> 或 <code>map.keySet().stream()</code>。' },
       { h: '1.5 中间操作：筛选、映射、扁平化' },
@@ -165,10 +165,10 @@ public class CollectorsDemo {
       { table: { head: ['收集器', '返回结果', '典型用途'], rows: [
         ['toList / toSet', 'List / Set', '把流收成集合'],
         ['toMap', 'Map', '按某个字段建索引'],
-        ['groupingBy', 'Map<K, List<T>>', '按部门、类型分组'],
+        ['groupingBy', 'Map&lt;K, List&lt;T>>', '按部门、类型分组'],
         ['joining', 'String', '拼接成一行文本'],
         ['counting / summingInt', 'Long / Integer', '计数、求和'],
-        ['partitioningBy', 'Map<Boolean, List<T>>', '按条件一分为二']
+        ['partitioningBy', 'Map&lt;Boolean, List&lt;T>>', '按条件一分为二']
       ] } },
       { p: '第 7 行的 groupingBy 以名字长度为键，Tom 和 Bob 长度都是 3，被分到同一组；打印顺序取决于 HashMap 的遍历顺序，不要假设它按插入顺序输出。第 12 行的 joining 三个参数分别是分隔符、前缀、后缀。第 15 行的 toMap 第三个参数 (a,b) -&gt; a 表示键冲突时保留先出现的值；如果省略这个参数，遇到重复键会直接抛异常。另外 toMap 不允许值为 null，因为底层用 Map.merge 实现，null 会触发 NullPointerException。' },
       { h: '1.9 基本类型流' },
@@ -216,7 +216,8 @@ public class ParallelDemo {
         System.out.println();
     }
 }`, title: 'ParallelDemo.java' },
-      { out: '250000500000\n1 2 3 4 5' },
+      { out: '250000500000\n1 2 3 4 5 ' },
+      { note: '<b>第二行末尾有一个空格：</b>循环体是 <code>print(n + " ")</code>，每个数字后面都跟了一个空格，最后那句 <code>println()</code> 只补换行，所以行尾留着一个看不见的空格。想拿到干干净净的一行，可以改成 <code>System.out.println(IntStream.range(1, 6).parallel().mapToObj(String::valueOf).collect(Collectors.joining(" ")))</code>——<code>joining</code> 只在元素之间放分隔符，不会在尾巴上留空格。' },
       { note: '<b>并行流三条铁律：</b>不要在 lambda 里修改共享变量；需要顺序就用 <code>forEachOrdered</code>；不要占用 commonPool 执行阻塞任务（数据库、HTTP、文件），否则会影响整个应用里所有并行流。' },
       { p: '第 4 到 7 行是标准的并行聚合：rangeClosed 生成 1 到 100 万，parallel 开启并行，filter 保留偶数，sum 合并各段结果。偶数之和等于 2×(1+2+…+500000)=250000500000。第 9 到 11 行用 forEachOrdered 保证按源顺序输出；如果换成 forEach，并行下输出顺序是乱的，这不是 bug，而是并行流本来就不承诺顺序。需要“第一个匹配”时用 findFirst，它要维护顺序所以更慢；只关心“任意一个匹配”就用 findAny。' },
       { list: [
@@ -648,6 +649,7 @@ public class FileCopyBytes {
     }
 }`, title: 'FileCopyBytes.java' },
       { out: '复制完成' },
+      { note: '<b>先准备文件：</b>程序读当前目录的 <code>input.txt</code>，文件不存在会抛 <code>java.io.FileNotFoundException: input.txt (No such file or directory)</code>。先造一个：<code>printf "hello\n" &gt; input.txt</code>。它同时会在同一目录写出 <code>output.txt</code>，跑之前确认这两个文件名不会覆盖你真正要保留的文件；两个流都放在 try-with-resources 里，即使中途抛异常也会关闭。' },
       { p: '运行前需要在项目目录准备一个 input.txt，内容随意；执行后同目录会出现 output.txt，内容和它完全一致，二进制文件同样适用。第 5、6 行用 try-with-resources 声明两个流，块结束时按声明的逆序自动关闭，这是下一章的重点，这里先照抄。第 9 行把读到的字节数暂存到 n，第 10 行判断是否到末尾，第 11 行只写 0 到 n-1 这段有效数据。缓冲区 8192 是经验值，太小系统调用多，太大浪费内存，8KB 到 64KB 都常见。' },
       { h: '3.4 read 的返回值与缓冲区陷阱' },
       { p: '单字节 read() 每次都要触发一次系统调用，复制一个 1MB 的文件要调用上百万次，慢得离谱。所以真实代码几乎总是用数组批量读写。但批量读写会带来两个新问题：一是最后一次读到的数据可能不满一个缓冲区，二是字符流按 char 数组读时，可能把多字节字符从中间截断。前者靠 write(buf, 0, n) 解决，后者要靠字符流内部的解码器处理。' },
@@ -674,6 +676,7 @@ public class ReadChars {
     }
 }`, title: 'ReadChars.java' },
       { out: '你好，世界' },
+      { note: '<b>先准备文件：</b>这里读的是当前目录下的 <code>note.txt</code>，文件不存在会抛 <code>java.io.FileNotFoundException: note.txt (No such file or directory)</code>。造法：<code>printf "你好，世界" &gt; note.txt</code>（行尾不加换行，输出就只有一行）。如果文件其实是 GBK 编码，这段代码不会报错，只会打出乱码——这正是不用 <code>FileReader</code>、而要显式传 <code>StandardCharsets.UTF_8</code> 的现实理由。' },
       { p: '假设 note.txt 里只有一行“你好，世界”，程序会原样打印出来。第 5 到 7 行是典型的“三明治”结构：最里面是 FileInputStream 负责读字节，中间 InputStreamReader 负责按 UTF-8 解码，最外面用 Reader 接口接收。第 10 行读一批 char，第 11 行用 new String(buf, 0, n) 只取有效部分。你不需要自己处理“半个汉字”，解码器会把不完整的字节留在内部缓冲，等下一次读取补齐。' },
       { h: '3.6 字符编码：ASCII、GBK 与 UTF-8' },
       { p: '按行读取是文本处理最常见的需求，BufferedReader.readLine() 一次返回一行，不含行尾的换行符，读到末尾返回 null——注意是 null 而不是 -1，这是字符流里少数用 null 表示结束的 API。Scanner 的 hasNextLine 与 nextLine 也能按行读，但它内部做了更多分词与解析，速度比 BufferedReader 慢，大文件优先用后者。' },
@@ -878,6 +881,7 @@ public class CopyWithBuffer {
     }
 }`, title: 'CopyWithBuffer.java' },
       { out: '耗时 18 ms（具体数值随机器与文件大小变化）' },
+      { note: '<b>先准备文件：</b>这段代码读当前目录下的 <code>big.bin</code>，文件不存在会直接抛 <code>java.io.FileNotFoundException: big.bin (No such file or directory)</code>，跑不出上面这行。动手前先造一个大文件：Linux 用 <code>dd if=/dev/zero of=big.bin bs=1m count=64</code>，macOS 用 <code>mkfile 64m big.bin</code>。它还会在同一个目录写出 <code>big-copy.bin</code>，所以最好在专门的空目录里跑（比如 <code>/tmp</code> 下新建的目录），不要在项目根目录里跑，免得留下几十 MB 的垃圾文件。' },
       { p: '注意这里仍然是一个字节一个字节地读写，但速度并不慢，因为每次 read() 都只是在内存数组里移动下标。真正与磁盘打交道的，是缓冲区耗尽时的那次批量读取。第 6、7 行的 64 * 1024 把缓冲区设为 64KB；第 11 行的循环写法与上一章完全一致，说明缓冲流是透明的增强，不改变调用方式。' },
       { p: '运行前先准备一个几 MB 的 big.bin，随便什么内容都行，否则第一行就会抛 FileNotFoundException。计时结果只用来对比“有缓冲”和“无缓冲”的数量级差别，绝对值随机器和文件大小变化，不要拿它当性能承诺。' },
       { p: '这两个类都继承自 FilterInputStream 和 FilterOutputStream，属于“处理流”。它们不改变数据的含义，只改变传输方式，所以可以套在任意字节流外面：文件、内存数组、网络套接字都行。这也解释了为什么 Java IO 的类这么多却不用记：记住“节点流提供数据，处理流增强能力”这一条，剩下的靠组合。' },
@@ -1068,7 +1072,7 @@ public class PathDemo {
         System.out.println(Path.of("/data/app/./logs/../logs/a.txt").normalize());
     }
 }`, title: 'PathDemo.java' },
-      { out: '/data/app/logs/app.log 的解析结果：\napp.log\n/data/app/logs\n4\ndata\n/\n/data/app/config/app.yml\nlogs/a.txt\n/data/app/logs/a.txt' },
+      { out: 'app.log\n/data/app/logs\n4\ndata\n/\n/data/app/config/app.yml\nlogs/a.txt\n/data/app/logs/a.txt' },
       { p: '第 4 行创建 Path，注意它不会检查 /data/app 是否存在。第 6 到 10 行分别取文件名、父目录、段数、第一段和根。第 12 行的 resolve 把相对路径拼到基准路径上，如果参数本身是绝对路径，resolve 会直接返回参数，这一点常被用来实现“用户给了绝对路径就用，否则拼到工作目录下”。第 13 行求相对路径，第 14 行把 . 和 .. 化简。' },
       { h: '5.2 为什么要用 Path 与 Files：与旧 File 的对比' },
       { p: 'Java 1.0 的 File 类用起来很别扭。它把“路径”和“文件操作”混在一起，mkdir 失败只返回 false 不告诉你原因，renameTo 在不同文件系统之间行为不一致，list() 在目录不存在时返回 null 而不是抛异常，还得再判一次空。更要命的是它无法表达符号链接、无法区分“不存在”和“没权限”，排查问题时只能靠猜。' },

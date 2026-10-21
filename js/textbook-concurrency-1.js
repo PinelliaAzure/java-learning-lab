@@ -37,6 +37,7 @@
       { p: '从 JDK 11 开始，标准库自带 <code>java.net.http.HttpClient</code>，不引任何第三方依赖就能发 HTTP 请求。一次调用固定三步：创建客户端、构造请求、发送并拿到响应。' },
       { lang: 'java', code: 'import java.net.URI;\nimport java.net.http.*;\nimport java.time.Duration;\n\npublic class GetDemo {\n    public static void main(String[] args) throws Exception {\n        HttpClient client = HttpClient.newBuilder()\n                .connectTimeout(Duration.ofSeconds(3))\n                .build();\n\n        HttpRequest request = HttpRequest.newBuilder()\n                .uri(URI.create("http://localhost:8080/api/books/1"))\n                .timeout(Duration.ofSeconds(5))\n                .header("Accept", "application/json")\n                .GET()\n                .build();\n\n        HttpResponse<String> response =\n                client.send(request, HttpResponse.BodyHandlers.ofString());\n\n        System.out.println(response.statusCode());\n        System.out.println(response.body());\n    }\n}', title: 'GetDemo.java' },
       { out: '200\n{"id":1,"title":"Java 并发实战","price":59.0}' },
+      { note: '<b>跑之前要先有服务：</b>这段代码连的是本机 8080 端口的 <code>/api/books/1</code>，教程没有内置这个接口，直接跑会得到 <code>ConnectException: Connection refused</code>。先用任意方式在那个地址起一个返回 <code>{"id":1,"title":"Java 并发实战","price":59.0}</code> 的接口（JDK 自带的 <code>com.sun.net.httpserver.HttpServer</code> 十几行就能起一个），或者把 URI 换成你能访问的真实地址，再对照下面的输出。' },
       { p: '<code>HttpClient.newBuilder()</code> 可以配置连接超时、代理、HTTP 版本和线程池。<code>HttpClient</code> 实例是线程安全的，内部维护连接池，应该全局复用一个，而不是每次请求都 new 一个。' },
       { p: '<code>HttpRequest.newBuilder()</code> 至少要设置 URI，再选择 GET、POST 等方法，按需加请求头和请求超时。<code>client.send</code> 是同步的：调用线程会一直阻塞，直到响应返回或者超时。' },
       { p: '<code>HttpResponse</code> 里最重要的三样东西：<code>statusCode()</code> 状态码、<code>body()</code> 响应体、<code>headers()</code> 响应头。<code>BodyHandlers.ofString()</code> 会按响应头里的 charset 解码，没写就按 UTF-8 处理。' },
@@ -186,6 +187,7 @@ public class AsyncDemo {
     }
 }`, title: 'AsyncDemo.java' },
       { out: '200:{"id":1,"title":"Java 并发实战","price":59.0}' },
+      { note: '<b>同样需要一个在跑的服务：</b><code>sendAsync</code> 只是把请求丢进内部线程池，连不上服务时 <code>join</code> 抛的是 <code>CompletionException: java.net.ConnectException: Connection refused</code>，表现和同步版一样。' },
       { p: '异步不等于更快。单次请求用同步更简单，代码也好读；只有当你需要同时发出多个互不依赖的请求时，异步才能真正缩短总耗时。' },
       { p: '还要注意默认线程池：<code>CompletableFuture</code> 不指定 Executor 时用的是 <code>ForkJoinPool.commonPool()</code>，线程数是 CPU 核数减一。如果在回调里做阻塞 IO，会把公共池占满，影响整个进程，所以 IO 型任务应当传入自定义线程池。' },
 
@@ -388,6 +390,7 @@ public class AsyncDemo {
       { p: '很多人第一次遇到可见性问题，都会经历同一个诡异过程：程序卡住不退出，在循环里加一行打印，它居然正常结束了；把打印删掉，又卡住。于是得出一个错误结论——打印能修复并发问题。' },
       { lang: 'java', code: 'public class PrintFixesIt {\n    static boolean running = true;\n\n    public static void main(String[] args) throws Exception {\n        Thread worker = new Thread(() -> {\n            while (running) {\n                System.out.println("tick");   // 删掉这一行，线程可能永不退出\n            }\n            System.out.println("退出循环");\n        }, "worker");\n\n        worker.start();\n        Thread.sleep(200);\n        running = false;\n    }\n}', title: 'PrintFixesIt.java' },
       { out: '（屏幕刷出大量 tick，随后出现）\n退出循环' },
+      { note: '<b>tick 的行数看机器：</b>200ms 内能打印多少行取决于 <code>println</code> 的速度，本机实测两次分别是 211684 行和 235265 行，换台机器可能是几万行。别让这些行真的刷屏，重定向到文件或接 <code>tail -3</code>，只看结尾那句「退出循环」。' },
       { p: '真正的原因在 <code>System.out</code>：它是一个 <code>PrintStream</code>，<code>println</code> 内部带了 <code>synchronized</code>。每一次打印都相当于一次加锁解锁，而加锁会刷新工作内存，顺带把 <code>running</code> 的新值带了进来。打印没有修好任何东西，它只是无意中插入了一次同步，把问题暂时盖住了。' },
       { p: '这类“靠副作用跑通”的代码最难缠：在你机器上正常，换一台 JIT 更激进的机器、或者把日志级别从 debug 调成 info，行为就变了。判断标准很朴素——把所有打印、日志、<code>sleep</code> 都删掉，程序还正确吗？如果答案是否定的，那正确性就是借来的，迟早要还。' },
       { p: '正确做法是给标志位加 <code>volatile</code>，明确要求每次读写都走主内存。加完之后删掉打印，循环照样能退出。这条经验可以推广成一条排查直觉：凡是“加了日志就好了”“加了 sleep 就好了”的并发 bug，都该先怀疑可见性或时序，而不是把日志当成补丁留在代码里。' },
@@ -449,6 +452,7 @@ public class AsyncDemo {
       { p: '竞态条件不只出现在自增。更常见的形态是“先检查再动作”（check-then-act）：先判断条件成立，再根据判断结果修改状态。只要判断和修改之间可能被其他线程插入，结果就不可靠。' },
       { lang: 'java', code: 'public class StockDemo {\n    static int stock = 1;\n\n    static void buy(String user) {\n        if (stock > 0) {                    // 第一步：检查\n            try {\n                Thread.sleep(10);           // 模拟业务耗时，放大时间窗口\n            } catch (InterruptedException e) {\n                return;\n            }\n            stock = stock - 1;              // 第二步：修改\n            System.out.println(user + " 购买成功");\n        } else {\n            System.out.println(user + " 库存不足");\n        }\n    }\n\n    public static void main(String[] args) throws Exception {\n        Thread t1 = new Thread(() -> buy("张三"));\n        Thread t2 = new Thread(() -> buy("李四"));\n        t1.start();\n        t2.start();\n        t1.join();\n        t2.join();\n        System.out.println("剩余库存: " + stock);\n    }\n}', title: 'StockDemo.java' },
       { out: '张三 购买成功\n李四 购买成功\n剩余库存: -1' },
+      { note: '<b>两行的先后不固定：</b>张三、李四谁先跑完 <code>sleep</code> 谁先打印，本机实测两种顺序都出现过。真正要看的是最后一行恒为 <code>剩余库存: -1</code>：两个线程都在 <code>stock &gt; 0</code> 处看到了 1，于是各卖了一件。' },
       { p: '把 <code>sleep</code> 去掉，问题依然存在，只是窗口变小、更难复现。这说明竞态条件的本质不是“睡了一会儿”，而是“检查和修改不是一个原子步骤”。修复方式只有一种：把这两步放进同一个临界区。' },
       { p: '临界区指一段同一时刻只允许一个线程执行的代码。进入前要拿锁，出去时释放锁。锁的作用不是“锁住代码”，而是“锁住多个线程对同一份共享状态的访问权”。所以锁对象必须在所有相关线程之间共享。' },
       { note: '<b>关键认知：</b>锁保护的是数据，不是代码。同一个类里两个方法用了不同的锁对象，它们之间没有任何互斥效果。' },
@@ -487,6 +491,7 @@ public class AsyncDemo {
       { p: '<code>notify</code> 只唤醒一个等待者，<code>notifyAll</code> 唤醒全部。生产代码优先用 <code>notifyAll</code>，因为你无法保证被唤醒的那个线程恰好是能继续执行的线程，用错可能导致“信号丢失”，大家都睡着。' },
       { lang: 'java', code: 'public class Basket {\n    private final int[] items = new int[5];\n    private int count = 0;\n\n    synchronized void put(int value) throws InterruptedException {\n        while (count == items.length) {\n            wait();                 // 满了：释放锁并等待\n        }\n        items[count++] = value;\n        notifyAll();                // 唤醒可能等着的消费者\n    }\n\n    synchronized int take() throws InterruptedException {\n        while (count == 0) {\n            wait();                 // 空了：等待生产者\n        }\n        int value = items[--count];\n        notifyAll();\n        return value;\n    }\n\n    public static void main(String[] args) {\n        Basket basket = new Basket();\n        new Thread(() -> {\n            try {\n                for (int i = 1; i <= 5; i++) basket.put(i);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n            }\n        }).start();\n\n        new Thread(() -> {\n            try {\n                for (int i = 1; i <= 5; i++) {\n                    System.out.println("取到 " + basket.take());\n                }\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n            }\n        }).start();\n    }\n}', title: 'Basket.java' },
       { out: '取到 1\n取到 2\n取到 3\n取到 4\n取到 5' },
+      { note: '<b>顺序可能正好相反：</b>上面按 1→5 递增只是生产与消费严格交错时的一种结果。生产者没有 sleep，通常一口气把 5 个值塞满数组；而 <code>take</code> 取的是 <code>items[--count]</code>，本质是后进先出，所以实际几乎总是先打印 5、再 4、3、2、1（本机连跑 4 次都是这个顺序）。两种顺序都不算错，这段代码要演示的是 <code>wait</code> 与 <code>notifyAll</code> 的配对。' },
       { p: '为什么判断条件用 <code>while</code> 而不是 <code>if</code>？因为线程被唤醒后并不保证条件真的成立（可能被别的线程抢先消费），这叫虚假唤醒。醒来后必须重新检查，不满足就继续 <code>wait</code>。' },
       { note: '<b>不要用 <code>Thread.sleep</code> 代替 <code>wait</code>：</b>sleep 不释放锁，会让生产者抱着锁睡觉，消费者永远进不来，直接把程序拖死。' },
 
@@ -667,6 +672,7 @@ public class PoolInternals {
     }
 }`, title: 'PoolInternals.java' },
       { out: 'demo-worker 执行任务 1\n提交 1 后：线程数=1，队列=0，活跃=1\n提交 2 后：线程数=2，队列=0，活跃=2\n提交 3 后：线程数=2，队列=1，活跃=2\n提交 4 后：线程数=2，队列=2，活跃=2\ndemo-worker 执行任务 2\n提交 5 后：线程数=3，队列=2，活跃=3\n提交 6 后：线程数=4，队列=2，活跃=4\ndemo-worker 执行任务 5\ndemo-worker 执行任务 6\ndemo-worker 执行任务 3\ndemo-worker 执行任务 4' },
+      { note: '<b>顺序会变：</b>主线程打印的 6 行「提交 N 后」按提交顺序出现，数值就是那一刻的池状态；4 行「demo-worker 执行任务 N」插在哪个位置取决于工作线程何时真正起来，每次可能不同（本例实测就把「执行任务 5」挤到了「提交 6 后」之后）。' },
       { p: '这段输出把 4.4 的规则演了一遍：第 1、2 个任务创建核心线程；第 3、4 个任务进队列（队列从 0 涨到 2）；第 5 个任务发现队列满了，于是扩容出第 3 个线程；第 6 个任务再扩容到第 4 个，正好凑满 max=4。本例 6 个任务全程没到上限，<code>CallerRunsPolicy</code> 一次也没被触发，所以输出里只有 <code>demo-worker</code> 在干活；要看到拒绝策略的效果，把 max 改成 3 就行——那时第 6 个任务提交时线程数已经是 3（到顶）、队列也是满的，池子拒绝，任务回落到提交者 <code>main</code> 线程上执行。另外前面几行“执行任务 N”的先后顺序由线程调度决定，每次运行都可能不同，只有“提交 N 后”那几行是稳定的。' },
 
       { h: '4.4 提交一个任务，池子到底做了什么' },
@@ -716,7 +722,8 @@ public class ExecuteVsSubmit {
         pool.shutdown();
     }
 }`, title: 'ExecuteVsSubmit.java' },
-      { out: 'Exception in thread "pool-1-thread-2" java.lang.IllegalStateException: execute 的异常直接打印\nsubmit 任务结束了吗？true\n调用 get 才看到：java.lang.IllegalStateException: submit 的异常被藏进 Future' },
+      { out: 'Exception in thread "pool-1-thread-1" java.lang.IllegalStateException: execute 的异常直接打印\nsubmit 任务结束了吗？true\n调用 get 才看到：java.lang.IllegalStateException: submit 的异常被藏进 Future' },
+      { note: '<b>这行报错在 stderr 上：</b>未捕获异常由 JVM 默认处理器打印到 <code>System.err</code>，重定向时它会落在文件的另一处；后面还有几行 <code>at ...</code> 栈帧，行号随 JDK 版本变化，这里省略。线程名是 <code>pool-1-thread-1</code>：<code>execute</code> 先提交，池子先建出 thread-1 跑它，<code>submit</code> 的任务落到 thread-2 并被包进 <code>Future</code>，所以控制台上看不到它的异常。' },
       { p: '第 5 行的 <code>execute</code> 抛出异常后，异常一路冒到线程顶层，被默认的未捕获异常处理器打印出来，那个工作线程随即结束。第 9 行的 <code>submit</code> 抛出同样的异常，控制台却什么都没有——异常被包在 <code>Future</code> 里，直到第 20 行 <code>get()</code> 才以 <code>ExecutionException</code> 的形式露出来，真正的原因在 <code>getCause()</code> 里。' },
 
       { h: '4.6 用 Future 拿回异步结果' },
@@ -797,6 +804,7 @@ public class ShutdownDemo {
     }
 }`, title: 'ShutdownDemo.java' },
       { out: '任务1 开始\n任务2 开始\nshutdown 后提交被拒绝\n任务1 结束\n任务2 结束\n任务3 开始\n任务4 开始\n任务3 结束\n任务4 结束\n全部结束？true' },
+      { note: '<b>顺序会变：</b>「shutdown 后提交被拒绝」可能出现在任务 1、2 开始之前——主线程提交第 5 个任务时，前两个任务还没抢到 CPU；任务 1 与 2、任务 3 与 4 的结束先后也由调度器决定。确定的部分是：只有 2 个线程，任务 1、2 先跑，3、4 排队后跑，最后一行一定是「全部结束？true」。' },
       { p: '两个线程先跑任务 1、2，任务 3、4 在队列里排队。<code>shutdown()</code> 之后队列里的任务照样执行完，但新的 <code>submit</code> 立刻被拒绝。<code>awaitTermination(10, SECONDS)</code> 最多等 10 秒，四个任务各 1 秒、两个线程跑两轮共约 2 秒，所以返回 true。如果返回 false，就应该接着调用 <code>shutdownNow()</code>。' },
 
       { h: '4.8 线程数到底设多少' },
@@ -1005,10 +1013,12 @@ public class CacheDemo {
             pool.submit(() -> System.out.println(id + " -> " + get("user:1")));
         }
         pool.shutdown();
+        pool.awaitTermination(5, TimeUnit.SECONDS);   // 等 8 个任务跑完，统计才有意义
         System.out.println("缓存大小：" + CACHE.size());
     }
 }`, title: 'CacheDemo.java' },
       { out: '0 -> value-of-user:1\n1 -> value-of-user:1\n2 -> value-of-user:1\n3 -> value-of-user:1\n4 -> value-of-user:1\n5 -> value-of-user:1\n6 -> value-of-user:1\n7 -> value-of-user:1\n缓存大小：1' },
+      { note: '<b>输出顺序每次可能不同：</b>8 个任务抢同一个 key，谁算完谁先打印，所以前 8 行的先后不是固定的，上面这份只是某一次的顺序。数值是确定的——<code>computeIfAbsent</code> 对同一个 key 最多执行一次 <code>load</code>，8 个线程里其余 7 个在桶锁上等结果，所以缓存大小恒为 1。' },
       { p: '8 个线程同时请求同一个 key，<code>load</code> 只被调用了一次，其余 7 个线程在桶锁上等待第一个线程算完，然后直接拿到缓存值。如果换成 <code>if (!CACHE.containsKey(k)) CACHE.put(k, load(k));</code>，<code>load</code> 会被调用 8 次，还可能互相覆盖。这里 <code>load</code> 里只是 sleep，真实场景若是数据库查询，差距就是 1 次对 8 次。' },
 
       { h: '5.5 CopyOnWriteArrayList：读多写极少的场景专用' },
@@ -1102,7 +1112,8 @@ public class ProduceConsume {
         Thread.sleep(2000);
     }
 }`, title: 'ProduceConsume.java' },
-      { out: '生产 任务1，队列长度=1\n  消费 任务1，队列长度=0\n生产 任务2，队列长度=1\n生产 任务3，队列长度=2\n  消费 任务2，队列长度=1\n生产 任务4，队列长度=2\n生产 任务5，队列长度=3\n生产 任务6，队列长度=4' },
+      { out: '生产 任务1，队列长度=1\n  消费 任务1，队列长度=0\n生产 任务2，队列长度=1\n生产 任务3，队列长度=2\n  消费 任务2，队列长度=1\n生产 任务4，队列长度=2\n生产 任务5，队列长度=3\n生产 任务6，队列长度=4\n  消费 任务3，队列长度=3\n生产 任务7，队列长度=4\n生产 任务8，队列长度=5\n  消费 任务4，队列长度=4\n生产 任务9，队列长度=5\n生产 任务10，队列长度=5\n  消费 任务5，队列长度=4\n  消费 任务6，队列长度=4\n生产 任务11，队列长度=5\n  消费 任务7，队列长度=4\n生产 任务12，队列长度=5\n  消费 任务8，队列长度=4\n  消费 任务9，队列长度=3\n  消费 任务10，队列长度=2\n  消费 任务11，队列长度=1\n  消费 任务12，队列长度=0' },
+      { note: '<b>交错顺序只是其中一种：</b>生产者和消费者是两个线程，每次运行时「消费」行插在哪两个「生产」行之间都可能不同（第一行也偶尔是「消费 任务1，队列长度=0」）。行数和队列长度才是重点：12 次生产、12 次消费，队列长度在 0 到 5 之间来回，涨到 5 之后 <code>put</code> 阻塞，等消费者腾出位置再继续。' },
       { p: '生产者每 100ms 放一个，消费者每 300ms 取一个，速度差 3 倍，所以队列长度会持续上涨；涨到 5 时 <code>put</code> 就会阻塞，生产者被迫停下来等消费者——这就是背压。如果队列换成无界的 <code>LinkedBlockingQueue</code>，生产者永远不会停，队列会一直涨到内存耗尽。' },
 
       { h: '5.8 并发集合怎么选' },
@@ -1402,6 +1413,7 @@ public class TryLockDemo {
     }
 }`, title: 'TryLockDemo.java' },
       { out: '线程1 完成转账\n线程2 完成转账\n主线程退出' },
+      { note: '<b>为什么两行顺序不固定：</b>两个线程谁先拿到两把锁由调度器决定，<code>tryLock</code> 超时后的随机退避也让重试时机不固定，所以「线程1 完成转账」与「线程2 完成转账」的先后每次运行都可能不同，只有最后的「主线程退出」一定在最后（<code>join</code> 等两个线程都结束）。判断这段代码是否正确的标准是「一定结束、一定两笔都完成」，不是行的先后。' },
       { p: '关键是第 8 行和第 12 行：<code>tryLock</code> 只等 200ms，等不到就返回 false，线程可以退回去重来，而不是死等。第 44 行的随机退避同样重要——如果两个线程固定间隔重试，它们会一直同时抢到第一把锁、又同时失败，形成活锁；加上随机性之后，碰撞概率迅速下降，总有一个能成功。' },
 
       { h: '6.7 活锁与饥饿：比死锁更隐蔽' },

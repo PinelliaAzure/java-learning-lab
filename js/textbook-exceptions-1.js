@@ -160,6 +160,7 @@ public class ReadFileDemo {
     }
 }`, title: 'ReadFileDemo.java' },
       { out: '第一行\n第二行' },
+      { note: '<b>运行前提：</b>这段读的是运行目录下的 hello.txt，仓库里没有这个文件。先在与 .java 同一目录新建 hello.txt，内容两行分别是「第一行」「第二行」，保存为 UTF-8（不带 BOM），再在同一个目录里 <code>javac ReadFileDemo.java</code> 后 <code>java ReadFileDemo</code>。编码这里不做猜测：<code>Files.newBufferedReader(path, StandardCharsets.UTF_8)</code> 明确指定了 UTF-8，文件存成 GBK 会读出乱码而不是抛异常；文件不存在或没有读权限则不会崩，而是走进 catch 打印「读取失败: …」。' },
       { p: '假设 hello.txt 里有两行中文，程序会逐行读出并打印。注意 try 括号里的 <code>BufferedReader</code> 没有手动 close，编译器会自动生成关闭逻辑。它的语义大致等价于：先保存资源引用，执行 try 块；无论正常结束还是抛异常，都在 finally 里调用 close；如果 try 块和 close 都抛了异常，保留 try 块的异常，把 close 的异常通过 <code>addSuppressed</code> 挂到它身上。' },
       { p: '多个资源可以写在同一个括号里，用分号隔开，关闭顺序与声明顺序相反：先开的最后关。这符合依赖关系——外层流包装内层流时，必须先关外层再关内层。Java 9 之后，如果资源变量在 try 之前已经声明且是 final 或 effectively final，可以直接写 <code>try (reader)</code>，不必再声明一次。' },
       { p: '要让自己写的类支持自动关闭，实现 <code>AutoCloseable</code> 接口，提供 <code>close()</code> 方法。这个方法的签名允许抛出 Exception，子接口 <code>Closeable</code> 把异常收窄成了 IOException。<code>close()</code> 里应该释放真实资源，并且要幂等——重复调用不能出错。还有一个实践细节：不要把这个资源对象本身返回给调用方，否则调用方可能在 try 结束后继续使用一个已经关闭的对象。' },
@@ -587,7 +588,7 @@ public class WrapDemo {
         System.out.println(wrong);
     }
 }`, title: 'ObjectBox.java' },
-      { out: '取到: hello\nException in thread "main" java.lang.ClassCastException: class java.lang.Integer cannot be cast to class java.lang.String' },
+      { out: '取到: hello\nException in thread "main" java.lang.ClassCastException: class java.lang.Integer cannot be cast to class java.lang.String (java.lang.Integer and java.lang.String are in module java.base of loader \'bootstrap\')\n\tat ObjectBox.main(ObjectBox.java:19)' },
       { p: '前一半运行正常，后一半在运行时爆炸。问题不在于强转本身，而在于编译器没有能力阻止你犯错：box 可以先装字符串、再装整数，而“取出时按 String 处理”这个假设只存在于程序员的脑子里，编译器看不到。只要有一个地方放错，错误就会在离现场很远的地方出现，堆栈指向的是强转那一行，而不是 set(42) 那一行。' },
       { p: 'Object 容器还有第二个问题：所有基本类型都要装箱。放一个 int 会变成 Integer，取出来再拆箱；频繁读写时既啰嗦又有性能开销。第三个问题是可读性：<code>Object get()</code> 不告诉你里面是什么，调用者只能去读文档或猜。泛型把这三个问题一起解决了。' },
       { table: { head: ['对比项', 'Object 容器', '泛型容器'], rows: [
@@ -952,7 +953,8 @@ public class BridgeDemo {
         }
     }
 }`, title: 'BridgeDemo.java' },
-      { out: '[hi]\nbridge: public java.lang.Object StringNode.get()' },
+      { out: '[hi]\nbridge: java.lang.Object BridgeDemo$StringNode.get()' },
+      { note: '<b>javap 取证：</b>对编译产物执行 <code>javap -p -c BridgeDemo$StringNode</code>（<code>$</code> 在 shell 里有特殊含义，稳妥写法是给类名加引号），会看到两个 get：<code>java.lang.String get();</code> 和编译器生成的 <code>java.lang.Object get();</code>，后者方法体只有 <code>aload_0</code>、<code>invokevirtual</code>（调 <code>get:()Ljava/lang/String;</code>）、<code>areturn</code> 三条指令，作用就是把调用转给真身。<code>javap -p -v</code> 里两个方法的 flags 也不同：真身是 <code>flags: (0x0000)</code>（源码没写修饰符，实际是包私有），桥方法是 <code>flags: (0x1040) ACC_BRIDGE, ACC_SYNTHETIC</code>。所以桥方法的名字始终是 <code>get</code>，并不会另加后缀；带 <code>$</code> 的是另一类合成成员，例如 lambda 生成的 <code>lambda$main$0</code>。上面打印结果里没有 public 也是同一个道理：<code>Method.toString</code> 只拼 <code>getModifiers() &amp; Modifier.methodModifiers()</code> 里的可见性位，桥方法不占这些位，于是只剩返回类型、二进制类名和方法名。' },
       { p: '输出里的 bridge 方法返回 Object，而不是 String，正是擦除后父类签名的样子。它内部调用 StringNode 真正的 get，返回值再向上转型为 Object。调用 <code>node.get()</code> 时，编译器在调用点插入 <code>(String)</code> 强转，所以最终打印的是带方括号的字符串。' },
       { p: '桥接方法还会出现在泛型接口的实现、协变返回值等场景。它通常是透明的，但在反射、AOP 代理、序列化框架里可能被看到：有些框架会遍历所有方法，如果不跳过 <code>isBridge()</code> 和 <code>isSynthetic()</code>，就会把同一个方法处理两遍。' },
       { p: '桥接方法也可能引发“方法冲突”的编译错误。比如一个类同时实现两个泛型接口，而两个接口擦除后产生相同签名、返回类型却不同，编译器就无法生成合法的桥接方法。这类问题通常需要调整设计，而不是硬改签名。' },
@@ -977,7 +979,7 @@ public class HeapPollution {
         }
     }
 }`, title: 'HeapPollution.java' },
-      { out: '1\n1\nException in thread "main" java.lang.ClassCastException: class java.lang.Integer cannot be cast to class java.lang.String' },
+      { out: '1\n1\nException in thread "main" java.lang.ClassCastException: class java.lang.Integer cannot be cast to class java.lang.String (java.lang.Integer and java.lang.String are in module java.base of loader \'bootstrap\')\n\tat HeapPollution.main(HeapPollution.java:15)' },
       { p: 'raw.add(42) 这一行只产生 unchecked 警告，编译可以通过；运行时 List 里确实多了一个 Integer。for-each 循环在字节码里会对每个元素插入 <code>(String)</code> 强转，前两个字符串正常打印长度，轮到 Integer 时强转失败，抛出 ClassCastException。' },
       { p: '堆污染的源头通常有三类：使用原始类型（<code>List raw</code>）、未经检查的强转（<code>(List&lt;String&gt;) obj</code>）、泛型可变参数（<code>T...</code> 在底层是 Object[]）。前两类应该尽量避免；第三类如果方法内部不把数组暴露出去、不写入错误类型，可以用 <code>@SafeVarargs</code> 告诉编译器“我保证安全”。' },
       { p: '<code>@SafeVarargs</code> 不是免死金牌。它只抑制警告，不改变运行时行为；如果方法体把 items 赋给一个外部可见的 Object[]，或者把数组传给别的方法改写，仍然可能堆污染。使用时要在注释里写清楚为什么安全，否则下一个维护者会把它当成“消警告的魔法”。' },

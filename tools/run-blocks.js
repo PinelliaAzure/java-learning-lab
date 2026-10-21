@@ -455,7 +455,7 @@ function processSample(sample, tmpRoot, cb) {
 
         var want = normalizeLines(sample.expected);
         var gotOut = normalizeLines(r.stdout);
-        var gotAll = normalizeLines(r.stdout + (r.stderr ? '\n' + r.stderr : ''));
+        var gotAll = normalizeLines(String(r.stdout).replace(/[\r\n]+$/, '') + (r.stderr ? '\n' + r.stderr : ''));
         var sameOut = want.join('\n') === gotOut.join('\n');
         var sameAll = want.join('\n') === gotAll.join('\n');
         if (sameOut || sameAll) {

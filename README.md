@@ -144,7 +144,7 @@
 
 - **20** 个模块
 - **84** 个知识点
-- **84** 章教材正文（正文纯汉字 3390~6078，83 章 ≥4500）
+- **84** 章教材正文（正文纯汉字 5025~7731，84 章全部 ≥4500）
 - **252** 道单选题（每题都有解析）
 - **31** 道代码练习（输出预测 / 找错 / 填空）
 - **88** 张静态流程图（84 章全部有图）
@@ -245,7 +245,7 @@ java-learning-lab/
 
 - 20 个模块、84 个知识点、252 道题、84 章教材与 88 张流程图全部通过脚本校验：`node tools/verify.js .` 16 条规则（10 条必测 + 6 条附加）全 PASS、退出码 0；另有 `node tools/audit-tail.js` 84 章逐章体检 PASS 84 / FAIL 0。
 - 无头 Chrome 全量回归 **84 章 × 1440 / 430 两个视口**（168 次加载、0 控制台报错）：909 个 .cb 代码块全部带复制按钮且点击出提示；430px 下逐章 documentElement.scrollWidth 全部 ≤ 430（此前 34 章溢出，最坏一处 3005）；.tb-out 运行结果长行改为折行、不再被右缘裁掉（此前 89 个块溢出、命中 32 章）；A4 打印宽度下 0 章溢出；折叠答案 374 块展开无横向滚动；表格 84/84 章包裹；非法 hash 三种形态回首页无异常。
-- 84 章教材正文纯汉字 3390~6078（只统计正文段落、列表、提示与表格文字，不含代码块、运行结果与章尾三节；最低 `sql-jdbc`、最高 `hashmap`）。
+- 84 章正文纯汉字 5025~7731（口径同 `tools/audit-sections.js`：正文段落、列表、提示与表格文字，含章尾问答与题面，不含代码块与运行结果；最低 `sql-jdbc`、最高 `hashmap`，84 章全部 ≥4500）。2026-10 的 P1/P2 两轮又给 24 章补了依赖坐标、前置参数与实测口径，这条区间随之从 3390~6078 上移。
 - 84 章章内结构：小节 1197 个、其中只有 1 个正文块的「占位小节」仅剩章尾三节（章尾之外的占位小节为 0）；`code` 块 548 个、紧跟 `out` 的 343 个（62.6%）、`flow` 块 88 个无丢失。这一轮做的是章内重排与同主题合并：小节数从 1473 降到 1197，正文汉字只下降 0.2%，没有靠删代码块或砍知识点瘦身。
 - 84 章章尾两节格式统一：倒数第二节「常见追问」一律为 1 个 3~6 条的问答列表（共 450 条，每条「问：…／答：…」，答案 50~320 汉字）；末节「自测与练习」一律为 1 个 3~9 题的列表（共 413 题），每题用原生 `<details class="tb-ans">` 折叠参考答案。
 - 折叠答案分两种形态，按题目语义选：**要产出一份能直接复制执行的东西**（写方法/类/枚举/record、写 SQL、写 `javac`/`jcmd`/`jmap`/`mvn`/`gradle`/`docker`/`curl` 命令、写 `pom.xml`/`@Bean`/`yml`/`Dockerfile` 片段，含「故意制造编译错误或运行异常来观察」）→ `<pre class="tb-ans-code">` 给代码，后面最多跟一句「要点」讲坑位，**不再写「预期现象」**；纯解释、原理、取舍、画图类 → 保留「预期现象 / 为什么 / 要点」三段式（80~190 汉字，中位数 111）。实测 413 题 = 代码形态 **374 题** + 三段式 **39 题**，代码块 6~91 行（中位 23 行）、374 条全部带「要点」、无一处残留「预期现象」。样式是 `css/style.css` 里的 `.tb-ans > .ans-body pre.tb-ans-code`（恒暗底、等宽、独立横向滚动）。这两条格式已固化成 `tools/verify.js` 的规则 13、14（规则 14 双形态都校验：代码块须闭合、非空白字符 ≥20、内部不得有未转义 `<`；三段式三要素齐全），改坏会直接 FAIL。
@@ -258,7 +258,15 @@ java-learning-lab/
 - 7 章补上静态流程图（变量、运算符、封装、抽象类与接口、枚举 record、包与 JavaBean、SQL 基础），全站 88 张、84 章全部有图。
 - meta 文案改为渲染期重算：字数、建议分钟、题量、是否有流程图之外，「N 段代码 / N 张表(格)」也由引擎按实际块数改写（84 章逐章校验「渲染值 == 实际块数」全一致、同章连渲三次幂等、缺该段的 meta 不会被凭空追加）。
 - 搜索同一课最多占 2 条名额：搜 HashMap 的 8 条命中从「6 条同一小节」变成覆盖 6 个知识点（HashMap×2 + collections-advanced / optional / concurrent-collections / encapsulation / modern-java）。
-- 新增可选闸门 node tools/run-blocks.js：按 index.html 顺序加载数据，每块独立临时目录 javac --release 25 真编、真跑，stdout 与紧跟的 out 逐行比对；全量样本 792、送编 503、通过 426、真错 77（74 条是「引用前文块的类」这类逐段演进风格）、OUT-DIFF 48。默认退出码 0，只有 --strict 才把编译失败与 OUT-DIFF 当失败。
+- 新增可选闸门 node tools/run-blocks.js：按 index.html 顺序加载数据，每块独立临时目录 javac --release 25 真编、真跑，stdout 与紧跟的 out 逐行比对；全量样本 792、送编 503、编译通过 427、编译失败 76（其中 74 条是「引用前文块的类」这类逐段演进风格）、可直跑 368、输出全对 170、OUT-DIFF 34。默认退出码 0，只有 --strict 才把编译失败与 OUT-DIFF 当失败。
+**2026 精度层整改（P2）**：
+- 逐个跑通 792 个代码块的 `tools/run-blocks.js` 先修了自己：`tools/run-blocks.js:458` 在 stdout 已带尾换行时又拼一个 `\n`，凭空插进空行，让「stdout+stderr 才对得上」的块恒判失配。修完全量 OUT-DIFF 从 48 降到 **34**、输出全对从 155 升到 **170**。
+- 34 条差异逐块归因后 **0 条真错**：外部前提 14 条（要 `--add-opens`、要输入文件、要外部服务、要第三方 jar、要 `javap` 输出、要 `-Xmx` 限堆）、时序与耗时数值 19 条、教材有意截断 1 条。这类块的做法是保留 out、紧跟一个 note 把「复现前提」或「为什么会变」讲清，而不是把 out 改成某台机器的快照。
+- 修真错的 5 处：`PriorityQueue` 的 `toString` 是堆数组顺序（`iterator-queue#b77` out 由 `[5, 6, 4]` 改为实测 `[4, 6, 5]`、p 重写为真实 poll 轨迹）、`#b55` 尾随空格（code 改成 `(pq.isEmpty() ? "" : " ")`）、桥方法签名（`public java.lang.Object StringNode.get()` → `java.lang.Object BridgeDemo$StringNode.get()`，并补 javap 的 `ACC_BRIDGE` / `ACC_SYNTHETIC` 取证）、两处 CCE 消息被截断的 out 补回 module/loader 后缀与栈帧。
+- 补前置参数说明 10 处：反射读 `HashMap.table` 要 `java --add-opens java.base/java.util=ALL-UNNAMED`（JEP 396/403 之后只剩这条路）、SPI 演示要 mysql-connector jar 在 classpath、缓冲流/字符流例子要先造 `big.bin` / `input.txt` / `note.txt`、selector 例子占 9000 端口、`-Xmx` 限堆才能看到 `OutOfMemoryError`。
+- 修掉一批「跑一遍就发现不对」的教材事实：jstat `-gcutil` 是 13 列不是 11 列（`-gc` 是 19 列）、`CompileThreshold=1500` 是 Client VM 历史值（分层编译实际是 Tier3 200 / Tier4 5000）、`MetaSpaceDemo` 的池列表（JDK 11 起 CodeCache 拆成三个 CodeHeap）、`PrintEscapeAnalysis` 是 develop-only 选项、`ConcatDemo` 的 88890 字符、`sendAsync` 每个 HttpClient 自建缓存池、MCP 最新协议是 2026-07-28（取消 initialize 握手）。
+- 另修一个只在渲染时才暴露的 P0 缺陷：正文与习题解析是 innerHTML 直插，`List<String>` 这种裸尖括号会被当未知标签吞掉，数据层扫描出 **21 处**（正文 7、表格单元格 2、习题解析/选项 12），全部改为 `&lt;` 转义后复扫归零。
+
 
 - 命令行块逐行判定：带 `$ ` 前缀、首词命中命令词表（`java` `javac` `mvn` `gradle` `docker` `curl` `jcmd` `jdeps` `echo` 等）、`VAR=` 赋值、`::` 注释行才按命令渲染并补 `$ ` 提示符；程序输出与 `#`/`//` 注释压暗；**反斜杠续行按「同一条命令的后续行」渲染**（不加第二个提示符、不压暗）。全站 16 个 shell 块，提示符与反斜杠续行全部识别，复制出的文本与原代码逐字节一致。已固化为规则 16。
 - 完整走通「勾选 → 答题 → 100 分 → 写入 localStorage → 刷新恢复」。

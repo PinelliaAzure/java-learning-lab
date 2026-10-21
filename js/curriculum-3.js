@@ -181,7 +181,7 @@ System.out.println(text);`, [
             q: '递归遍历一个目录下的所有文件，最适合用？',
             options: ['Files.list', 'Files.walk', 'File.list', 'Files.readString'],
             answer: 1,
-            explain: 'Files.list 只看一层；Files.walk 会递归遍历整棵目录树，返回 Stream<Path>。'
+            explain: 'Files.list 只看一层；Files.walk 会递归遍历整棵目录树，返回 Stream&lt;Path>。'
           },
           {
             q: '下面哪个方法可以直接把字符串写入文件？',
@@ -690,7 +690,7 @@ System.out.println(User.class.getClassLoader());    // AppClassLoader`,
             q: '准备阶段会给静态变量做什么？',
             options: ['赋代码里写的初始值', '赋类型默认值（0 / null）', '执行 static 代码块', '什么都不做'],
             answer: 1,
-            explain: '准备阶段只分配内存并赋零值；真正的初始值在初始化阶段由 <clinit> 执行 static 块和赋值语句时设置。'
+            explain: '准备阶段只分配内存并赋零值；真正的初始值在初始化阶段由 &lt;clinit> 执行 static 块和赋值语句时设置。'
           },
           {
             q: '双亲委派模型的主要好处是？',

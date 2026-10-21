@@ -261,7 +261,7 @@ static int add(int x, int y) {
       },
       {
         q: '可变参数 <code>sum(int... nums)</code> 在方法内部，nums 的实际类型是？',
-        options: ['List<Integer>', 'int 数组', '单个 int', 'Collection'],
+        options: ['List&lt;Integer>', 'int 数组', '单个 int', 'Collection'],
         answer: 1,
         explain: '可变参数本质是数组，可以直接用 nums.length 和增强 for 遍历。'
       }
