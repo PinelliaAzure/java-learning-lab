@@ -498,6 +498,26 @@ rule(11, '附加：index.html 引用的脚本文件都存在', function (r) {
   }
 });
 
+/* ---------- 附加规则 12：排布顺序表覆盖全部模块并已生效 ---------- */
+rule(12, '附加：js/curriculum-order.js 的 ORDER 覆盖全部模块且已生效', function (r) {
+  const f = path.join(root, 'js/curriculum-order.js');
+  if (!fs.existsSync(f)) { r.issues.push('缺少 js/curriculum-order.js（模块排布顺序表）'); return; }
+  const src = fs.readFileSync(f, 'utf8');
+  const m = src.match(/var ORDER = (\[[^\]]*\])/);
+  if (!m) { r.issues.push('未在 js/curriculum-order.js 中找到 ORDER 数组'); return; }
+  let ORDER;
+  try { ORDER = JSON.parse(m[1]); } catch (e) { r.issues.push('ORDER 解析失败：' + e.message); return; }
+  const ids = COURSE.map(function (x) { return x.id; });
+  const missing = ids.filter(function (id) { return ORDER.indexOf(id) < 0; });
+  const extra = ORDER.filter(function (id) { return ids.indexOf(id) < 0; });
+  r.facts.push(ORDER.length + ' 个顺序项，' + ids.length + ' 个模块');
+  if (missing.length) r.issues.push('ORDER 缺少模块：' + missing.join(', '));
+  if (extra.length) r.issues.push('ORDER 含不存在的模块 id：' + extra.join(', '));
+  if (!missing.length && !extra.length && JSON.stringify(ORDER) !== JSON.stringify(ids)) {
+    r.issues.push('实际数组顺序与 ORDER 不一致：' + ids.join(','));
+  }
+});
+
 /* ============================================================
    四、输出
    ============================================================ */

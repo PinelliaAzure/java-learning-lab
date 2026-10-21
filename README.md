@@ -71,7 +71,7 @@
 
 ## 教材式章节：84 章，纯汉字 ≥4500 的章节 83/84
 
-20 个模块、84 章已全部教材化，纯汉字 ≥4500 的章节 83/84；内容从准备篇覆盖到 Spring 与项目实战，再到现代 Java 与 AI 工程。唯一例外是 `sql-jdbc`（3664 字）：它原本在模块 12 里重复讲 SQL，现已把 SQL 部分整体让给同模块的 `sql-basics`、只留 JDBC 本身，这是有意做的减法。
+20 个模块、84 章已全部教材化，纯汉字 ≥4500 的章节 83/84；内容从准备篇一路覆盖到 Spring 生态、Spring Security 与现代 Java 与 AI 工程，最后以项目实战收尾。唯一例外是 `sql-jdbc`（3664 字）：它原本在模块 12 里重复讲 SQL，现已把 SQL 部分整体让给同模块的 `sql-basics`、只留 JDBC 本身，这是有意做的减法。
 
 | 模块 | 章节 |
 |---|---|
@@ -84,17 +84,17 @@
 | 07 函数式编程 | Lambda 与函数式接口；Stream 流水线；Optional 与空值处理 |
 | 08 IO 与 NIO | 字节流与字符流；缓冲流与 try-with-resources；文件与 NIO：Path / Files；序列化与 JSON；网络编程与 JSON |
 | 09 并发编程 | 线程的创建与生命周期；synchronized、volatile 与原子性；线程池与 ExecutorService；并发集合与 CompletableFuture；死锁与 JMM 基础 |
-| 10 JVM | 运行时内存区域；垃圾回收与常见收集器；类加载与双亲委派；字节码与性能调优入门 |
-| 11 反射与设计模式 | 反射：在运行时操作类；注解与元注解；单例、工厂与建造者；策略、观察者与代理 |
-| 12 数据库与 Web | SQL 基础：增删改查；JDBC：接口、五步与连接池；PreparedStatement 与事务；HTTP 与 Servlet 请求链路；Maven、Gradle 与单元测试 |
-| 13 Spring 生态 | IoC 与依赖注入；Spring Boot 自动配置；Spring MVC 请求链路；MyBatis 与 JPA 数据访问；日志、打包与部署 |
-| 14 现代 Java 与 AI 工程 | Java 21–25 语言演进与 LTS 迁移；虚拟线程落地与并发选型；Spring Boot 4 / Framework 7 迁移；Testcontainers 与数据库迁移脚本；Spring AI 接入 LLM；MCP 与工具编排；可观测性与原生化部署；AI 辅助开发与质量闸 |
-| 15 项目实战 | 项目实战一：控制台图书管理系统；项目实战二：Spring Boot REST 接口 |
-| 16 网络编程 | TCP/IP、Socket 与端口；HttpClient 与 HttpServer；NIO：Channel、Buffer 与 Selector |
-| 17 安全与加密 | 编码、哈希与密码存储；对称加密、非对称加密与签名；HTTPS 与常见 Web 漏洞 |
+| 10 网络编程 | TCP/IP、Socket 与端口；HttpClient 与 HttpServer；NIO：Channel、Buffer 与 Selector |
+| 11 JVM | 运行时内存区域；垃圾回收与常见收集器；类加载与双亲委派；字节码与性能调优入门 |
+| 12 反射与设计模式 | 反射：在运行时操作类；注解与元注解；单例、工厂与建造者；策略、观察者与代理 |
+| 13 数据库与 Web | SQL 基础：增删改查；JDBC：接口、五步与连接池；PreparedStatement 与事务；HTTP 与 Servlet 请求链路；Maven、Gradle 与单元测试 |
+| 14 数据库进阶 | 索引、B+ 树与执行计划；事务隔离、MVCC 与锁；慢查询、分页与数据库优化 |
+| 15 Redis 与消息队列（选修） | Redis 缓存与分布式锁；消息队列：解耦、削峰与幂等 |
+| 16 安全与加密 | 编码、哈希与密码存储；对称加密、非对称加密与签名；HTTPS 与常见 Web 漏洞 |
+| 17 Spring 生态 | IoC 与依赖注入；Spring Boot 自动配置；Spring MVC 请求链路；MyBatis 与 JPA 数据访问；日志、打包与部署 |
 | 18 Spring AOP 与 Security | Spring AOP 与动态代理；Spring Security 认证与授权 |
-| 19 数据库进阶 | 索引、B+ 树与执行计划；事务隔离、MVCC 与锁；慢查询、分页与数据库优化 |
-| 20 Redis 与消息队列（选修） | Redis 缓存与分布式锁；消息队列：解耦、削峰与幂等 |
+| 19 现代 Java 与 AI 工程 | Java 21–25 语言演进与 LTS 迁移；虚拟线程落地与并发选型；Spring Boot 4 / Framework 7 迁移；Testcontainers 与数据库迁移脚本；Spring AI 接入 LLM；MCP 与工具编排；可观测性与原生化部署；AI 辅助开发与质量闸 |
+| 20 项目实战 | 项目实战一：控制台图书管理系统；项目实战二：Spring Boot REST 接口 |
 
 每章包含：
 
@@ -128,17 +128,17 @@
 | 07 函数式编程 | Lambda、Stream、Optional |
 | 08 IO 与 NIO | 字节流/字符流、缓冲流、Path/Files、序列化、网络与 JSON |
 | 09 并发编程 | 线程生命周期、synchronized/volatile、线程池、并发容器、死锁与 JMM |
-| 10 JVM | 内存区域、垃圾回收、类加载、字节码与调优 |
-| 11 反射与设计模式 | 反射、注解、单例/工厂/建造者、策略/观察者/代理 |
-| 12 数据库与 Web | SQL、JDBC、PreparedStatement 与事务、HTTP/Servlet、Maven/JUnit |
-| 13 Spring 生态 | IoC/DI、Boot 自动配置、Spring MVC、MyBatis/JPA、日志与部署 |
-| 14 现代 Java 与 AI 工程 | LTS 与语言演进、虚拟线程、Boot 4 迁移、Testcontainers、Spring AI、MCP、可观测性与原生化、AI 质量闸（教材） |
-| 15 项目实战 | 控制台图书管理系统、Spring Boot REST 接口 |
-| 16 网络编程 | TCP/Socket、HttpClient/HttpServer、NIO Selector |
-| 17 安全与加密 | 编码/哈希、AES/RSA/签名、HTTPS 与 Web 漏洞 |
+| 10 网络编程 | TCP/Socket、HttpClient/HttpServer、NIO Selector |
+| 11 JVM | 内存区域、垃圾回收、类加载、字节码与调优 |
+| 12 反射与设计模式 | 反射、注解、单例/工厂/建造者、策略/观察者/代理 |
+| 13 数据库与 Web | SQL、JDBC、PreparedStatement 与事务、HTTP/Servlet、Maven/JUnit |
+| 14 数据库进阶 | B+ 树索引、EXPLAIN、MVCC/锁、慢查询与分库分表 |
+| 15 Redis 与消息队列（选修） | 缓存三坑、分布式锁、Kafka/RabbitMQ、幂等与积压 |
+| 16 安全与加密 | 编码/哈希、AES/RSA/签名、HTTPS 与 Web 漏洞 |
+| 17 Spring 生态 | IoC/DI、Boot 自动配置、Spring MVC、MyBatis/JPA、日志与部署 |
 | 18 Spring AOP 与 Security | 切面与代理、过滤器链、认证授权、JWT、BCrypt |
-| 19 数据库进阶 | B+ 树索引、EXPLAIN、MVCC/锁、慢查询与分库分表 |
-| 20 Redis 与消息队列（选修） | 缓存三坑、分布式锁、Kafka/RabbitMQ、幂等与积压 |
+| 19 现代 Java 与 AI 工程 | LTS 与语言演进、虚拟线程、Boot 4 迁移、Testcontainers、Spring AI、MCP、可观测性与原生化、AI 质量闸（教材） |
+| 20 项目实战 | 控制台图书管理系统、Spring Boot REST 接口 |
 
 ## 内容统计
 
@@ -171,10 +171,10 @@ java-learning-lab/
     ├── code-lab.js               代码练习弹窗：作答、判分、记录
     ├── code-exercises.js         代码练习题库 31 题（输出预测 / 找错 / 填空）
     ├── exams.js                  模块测验、结业考试、错题本
-    ├── exam-extra-1.js           模块 01–05 的补充考题
-    ├── exam-extra-2.js           模块 06–10 的补充考题
-    ├── exam-extra-3.js           模块 11–16 的补充考题
-    ├── exam-extra-4.js           模块 16–20 的补充考题
+    ├── exam-extra-1.js           补充考题：m0–m4 模块
+    ├── exam-extra-2.js           补充考题：m5–m9 模块
+    ├── exam-extra-3.js           补充考题：m10–m14 模块
+    ├── exam-extra-4.js           补充考题：m15–m19 模块
     ├── sorting-algorithms.js     12 种排序的动画步骤生成器
     ├── sorting-lab.js            实验室交互：播放、单步、对比、代码高亮
     ├── curriculum-1.js           课程数据：Java 起步 / 面向对象 / 核心类库

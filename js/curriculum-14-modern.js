@@ -1,4 +1,4 @@
-/* 模块 14：现代 Java 与 AI 工程（Java 21–25 / 虚拟线程 / Boot 4 / Testcontainers / Spring AI / MCP / 可观测性 / AI 质量闸） */
+/* 现代 Java 与 AI 工程（Java 21–25 / 虚拟线程 / Boot 4 / Testcontainers / Spring AI / MCP / 可观测性 / AI 质量闸） */
 (function () {
   'use strict';
   var C = window.JAVA_COURSE || (window.JAVA_COURSE = []);
