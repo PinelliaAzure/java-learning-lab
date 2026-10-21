@@ -1,6 +1,6 @@
 # Java 学习地图
 
-一个**纯本地、零依赖**的 Java 全栈学习网站：19 个模块、76 个知识点、228 道习题。面向零基础，按「读教材 → 看流程图 → 勾选 → 做习题」的顺序一路学完。
+一个**纯本地、零依赖**的 Java 全栈学习网站：20 个模块、84 个知识点、252 道习题。面向零基础，按「读教材 → 看流程图 → 勾选 → 做习题」的顺序一路学完。
 
 ![夜间模式](preview.png)
 
@@ -58,7 +58,7 @@
 
 原来的「交互动画」标签页、步骤播放器、可点击图解、HashMap/Stream 小组件已**全部删除**，不再占用页面和注意力。只在讲流程的地方保留**静态流程图**，一眼看完，不需要操作。
 
-当前共 73 张流程图，分布在需要讲流程的章节，例如：
+当前共 81 张流程图，77 章有图；剩下 7 章（封装、抽象类与接口、枚举 record、包与 JavaBean、变量、运算符、SQL 基础）刻意不画，因为这几章讲的是概念与语法，画成流程图反而误导。例如：
 
 1. 准备篇：下载 JDK → 安装 → 环境变量 → 验证 → IDE 运行
 2. JDK 篇：源码 → 字节码 → 类加载 → 解释/JIT → 机器码
@@ -69,16 +69,16 @@
 7. Scanner：键盘 → 缓冲区 → 解析 → 变量
 8. 循环：初始化 → 条件 → 循环体 → 更新 → 回到条件
 
-## 教材式章节：76 章，纯汉字 ≥5000 的章节 76/76
+## 教材式章节：84 章，纯汉字 ≥4500 的章节 83/84
 
-19 个模块、76 章已全部教材化，纯汉字 ≥5000 的章节 76/76；内容从准备篇一直覆盖到 Spring 与项目实战。
+20 个模块、84 章已全部教材化，纯汉字 ≥4500 的章节 83/84；内容从准备篇覆盖到 Spring 与项目实战，再到现代 Java 与 AI 工程。唯一例外是 `sql-jdbc`（3664 字）：它原本在模块 12 里重复讲 SQL，现已把 SQL 部分整体让给同模块的 `sql-basics`、只留 JDBC 本身，这是有意做的减法。
 
 | 模块 | 章节 |
 |---|---|
 | 01 准备篇 | 从零安装 JDK 并跑通第一个程序 |
 | 02 Java 起步 | JDK、JRE 与 JVM；变量、基本类型与字面量；运算符、类型转换与精度；输入输出与 Scanner；流程控制与数组 |
 | 03 面向对象 | 方法、参数传递与重载；类、对象与构造器；封装、this 与 static；继承、super 与方法重写；多态与动态绑定；抽象类、接口与默认方法；枚举、record 与内部类；包、访问权限与 JavaBean |
-| 04 核心类库 | String 与字符串常量池；StringBuilder 与包装类；日期时间 API；正则；Math 与常用工具；Arrays、Objects 与 BigDecimal；Java 8~21 新特性速览 |
+| 04 核心类库 | String 与字符串常量池；StringBuilder 与包装类；日期时间 API；正则；Math 与常用工具；Arrays、Objects 与 BigDecimal；Java 8~25 新特性速览 |
 | 05 集合框架 | 集合体系与 List；ArrayList 与 LinkedList；HashMap 的底层原理；Set、TreeSet 与比较器；迭代器、Queue 与 PriorityQueue；TreeMap、EnumMap 与 Properties |
 | 06 异常与泛型 | 异常体系与 try-catch-finally；自定义异常与最佳实践；泛型类、方法与通配符；类型擦除与泛型限制 |
 | 07 函数式编程 | Lambda 与函数式接口；Stream 流水线；Optional 与空值处理 |
@@ -86,14 +86,15 @@
 | 09 并发编程 | 线程的创建与生命周期；synchronized、volatile 与原子性；线程池与 ExecutorService；并发集合与 CompletableFuture；死锁与 JMM 基础 |
 | 10 JVM | 运行时内存区域；垃圾回收与常见收集器；类加载与双亲委派；字节码与性能调优入门 |
 | 11 反射与设计模式 | 反射：在运行时操作类；注解与元注解；单例、工厂与建造者；策略、观察者与代理 |
-| 12 数据库与 Web | SQL 基础：增删改查；SQL 基础与 JDBC；PreparedStatement 与事务；HTTP 与 Servlet 请求链路；Maven、Gradle 与单元测试 |
+| 12 数据库与 Web | SQL 基础：增删改查；JDBC：接口、五步与连接池；PreparedStatement 与事务；HTTP 与 Servlet 请求链路；Maven、Gradle 与单元测试 |
 | 13 Spring 生态 | IoC 与依赖注入；Spring Boot 自动配置；Spring MVC 请求链路；MyBatis 与 JPA 数据访问；日志、打包与部署 |
-| 14 项目实战 | 项目实战一：控制台图书管理系统；项目实战二：Spring Boot REST 接口 |
-| 15 网络编程 | TCP/IP、Socket 与端口；HttpClient 与 HttpServer；NIO：Channel、Buffer 与 Selector |
-| 16 安全与加密 | 编码、哈希与密码存储；对称加密、非对称加密与签名；HTTPS 与常见 Web 漏洞 |
-| 17 Spring AOP 与 Security | Spring AOP 与动态代理；Spring Security 认证与授权 |
-| 18 数据库进阶 | 索引、B+ 树与执行计划；事务隔离、MVCC 与锁；慢查询、分页与数据库优化 |
-| 19 Redis 与消息队列（选修） | Redis 缓存与分布式锁；消息队列：解耦、削峰与幂等 |
+| 14 现代 Java 与 AI 工程 | Java 21–25 语言演进与 LTS 迁移；虚拟线程落地与并发选型；Spring Boot 4 / Framework 7 迁移；Testcontainers 与数据库迁移脚本；Spring AI 接入 LLM；MCP 与工具编排；可观测性与原生化部署；AI 辅助开发与质量闸 |
+| 15 项目实战 | 项目实战一：控制台图书管理系统；项目实战二：Spring Boot REST 接口 |
+| 16 网络编程 | TCP/IP、Socket 与端口；HttpClient 与 HttpServer；NIO：Channel、Buffer 与 Selector |
+| 17 安全与加密 | 编码、哈希与密码存储；对称加密、非对称加密与签名；HTTPS 与常见 Web 漏洞 |
+| 18 Spring AOP 与 Security | Spring AOP 与动态代理；Spring Security 认证与授权 |
+| 19 数据库进阶 | 索引、B+ 树与执行计划；事务隔离、MVCC 与锁；慢查询、分页与数据库优化 |
+| 20 Redis 与消息队列（选修） | Redis 缓存与分布式锁；消息队列：解耦、削峰与幂等 |
 
 每章包含：
 
@@ -131,21 +132,22 @@
 | 11 反射与设计模式 | 反射、注解、单例/工厂/建造者、策略/观察者/代理 |
 | 12 数据库与 Web | SQL、JDBC、PreparedStatement 与事务、HTTP/Servlet、Maven/JUnit |
 | 13 Spring 生态 | IoC/DI、Boot 自动配置、Spring MVC、MyBatis/JPA、日志与部署 |
-| 14 项目实战 | 控制台图书管理系统、Spring Boot REST 接口 |
-| 15 网络编程 | TCP/Socket、HttpClient/HttpServer、NIO Selector |
-| 16 安全与加密 | 编码/哈希、AES/RSA/签名、HTTPS 与 Web 漏洞 |
-| 17 Spring AOP 与 Security | 切面与代理、过滤器链、认证授权、JWT、BCrypt |
-| 18 数据库进阶 | B+ 树索引、EXPLAIN、MVCC/锁、慢查询与分库分表 |
-| 19 Redis 与消息队列（选修） | 缓存三坑、分布式锁、Kafka/RabbitMQ、幂等与积压 |
+| 14 现代 Java 与 AI 工程 | LTS 与语言演进、虚拟线程、Boot 4 迁移、Testcontainers、Spring AI、MCP、可观测性与原生化、AI 质量闸（教材） |
+| 15 项目实战 | 控制台图书管理系统、Spring Boot REST 接口 |
+| 16 网络编程 | TCP/Socket、HttpClient/HttpServer、NIO Selector |
+| 17 安全与加密 | 编码/哈希、AES/RSA/签名、HTTPS 与 Web 漏洞 |
+| 18 Spring AOP 与 Security | 切面与代理、过滤器链、认证授权、JWT、BCrypt |
+| 19 数据库进阶 | B+ 树索引、EXPLAIN、MVCC/锁、慢查询与分库分表 |
+| 20 Redis 与消息队列（选修） | 缓存三坑、分布式锁、Kafka/RabbitMQ、幂等与积压 |
 
 ## 内容统计
 
-- **19** 个模块
-- **76** 个知识点
-- **76** 章教材正文（每章 ≥5000 字）
-- **228** 道单选题（每题都有解析）
+- **20** 个模块
+- **84** 个知识点
+- **84** 章教材正文（纯汉字 3664~6668，83 章 ≥4500）
+- **252** 道单选题（每题都有解析）
 - **31** 道代码练习（输出预测 / 找错 / 填空）
-- **73** 张静态流程图
+- **81** 张静态流程图（77 章有图）
 - **12** 种排序算法的可视化实验室（独立页面 `sorting.html`）
 
 ## 文件结构
@@ -161,7 +163,7 @@ java-learning-lab/
 ├── css/
 │   ├── style.css                 样式、日夜主题、教材与流程图排版
 │   └── sorting.css               实验室样式（复用同一套设计令牌与主题）
-└── js/
+├── js/
     ├── engine.js                 路由、主题、进度、教材渲染、练习引擎
     ├── search.js                 顶栏搜索：索引、命中摘要、键盘选择
     ├── menu.js                   右下角「更多」菜单（收集各模块注册的入口）
@@ -171,8 +173,8 @@ java-learning-lab/
     ├── exams.js                  模块测验、结业考试、错题本
     ├── exam-extra-1.js           模块 01–05 的补充考题
     ├── exam-extra-2.js           模块 06–10 的补充考题
-    ├── exam-extra-3.js           模块 11–15 的补充考题
-    ├── exam-extra-4.js           模块 16–19 的补充考题
+    ├── exam-extra-3.js           模块 11–16 的补充考题
+    ├── exam-extra-4.js           模块 16–20 的补充考题
     ├── sorting-algorithms.js     12 种排序的动画步骤生成器
     ├── sorting-lab.js            实验室交互：播放、单步、对比、代码高亮
     ├── curriculum-1.js           课程数据：Java 起步 / 面向对象 / 核心类库
@@ -182,6 +184,7 @@ java-learning-lab/
     ├── curriculum-5.js           课程数据：准备篇、项目实战，并给已有模块补课
     ├── curriculum-6.js           课程数据：现代 Java、进阶集合、网络与 JSON 补课
     ├── curriculum-7.js           课程数据：网络编程 / 安全与加密 / Spring AOP 与 Security / 数据库进阶 / Redis 与消息队列
+    ├── curriculum-14-modern.js    课程数据：现代 Java 与 AI 工程（8 课，插在 Spring 与项目实战之间）
     ├── guides-1.js               非教材章节的精讲与作业
     ├── guides-2.js               非教材章节的精讲与作业
     ├── guides-3.js               非教材章节的精讲与作业
@@ -215,11 +218,15 @@ java-learning-lab/
     ├── textbook-db-adv-1.js      教材：索引与锁
     ├── textbook-db-adv-2.js      教材：数据库优化与 Redis
     ├── textbook-spring-1.js      教材：IoC 到部署
+    ├── textbook-modern-1.js      教材：现代 Java 第 1–4 章（LTS 迁移、虚拟线程、Boot 4、Testcontainers）
+    ├── textbook-modern-2.js      教材：现代 Java 第 5–8 章（Spring AI、MCP、可观测性、AI 质量闸）
     ├── textbook-net-1.js         教材：TCP/Socket、HttpClient/HttpServer
     ├── textbook-net-2.js         教材：NIO Selector、安全基础
     ├── textbook-sec.js           教材：加密与 Web 安全
     ├── textbook-springsec.js     教材：Spring AOP 与 Security
     └── textbook-mq.js            教材：消息队列
+└── tools/
+    └── verify.js                 一致性校验器：node tools/verify.js .（零依赖，退出码 0/1）
 ```
 
 ## 关于内容与版权
@@ -232,9 +239,9 @@ java-learning-lab/
 
 ## 已验证
 
-- 76 个知识点、228 道题、教材结构与流程图全部通过脚本校验。
-- 无头 Chrome 遍历全部 76 课：每页只有「知识讲解 / 练习验证」两个标签，无交互动画标签，练习锁定状态正常，0 个 JS 报错。
-- 76 章教材实际渲染长度 5008~17221 字（按页面可见文本统计）。
+- 20 个模块、84 个知识点、252 道题、84 章教材与 81 张流程图全部通过脚本校验：`node tools/verify.js .` 10 条规则全 PASS、退出码 0。
+- 无头 Chrome 遍历全部 84 课：每页只有「知识讲解 / 练习验证」两个标签，无交互动画标签，练习锁定状态正常，0 个 JS 报错。
+- 84 章教材正文纯汉字 3664~6668（只统计正文段落，不含代码块与运行结果；最低 `sql-jdbc`、最高 `hashmap`）。
 - 完整走通「勾选 → 答题 → 100 分 → 写入 localStorage → 刷新恢复」。
 - 日间/夜间/跟随系统三种主题均实测，系统深浅色切换与刷新记忆正常。
 - 桌面（1440 宽）与手机（430 宽）布局均已截图检查。

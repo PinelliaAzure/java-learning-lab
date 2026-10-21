@@ -430,13 +430,18 @@
     return { cjk: cjk, minutes: Math.max(5, Math.ceil(cjk / 180)), hasFlow: hasFlow };
   }
 
-  /* 按「 · 」切段后清掉空段，避免出现「 · · 」或结尾悬空分隔符 */
+  /* 题量段的识别口径：N 道习题 / N 道练习 */
+  var META_QUIZ_RE = /\d+\s*道(?:习题|练习)/;
+
+  /* 按「 · 」切段后清掉空段与连续重复段，避免出现「 · · 」、结尾悬空分隔符或重复短语 */
   function tidyMeta(s) {
     var parts = String(s).split('·');
     var out = [];
     for (var i = 0; i < parts.length; i++) {
       var p = parts[i].replace(/\s+/g, ' ').trim();
-      if (p) out.push(p);
+      if (!p) continue;
+      if (out.length && out[out.length - 1] === p) continue;
+      out.push(p);
     }
     return out.join(' · ');
   }
@@ -628,9 +633,22 @@
       meta = '本章约 ' + st.cjk + ' 字' + (meta ? ' · ' + meta : '');
     }
     meta = meta.replace(/建议\s*\d+\s*分钟/, '建议 ' + st.minutes + ' 分钟');
-    if (lesson && lesson.quiz) meta = meta.replace(/\d+\s*道(?:习题|练习)/, lesson.quiz.length + ' 道习题');
+    var quizCount = (lesson && lesson.quiz) ? lesson.quiz.length : 0;
+    if (quizCount) meta = meta.replace(META_QUIZ_RE, quizCount + ' 道习题');
     if (!st.hasFlow) meta = meta.replace(/配套流程图\s*(?:与|和|及)?\s*/, '');
-    return tidyMeta(meta);
+    meta = tidyMeta(meta);
+
+    /* 双向补齐：流程图段插在题量段之前，缺题量段补在末尾；补完再 tidyMeta 一次 */
+    var segs = meta ? meta.split(' · ') : [];
+    if (st.hasFlow && meta.indexOf('流程图') < 0) {
+      var at = segs.length;
+      for (var i = 0; i < segs.length; i++) {
+        if (META_QUIZ_RE.test(segs[i])) { at = i; break; }
+      }
+      segs.splice(at, 0, '配套流程图');
+    }
+    if (quizCount && !META_QUIZ_RE.test(segs.join(' · '))) segs.push(quizCount + ' 道习题');
+    return tidyMeta(segs.join(' · '));
   }
 
   function renderLearn(panel) {

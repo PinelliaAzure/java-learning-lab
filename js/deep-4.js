@@ -70,8 +70,9 @@
   D['sql-jdbc'] = {
     summary: [
       'JDBC 五步：连接、语句、参数、执行、关闭。',
-      '永远用 PreparedStatement，不要拼接 SQL。',
-      '生产环境必须用连接池。'
+      '接口由 JDK 定义、实现由驱动提供，代码只依赖 java.sql。',
+      '永远用 PreparedStatement 占位符，不拼 SQL 字符串。',
+      '生产环境必须用连接池，close 只是把连接还给池子。'
     ]
   };
 

@@ -84,13 +84,14 @@
   };
 
   G['sql-jdbc'] = {
-    goals: ['用 JDBC 完成一次查询', '正确关闭 Connection/Statement/ResultSet', '理解连接池的作用'],
+    goals: ['说清 JDBC 五步与 Driver/Connection/Statement/ResultSet 各自的职责', '用 try-with-resources 按 ResultSet → Statement → Connection 关闭资源', '从连接池借连接，并划清一次事务的边界'],
     pitfalls: [
       '用 Statement 拼接 SQL，既慢又有注入风险。',
       '忘记关闭 ResultSet/Connection，连接池被耗尽。',
-      '在循环里反复创建连接。'
+      '在循环里反复创建连接，而不是从池里借。',
+      '把互为前提的几条 SQL 放在自动提交下执行，失败后留下半条数据。'
     ],
-    homework: '用 JDBC 连接 H2 或 MySQL，建一张 user 表，完成插入一条、按 id 查询、更新、删除；全程使用 try-with-resources。'
+    homework: '用 JDBC 连接 H2 或 MySQL，对已有的 users 表跑完一次查询的五步（取连接 → 预编译 → 绑参 → 取结果 → 关资源），全程 try-with-resources；再把连接换成 HikariCP 连接池，最后加一段 setAutoCommit(false) 的批量插入，故意让第二条失败，确认 rollback 后库里没留残留数据。'
   };
 
   G['prepared-transaction'] = {

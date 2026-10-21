@@ -296,64 +296,8 @@
   };
 
   T['sql-jdbc'] = {
-    meta: '本章约 8700 字 · 建议 40 分钟 · SQL 基础 + JDBC 五步 + 8 段示例',
+    meta: '本章约 3500 字 · 建议 20 分钟 · 配套流程图与 3 道习题',
     blocks: [
-      { h: '3.1 为什么学 SQL 与 JDBC' },
-      { p: '只要程序需要“记住”数据，就绕不开数据库。内存里的集合一关机就没了，文件又难以按条件快速查找，于是有了关系型数据库：数据按表组织，用 SQL 描述“我要什么”，由数据库决定“怎么取”。MySQL、PostgreSQL、Oracle、SQL Server 都支持标准 SQL，学会一套，换数据库主要是方言差异。' },
-      { p: 'Java 程序不能直接读数据库的磁盘文件，中间必须有一个翻译：JDBC（Java Database Connectivity）。它是 Java 官方定义的一套接口，规定“怎么连、怎么发 SQL、怎么取结果”，具体实现由各数据库厂商的驱动提供。你写的代码只依赖 <code>java.sql</code> 包里的接口，换数据库时通常只改 URL 和驱动依赖。' },
-      { p: '这一章分两半：前半段是 SQL，学会建表、增删改查、分组和连接；后半段是 JDBC，把 SQL 放进 Java 代码里执行，理解五步流程、ResultSet 游标和资源关闭。MyBatis、JPA、Spring 的 JdbcTemplate 都建立在这两层之上，基础打牢，框架就只是“帮你少写样板代码”。' },
-      { note: '<b>学习建议：</b>一定要动手建库建表。只看不练，SQL 的执行顺序、NULL 的坑、连接查询的方向，很难真正记住。' },
-
-      { h: '3.2 关系模型：表、行、列与主键' },
-      { p: '关系型数据库把数据放进二维表。一张表有固定的列（字段），每一列有名字和类型；每一行（记录）是一条完整的数据。比如用户表有 id、name、age、city 四列，每一行就是一个用户。表与表之间通过“外键”建立关联：订单表的 user_id 指向用户表的 id。' },
-      { p: '设计表时有几个基本约束要理解。主键（PRIMARY KEY）唯一标识一行，不能重复、不能为 NULL，通常用自增整数或全局唯一 ID；外键（FOREIGN KEY）保证引用完整性，订单里的 user_id 必须在用户表存在；非空（NOT NULL）强制字段必须有值；唯一（UNIQUE）保证列值不重复，适合邮箱、手机号；默认值（DEFAULT）在插入未指定时生效。' },
-      { p: '还有一个容易被忽视的概念：范式。简单说就是“一列只存一个值、一张表只描述一件事”。把用户的城市名直接存进订单表，短时间很方便，但用户改地址后历史订单就对不上；正确做法是订单表只存 user_id，需要城市时再关联查询。冗余不是绝对禁止，统计报表为了性能可以适度冗余，但要在设计时明确这是有意的取舍。' },
-
-      { h: '3.3 建表与常用数据类型' },
-      { p: '建表用 <code>CREATE TABLE</code>。下面两张表构成本章的例子：用户表和订单表，订单通过 user_id 关联用户。' },
-      { code: 'CREATE TABLE users (\n    id        BIGINT       PRIMARY KEY AUTO_INCREMENT,\n    name      VARCHAR(50)  NOT NULL,\n    email     VARCHAR(120) UNIQUE,\n    age       INT          DEFAULT 0,\n    city      VARCHAR(50),\n    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP\n);\n\nCREATE TABLE orders (\n    id         BIGINT      PRIMARY KEY AUTO_INCREMENT,\n    user_id    BIGINT      NOT NULL,\n    amount     DECIMAL(10, 2) NOT NULL,\n    status     VARCHAR(20) NOT NULL DEFAULT \'CREATED\',\n    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    CONSTRAINT fk_order_user FOREIGN KEY (user_id) REFERENCES users(id)\n);', title: 'demo.sql' },
-      { p: '类型选择直接关系到存储和精度。整数按范围选 TINYINT、INT、BIGINT，主键和金额相关的外键建议统一 BIGINT；小数金额必须用 <code>DECIMAL(10,2)</code>，不要用 FLOAT 或 DOUBLE，因为二进制浮点无法精确表示 0.1，累加后会出现 0.30000000000000004 这类误差；字符串用 VARCHAR 并给出合理长度，超长文本用 TEXT；时间用 DATETIME 或 TIMESTAMP，前者不随时区转换，后者会按会话时区转换，跨时区系统要统一约定。' },
-      { table: { head: ['类型', '用途', '注意点'], rows: [
-        ['INT / BIGINT', '整数、主键、外键', '主键用 BIGINT 留足增长空间'],
-        ['DECIMAL(p,s)', '金额、精确小数', 'p 是总位数，s 是小数位；金额常用 (10,2)'],
-        ['VARCHAR(n)', '变长字符串', 'n 是字符数上限，不是字节数'],
-        ['TEXT', '长文本、备注', '不能设默认值，检索效率低于 VARCHAR'],
-        ['DATETIME', '日期时间', '不随时区转换，跨时区需应用层统一'],
-        ['TINYINT(1)', '布尔值', 'MySQL 没有真正的 BOOLEAN，用 0/1 表示']
-      ] } },
-
-      { h: '3.4 插入、更新与删除' },
-      { p: '插入用 <code>INSERT INTO 表名 (列...) VALUES (值...)</code>。列名建议显式写出来，不要依赖表结构顺序，否则以后加列或调整顺序，旧语句就会错位。一次插入多行用逗号分隔，比循环单条插入快得多。' },
-      { code: 'INSERT INTO users (name, email, age, city) VALUES\n    (\'张三\', \'zhang@example.com\', 28, \'北京\'),\n    (\'李四\', \'li@example.com\', 32, \'上海\'),\n    (\'王五\', \'wang@example.com\', 25, \'广州\');\n\nUPDATE users SET city = \'深圳\', age = 26 WHERE id = 3;\n\nDELETE FROM orders WHERE status = \'CANCELLED\' AND created_at < \'2024-01-01\';', title: 'demo.sql' },
-      { p: '更新和删除最危险的地方是忘记 WHERE。<code>UPDATE users SET city = \'深圳\';</code> 会把整张表的城市改掉，<code>DELETE FROM orders;</code> 会清空订单。生产环境执行前，先用同样条件的 SELECT 确认影响范围，再在事务里执行，确认无误再提交。很多公司会禁用无 WHERE 的更新删除，或者要求走审批。' },
-      { p: '另外要区分 DELETE 和 TRUNCATE：DELETE 逐行删除、可带 WHERE、会写日志、可回滚（在事务中）；TRUNCATE 直接重建表、不能带 WHERE、速度极快、通常不能回滚。删数据前先想清楚是要“删一部分”还是“清空整表”，后者还要考虑自增 ID 是否重置。' },
-
-      { h: '3.5 查询：筛选、排序与分页' },
-      { p: '查询是 SQL 用得最多的部分。最基本的骨架是 <code>SELECT 列 FROM 表 WHERE 条件 ORDER BY 列 LIMIT 数量</code>。SELECT 后面可以用 <code>*</code> 取所有列，但生产代码建议显式列出需要的列：减少网络传输、避免表结构变化导致意外、也方便走覆盖索引。' },
-      { code: 'SELECT id, name, age\nFROM users\nWHERE age >= 25 AND city IN (\'北京\', \'上海\')\nORDER BY age DESC, id ASC\nLIMIT 10;', title: 'demo.sql' },
-      { p: 'WHERE 支持比较（=、&lt;&gt;、&gt;、&lt;）、范围（BETWEEN）、集合（IN）、模糊匹配（LIKE）、空值判断（IS NULL）。这里有两个高频坑。第一，NULL 不是值，<code>age = NULL</code> 永远不成立，必须写 <code>age IS NULL</code>；所有与 NULL 的比较结果都是“未知”，在 WHERE 里等同于不匹配。第二，LIKE 以 <code>%</code> 开头会导致索引失效，比如 <code>LIKE \'%张\'</code>，数据量大时要考虑全文索引或搜索引擎。' },
-      { p: 'ORDER BY 决定排序，<code>DESC</code> 降序、默认升序，可以多列排序，前一个列相同时才看后一个。LIMIT 做分页，<code>LIMIT 20 OFFSET 40</code> 表示跳过 40 行取 20 行，也常写成 <code>LIMIT 40, 20</code>。深分页（OFFSET 很大）会越来越慢，因为数据库要真的数过前面那些行，优化办法是“记住上一页最后一条的 id，用 <code>WHERE id &gt; ?</code> 继续取”，也就是游标分页。' },
-      { note: '<b>执行顺序不等于书写顺序：</b>数据库大致按 FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT 处理。所以 WHERE 里不能使用 SELECT 中定义的别名（MySQL 对 GROUP BY 有放宽），而 ORDER BY 可以。' },
-
-      { h: '3.6 聚合、分组与 HAVING' },
-      { p: '聚合函数把多行压成一行：<code>COUNT</code> 计数、<code>SUM</code> 求和、<code>AVG</code> 平均、<code>MAX</code> / <code>MIN</code> 取极值。它们常和 GROUP BY 一起用：先按某列分组，再对每组做计算。比如统计每个城市的用户数和平均年龄：' },
-      { code: 'SELECT city,\n       COUNT(*)      AS user_count,\n       AVG(age)      AS avg_age,\n       MAX(age)      AS max_age\nFROM users\nGROUP BY city\nHAVING COUNT(*) >= 2\nORDER BY user_count DESC;', title: 'demo.sql' },
-      { p: 'HAVING 和 WHERE 的区别必须搞清楚：WHERE 在分组之前过滤行，不能使用聚合函数；HAVING 在分组之后过滤组，可以使用聚合函数。上面例子里，“年龄大于 18”应该放 WHERE，“用户数不少于 2”必须放 HAVING。把聚合条件写进 WHERE 会直接报错。' },
-      { p: 'COUNT 有两个容易混的写法：<code>COUNT(*)</code> 统计行数，包含所有行；<code>COUNT(列名)</code> 只统计该列非 NULL 的行。如果某列允许为空，两者结果可能不同。另外，SELECT 里的非聚合列必须出现在 GROUP BY 中（标准 SQL 要求），MySQL 在宽松模式下允许省略，但取到的是哪一行的值并不确定，属于应当避免的写法。' },
-
-      { h: '3.7 多表连接 JOIN' },
-      { p: '真实查询很少只查一张表。连接（JOIN）把两张表按关联条件拼在一起。最常用的是内连接 <code>INNER JOIN</code>：只保留两边都匹配的行。左连接 <code>LEFT JOIN</code> 保留左表全部行，右表没匹配到的列补 NULL。右连接反之，全连接保留两边所有行（MySQL 不支持 FULL JOIN，需要用 UNION 模拟）。' },
-      { code: '-- 每个用户的订单总额，没有订单的用户也要显示\nSELECT u.id, u.name, COUNT(o.id) AS order_count, COALESCE(SUM(o.amount), 0) AS total\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id AND o.status = \'PAID\'\nGROUP BY u.id, u.name\nORDER BY total DESC;', title: 'demo.sql' },
-      { p: '这段 SQL 有三个细节值得注意。第一，连接条件里附加了 <code>o.status = \'PAID\'</code>，而不是写在 WHERE 里：写在 WHERE 会把左连接变成内连接，因为未匹配行的 status 是 NULL，条件不成立就被过滤掉了。第二，<code>COUNT(o.id)</code> 只数匹配到的订单，没有订单时返回 0，而 <code>COUNT(*)</code> 会返回 1，因为左表那一行仍然存在。第三，<code>COALESCE(SUM(...), 0)</code> 把 NULL 转成 0，避免 Java 侧拆箱空指针。' },
-      { table: { head: ['连接类型', '保留哪些行', '典型用途'], rows: [
-        ['INNER JOIN', '两边都匹配的行', '订单关联用户，只要有效数据'],
-        ['LEFT JOIN', '左表全部 + 右表匹配行', '用户列表带订单数，含零订单用户'],
-        ['RIGHT JOIN', '右表全部 + 左表匹配行', '较少用，通常改写为 LEFT JOIN'],
-        ['CROSS JOIN', '两表笛卡尔积', '生成组合、日历补齐'],
-        ['自连接', '同一张表当两张表用', '员工与上级、分类层级']
-      ] } },
-      { p: '连接写不好最常见的后果是“行数爆炸”：如果右表一个左表 id 对应多条记录，连接后左表的行会被复制。统计金额时这会重复累加，得到虚高的总额。排查方法是先单独 COUNT 两边，再看连接后的行数是否符合预期；必要时先用子查询把右表聚合到一行，再连接。' },
-
       { h: '3.8 JDBC 是什么：接口与驱动' },
       { p: 'JDBC 是一套标准接口，位于 <code>java.sql</code> 和 <code>javax.sql</code> 包中。核心接口有四个：<code>DriverManager</code> 负责根据 URL 找到合适的驱动并建立连接；<code>Connection</code> 代表一次数据库会话，能创建语句、控制事务；<code>Statement</code> / <code>PreparedStatement</code> 用来执行 SQL；<code>ResultSet</code> 承载查询结果，是一个可逐行移动的游标。' },
       { p: '接口由 JDK 提供，实现由数据库厂商提供。MySQL 的驱动是 <code>mysql-connector-j</code>，PostgreSQL 是 <code>postgresql</code>，它们都实现了同一套接口。所以你的代码里不应该出现 <code>com.mysql.cj.jdbc.Driver</code> 这样的具体类，除非在配置驱动类名。' },
@@ -428,11 +372,11 @@
 
       { h: '3.13 本章小结' },
       { list: [
-        '关系型数据库用表存数据，主键唯一标识行，外键维护表间引用。',
-        '金额用 DECIMAL，主键用 BIGINT；UPDATE/DELETE 必须先确认 WHERE。',
-        'SQL 执行顺序：FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT。',
-        'LEFT JOIN 的附加条件写在 ON 里；聚合后过滤用 HAVING。',
-        'JDBC 五步：连接 → 预编译语句 → 绑参 → 执行取结果 → 关闭资源，用 try-with-resources 保证释放。'
+        'JDBC 五步：取 Connection → 预编译语句 → setXxx 绑参 → 执行取 ResultSet → 关闭资源；SQL 语句本身的写法见上一课。',
+        '连接从池里借、用完必须还：<code>close()</code> 不是真关闭，是把连接交回池子，不还就会把池借空。',
+        '资源关闭交给 try-with-resources，按 ResultSet → Statement → Connection 逆序释放，抛异常也不会漏。',
+        '带参数的 SQL 一律用 PreparedStatement 占位符绑定：参数不参与语法解析，注入和转义问题一起消失。',
+        '事务边界：互为前提的几条 SQL 先 <code>setAutoCommit(false)</code>，全部成功 commit()，中途异常 rollback()。'
       ] },
 
       { h: '3.14 常见追问' },
@@ -440,18 +384,18 @@
         '<b>JDBC 和 MyBatis 是什么关系？</b>MyBatis 封装了 JDBC：帮你管理连接、设置参数、把 ResultSet 映射成对象，底层仍然是 JDBC。',
         '<b>为什么推荐 PreparedStatement 而不是 Statement？</b>参数化防注入、可预编译复用执行计划、类型处理更安全，还能避免拼接引号带来的转义问题。',
         '<b>ResultSet 能不能回头再读一遍？</b>默认只能向前、只读；需要滚动要在创建 Statement 时指定 <code>TYPE_SCROLL_INSENSITIVE</code>，但通常应把数据读到集合里。',
-        '<b>COUNT(*) 和 COUNT(1) 哪个快？</b>现代数据库优化后基本一致，可读性上 COUNT(*) 更清楚；真正影响性能的是有没有合适的索引和过滤条件。',
-        '<b>LEFT JOIN 之后 WHERE 过滤右表，为什么结果变少了？</b>未匹配行的右表列为 NULL，WHERE 条件不成立就被过滤，等价于内连接；条件应放在 ON 里。',
+        '<b>close() 之后池里的连接还能被别人用？</b>从池里拿到的 Connection 是包装对象，close() 只是归还并重置状态，物理连接没断，所以下一个借用者接手的是同一条 TCP 连接。',
+        '<b>批量插入 1 万条，addBatch/executeBatch 与逐条相比差在哪？什么时候必须关自动提交？</b>逐条是 1 万次往返加 1 万次提交，攒批是一次往返一次提交；多表、互为前提的写入必须 setAutoCommit(false)，否则中途失败留下半条数据，BatchUpdateException 的 updateCounts 只覆盖已成功的部分。',
         '<b>数据库连接池越大越好吗？</b>不是。连接数受数据库最大连接数、CPU 核数、磁盘 IO 限制，过大反而增加上下文切换和锁竞争。'
       ] },
 
       { h: '3.15 自测与练习' },
       { ol: [
-        '建一张 users 表和一张 orders 表，插入至少 5 个用户、10 条订单，其中要有没下过单的用户。',
-        '写出三个查询：按城市统计人数、查询消费总额前 3 的用户、查询从未下单的用户。',
+        '用 <code>DriverManager</code> 从零跑通五步：取 Connection、prepareStatement、setXxx 绑参、executeQuery、遍历 ResultSet，并从结果集里取出三列打印。',
+        '把连接来源换成 HikariCP 连接池，同一段代码各跑一百次，把建连耗时打印出来对比；再故意漏掉 close()，观察池被借空时报的错。',
         '用 JDBC 完成一次带条件的查询，要求用 try-with-resources 关闭资源，并打印结果。',
-        '给 users 表加一条重复邮箱，观察 UNIQUE 约束的报错信息；再插入 age 为 NULL 的记录，用 IS NULL 查出来。',
-        '解释 LEFT JOIN 中把右表条件写在 ON 和写在 WHERE 的区别，并用数据验证。'
+        '开事务做两表写入：A 表插主记录、B 表插明细，第二步故意抛异常，验证 rollback 后两张表都没留数据；再改成手动 commit 验证成功路径。',
+        '用 addBatch/executeBatch 插一万条，与逐条插入比耗时；再把一组互为前提的 SQL 关掉自动提交后批量执行，确认中途失败时 updateCounts 只覆盖已成功的部分。'
       ] }
     ]
   };

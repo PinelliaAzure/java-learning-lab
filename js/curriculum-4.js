@@ -275,15 +275,15 @@ class Order {
 
       {
         id: 'sql-jdbc',
-        title: 'SQL 基础与 JDBC',
+        title: 'JDBC：接口、五步与连接池',
         minutes: 8,
         level: '进阶',
-        intro: 'Java 程序要和数据库打交道，JDBC 是最底层的一套标准接口。Spring 的 JdbcTemplate、MyBatis 都是在它之上做的封装。',
+        intro: 'SQL 语法在上一课已经讲过，这一课只做一件事：把 SQL 放进 Java 代码里跑。JDBC 是最底层的标准接口，Spring 的 JdbcTemplate、MyBatis 都是在它之上做的封装。',
         points: [
           { t: 'JDBC 五步', d: '加载驱动（JDK 6+ 可省略）→ 获取 Connection → 创建 Statement → 执行 SQL 拿 ResultSet → 关闭资源。' },
-          { t: '核心接口', d: '<code>Connection</code>、<code>PreparedStatement</code>、<code>ResultSet</code>。面向接口编程，具体实现由数据库驱动提供。' },
+          { t: '核心接口', d: '<code>DriverManager</code>、<code>Connection</code>、<code>PreparedStatement</code>、<code>ResultSet</code>。接口由 JDK 定义，实现由数据库驱动提供。' },
           { t: 'ResultSet', d: '游标初始指向第一行之前，<code>next()</code> 返回 false 表示没有更多行；按列名或下标取值。' },
-          { t: '连接池', d: '频繁创建连接代价高，生产环境用 HikariCP / Druid 等连接池复用连接，并配置最大连接数、超时。' }
+          { t: '连接池与事务边界', d: '频繁创建连接代价高，生产环境用 HikariCP / Druid 复用连接，并配置最大连接数、获取超时；一组必须同时生效的 SQL 放进 setAutoCommit(false) 的事务里，成功 commit、异常 rollback。' }
         ],
         code: `String url = "jdbc:mysql://localhost:3306/demo";
 try (Connection conn = DriverManager.getConnection(url, "root", "pwd");
