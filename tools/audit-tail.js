@@ -62,6 +62,99 @@ function stripTags(s) {
   return s.replace(/<[^>]+>/g, '');
 }
 
+/* 取出正文里所有 <pre class="tb-ans-code" ...> 代码块（含 data-lang） */
+function answerPres(html) {
+  const out = [];
+  let at = 0;
+  for (;;) {
+    const i = html.indexOf('<pre class="tb-ans-code"', at);
+    if (i < 0) break;
+    const gt = html.indexOf('>', i);
+    if (gt < 0) break;
+    const tag = html.slice(i, gt + 1);
+    const m = /data-lang="([^"]*)"/.exec(tag);
+    const close = html.indexOf('</pre>', gt + 1);
+    out.push({ tag: tag, lang: m ? m[1] : '', open: i, start: gt + 1, end: close < 0 ? html.length : close, closed: close >= 0 });
+    at = close < 0 ? html.length : close + 6;
+  }
+  return out;
+}
+
+/* 答案体形态判定（纯静态，返回 issues 不带章/题前缀，由调用方拼「章 id + 第 N 题」）
+   合法形态：0 块（三段式）/ 1–3 块；各块 lang 必须两两不同；若出现 shell，shell 必须是最后一块；
+             第一个块之前只允许空白；相邻两块之间只允许空白字符；
+             最后一个块之后只允许空白，或既有的「<b>要点</b>…」收尾段
+   违规形态：第 4 块及以上 / 两块以上 lang 重复（含两个 java）/ shell 出现在非最后位置 /
+             gap 非空白 / 代码块之外有残留文本 / 多余的 </pre> 未配对
+   长度门槛按块自身 lang：shell 非空白 ≥10，其余合法 lang 非空白 ≥20；每块都必须闭合、内部不得含未转义 '<'
+   ★ 本函数与 tools/audit-tail.js 里的 answerPres / answerShape 是刻意的同源副本
+     （audit-tail 不 require verify.js，两个脚本各自独立运行），改判定必须两处同步。 */
+function answerShape(body) {
+  const PRE_OPEN = '<pre class="tb-ans-code"';
+  const raw = String(body == null ? '' : body);
+  const issues = [];
+  const openCount = raw.split(PRE_OPEN).length - 1;
+  const closeCount = raw.split('</pre>').length - 1;
+  const extraClose = closeCount - openCount;
+  if (extraClose > 0) {
+    issues.push('多出 ' + extraClose + ' 个 </pre>（未配对：<pre class="tb-ans-code" ' + openCount + ' 个，</pre> ' + closeCount + ' 个）');
+  }
+  // 多出来的闭合标签先剔除，后面的残留文本与 gap 分析只针对真实块结构
+  let src = raw;
+  for (let k = 0; k < extraClose; k++) {
+    const j = src.lastIndexOf('</pre>');
+    if (j < 0) break;
+    src = src.slice(0, j) + src.slice(j + 6);
+  }
+  const pres = answerPres(src);
+  const langOf = function (p) { const l = String(p.lang == null ? '' : p.lang).trim(); return l || 'java'; };
+  const shape = pres.length ? pres.map(langOf).join(' + ') : '三段式';
+  if (!pres.length) return { code: false, shape: shape, pres: pres, issues: issues, openTags: openCount, closeTags: closeCount };
+  if (pres.length > 3) {
+    issues.push('答案出现 ' + pres.length + ' 个代码块（形态「' + shape + '」），最多 3 块');
+  }
+  for (let i = 1; i < pres.length; i++) {
+    if (!pres[i - 1].closed) continue;
+    const gap = src.slice(pres[i - 1].end + 6, pres[i].open);
+    if (gap.replace(/\s/g, '') !== '') {
+      issues.push('第 ' + i + ' 块与第 ' + (i + 1) + ' 块之间只能有空白字符（形态「' + shape + '」），实为「' + gap.replace(/\s+/g, ' ').trim().slice(0, 40) + '」');
+    }
+  }
+  const seen = {};
+  pres.forEach(function (p, i) {
+    const l = langOf(p);
+    if (seen[l] != null) issues.push('第 ' + (seen[l] + 1) + ' 块与第 ' + (i + 1) + ' 块的 lang 都是「' + l + '」（形态「' + shape + '」），各块 lang 必须两两不同');
+    else seen[l] = i;
+  });
+  pres.forEach(function (p, i) {
+    if (langOf(p) === 'shell' && i !== pres.length - 1) {
+      issues.push('shell 代码块必须是最后一块（形态「' + shape + '」）：第 ' + (i + 1) + ' 块是 shell，后面还有 ' + (pres.length - i - 1) + ' 块');
+    }
+  });
+  pres.forEach(function (p) {
+    const name = langOf(p);
+    const min = name === 'shell' ? 10 : 20;
+    if (!p.closed) { issues.push(name + ' 代码块未闭合（形态「' + shape + '」）'); return; }
+    const inner = src.slice(p.start, p.end);
+    const n = inner.replace(/\s/g, '').length;
+    if (n < min) issues.push(name + ' 代码块内容过短（非空白字符 ' + n + '，要求 ≥' + min + '，形态「' + shape + '」）');
+    if (inner.indexOf('<') >= 0) issues.push(name + ' 代码块含未转义的 <（应写 &lt;，形态「' + shape + '」）');
+  });
+  const excerpt = function (s) {
+    const t = s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return (t || s.replace(/\s+/g, ' ').trim()).slice(0, 40);
+  };
+  const head = src.slice(0, pres[0].open);
+  if (head.replace(/\s/g, '') !== '') {
+    issues.push('代码块之外有残留文本「' + excerpt(head) + '」（在第一个代码块之前）');
+  }
+  const tail = src.slice(pres[pres.length - 1].end + 6);
+  if (tail.replace(/\s/g, '') !== '' && !/^\s*<b>要点<\/b>/.test(tail)) {
+    issues.push('代码块之外有残留文本「' + excerpt(tail) + '」（在最后一个代码块之后）');
+  }
+  return { code: true, shape: shape, pres: pres, issues: issues, openTags: openCount, closeTags: closeCount };
+}
+
 function auditChapter(id, tb) {
   var errs = [];
   var secs = sections(tb.blocks || []);
@@ -120,18 +213,17 @@ function auditChapter(id, tb) {
       if (item.slice(d).indexOf('<details') >= 0 && item.slice(d + 1).indexOf('<details') >= 0) errs.push('第 ' + (q + 1) + ' 题出现嵌套 details');
       var body = item.slice(d);
       body = body.replace(/^<details class="tb-ans"><summary>参考答案<\/summary>/, '').replace(/<\/details>[\s\S]*$/, '');
-      // 两种形态都要认：<pre class="tb-ans-code"> 与 <pre class="tb-ans-code" data-lang="java">
-      var PRE = '<pre class="tb-ans-code"';
-      if (body.indexOf(PRE) >= 0) {
-        var preTagEnd = body.indexOf('>', body.indexOf(PRE));
-        var ca = preTagEnd < 0 ? body.length : preTagEnd + 1;
-        var cb = body.indexOf('</pre>', ca);
-        if (cb < 0) errs.push('第 ' + (q + 1) + ' 题的代码块未闭合');
-        else {
-          var inner = body.slice(ca, cb);
-          if (inner.replace(/\s/g, '').length < 20) errs.push('第 ' + (q + 1) + ' 题的代码块内容过短');
-          if (inner.indexOf('<') >= 0) errs.push('第 ' + (q + 1) + ' 题的代码块含未转义的 <（应写 &lt;）');
-        }
+      // 与 tools/verify.js 规则 14 同一切法：answerShape() 只看 ans-body 内部内容（去掉外层 <div class="ans-body">）
+      var ab = body.indexOf('<div class="ans-body">');
+      if (ab >= 0) body = body.slice(ab + 22);
+      var acut = body.indexOf('</div></details>');
+      if (acut >= 0) body = body.slice(0, acut);
+      else { var acut2 = body.indexOf('</div>'); if (acut2 >= 0) body = body.slice(0, acut2); }
+      // 分流口径与 tools/verify.js 规则 14 同源：answerShape() 判 1–3 块形态（lang 两两不同、含 shell 则 shell 最后），
+      // 只要出现任何代码块就仍是代码题；纯 shell 单块答案同样算代码题
+      var shape = answerShape(body);
+      if (shape.code) {
+        for (var si = 0; si < shape.issues.length; si++) errs.push('第 ' + (q + 1) + ' 题：' + shape.issues[si]);
         if (body.indexOf('<b>预期现象</b>') >= 0) errs.push('第 ' + (q + 1) + ' 题是代码题，答案不该再有「预期现象」');
       } else {
         if (body.indexOf('<b>预期现象</b>') < 0) errs.push('第 ' + (q + 1) + ' 题缺「预期现象」（非代码题必须三段式）');

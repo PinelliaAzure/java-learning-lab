@@ -593,9 +593,13 @@ rule(13, '附加：章尾倒数第二节「常见追问」为 1 flow（可选）
 rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可选 1 p 前置 + 1 note 后置）；每题折叠答案要么三段式、要么是代码块（代码题不写「预期现象」）', function (r) {
   const ids = chapterIds();
   const bad = [];
-  // 两种形态都要认：<pre class="tb-ans-code"> 与 <pre class="tb-ans-code" data-lang="java">
-  const PRE_OPEN = '<pre class="tb-ans-code"';
+  // 答案形态统一交给 answerShape()（与 tools/audit-tail.js 同源）：
+  //   1 块：任一合法 lang（data-lang 缺省按 java；纯 shell 命令行答案合法）
+  //   2 块：两块 lang 必须不同，含 shell 时 shell 必须是最后一块，两块之间只允许空白字符
+  //   ≥3 块 / 两块同 lang / shell 在前 / gap 非空白 -> 违规
   let withOl = 0; let total = 0; let okQ = 0; let proseQ = 0; let codeQ = 0;
+  let openTagsSum = 0; let closeTagsSum = 0;
+  const shapeHist = { prose: 0, combo: {}, single: 0, pair: 0, triple: 0, irregular: 0 };
   ids.forEach(function (id) {
     const secs = tailSections(TEXTBOOK[id]);
     if (!secs.length) { bad.push(id + '：没有任何 h 小节'); return; }
@@ -630,18 +634,20 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
       const cut = body.indexOf('</div></details>');
       if (cut >= 0) body = body.slice(0, cut);
       if (/<p[ >]/.test(body)) bad.push(id + '：自测第 ' + n + ' 题答案内含 <p>（answer 里只放行内标签）');
-      const preAt = body.indexOf(PRE_OPEN);
-      if (preAt >= 0) {
+      const shape = answerShape(body);
+      openTagsSum += shape.openTags; closeTagsSum += shape.closeTags;
+      const parts = shape.shape.split(' + ');
+      if (!shape.code) shapeHist.prose++;
+      else if (parts.length <= 3) {
+        const key = parts.join('+');
+        shapeHist.combo[key] = (shapeHist.combo[key] || 0) + 1;
+        if (parts.length === 1) shapeHist.single++;
+        else if (parts.length === 2) shapeHist.pair++;
+        else shapeHist.triple++;
+      } else shapeHist.irregular++;
+      if (shape.code) {
         codeQ++;
-        const gt = body.indexOf('>', preAt);
-        const ca = gt < 0 ? body.length : gt + 1;
-        const cb = body.indexOf('</pre>', ca);
-        if (cb < 0) bad.push(id + '：自测第 ' + n + ' 题的代码块未闭合');
-        else {
-          const inner = body.slice(ca, cb);
-          if (inner.replace(/\s/g, '').length < 20) bad.push(id + '：自测第 ' + n + ' 题的代码块内容过短');
-          if (inner.indexOf('<') >= 0) bad.push(id + '：自测第 ' + n + ' 题的代码块含未转义的 <（应写 &lt;）');
-        }
+        shape.issues.forEach(function (s) { bad.push(id + '：自测第 ' + n + ' 题：' + s); });
         if (body.indexOf('<b>预期现象</b>') >= 0) bad.push(id + '：自测第 ' + n + ' 题是代码题，答案里不该再有「预期现象」');
       } else {
         proseQ++;
@@ -657,6 +663,12 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
   });
   r.facts.push(ids.length + ' 章 / ' + withOl + ' 个自测 ol / ' + total + ' 题，折叠答案合规 ' + okQ + ' 题');
   r.facts.push('答案形态：三段式 ' + proseQ + ' 题 / 代码块 ' + codeQ + ' 题');
+  const comboKeys = Object.keys(shapeHist.combo).sort();
+  const comboList = comboKeys.map(function (k) { return k + ' ' + shapeHist.combo[k] + ' 题'; }).join('、');
+  r.facts.push('代码题块形态（按语言组合）：' + (comboList || '无'));
+  r.facts.push('答案 pre 开闭平衡：开 ' + openTagsSum + ' / 闭 ' + closeTagsSum);
+  r.facts.push('其中：单块 ' + shapeHist.single + ' 题 / 双块 ' + shapeHist.pair + ' 题 / 3 块 ' + shapeHist.triple + ' 题' +
+    (shapeHist.irregular ? ' / 违规形态 ' + shapeHist.irregular + ' 题' : ''));
   bad.slice(0, 40).forEach(function (s) { r.issues.push(s); });
   if (bad.length > 40) r.issues.push('……另有 ' + (bad.length - 40) + ' 条同类问题省略');
 });
@@ -670,6 +682,7 @@ rule(14, '附加：章尾末节「自测与练习」为 1 个 3–9 题 ol（可
    ============================================================ */
 const CODE_LANGS = ['java', 'shell', 'sql', 'xml', 'props', 'http', 'docker', 'text'];
 const LANG_CMDS = ('javac java javap jps jcmd jmap jstack jstat jfr jshell jar jdeps jlink jarsigner jpackage jconsole jdb ' +
+  'where type defaults xcode-select ' +
   'mvn mvnw gradle gradlew git ' +
   'docker curl npm npx openssl keytool mysql psql redis-cli ss netstat lsof kill export echo cd ls mkdir rm cp mv ' +
   'source which readlink unzip tar grep sed awk chmod ulimit sysctl top ps wrk ab jq ' +
@@ -678,6 +691,11 @@ const LANG_CMDS = ('javac java javap jps jcmd jmap jstack jstat jfr jshell jar j
   'sudo su apt apt-get brew yum dnf rpm dpkg systemctl service launchctl ssh scp rsync telnet nc ping dig ' +
   'nslookup whoami id hostname uname date file base64 shasum sha256sum node python python3 pip pip3 pnpm yarn go ' +
   'wait sleep time nohup seq open code vim nano exit true false').split(' ');
+
+/* shell 关键字与结构词：出现在首行首词也算合法（for i in 1 2 3; do … done）
+   ★ 与 LANG_CMDS 分开：javaHead 用 LANG_CMDS 判「java 块里塞命令」，关键字不能进去，
+   否则以 for/if 开头的合法 Java 代码会被误判为命令行。 */
+const SHELL_WORDS = ('for while until if case do then else elif fi done esac function time seq').split(' ');
 
 /* 取出正文里所有 <pre class="tb-ans-code" ...> 代码块（含 data-lang） */
 function answerPres(html) {
@@ -691,10 +709,85 @@ function answerPres(html) {
     const tag = html.slice(i, gt + 1);
     const m = /data-lang="([^"]*)"/.exec(tag);
     const close = html.indexOf('</pre>', gt + 1);
-    out.push({ tag: tag, lang: m ? m[1] : '', start: gt + 1, end: close < 0 ? html.length : close, closed: close >= 0 });
+    out.push({ tag: tag, lang: m ? m[1] : '', open: i, start: gt + 1, end: close < 0 ? html.length : close, closed: close >= 0 });
     at = close < 0 ? html.length : close + 6;
   }
   return out;
+}
+
+/* 答案体形态判定（纯静态，返回 issues 不带章/题前缀，由调用方拼「章 id + 第 N 题」）
+   合法形态：0 块（三段式）/ 1–3 块；各块 lang 必须两两不同；若出现 shell，shell 必须是最后一块；
+             第一个块之前只允许空白；相邻两块之间只允许空白字符；
+             最后一个块之后只允许空白，或既有的「<b>要点</b>…」收尾段
+   违规形态：第 4 块及以上 / 两块以上 lang 重复（含两个 java）/ shell 出现在非最后位置 /
+             gap 非空白 / 代码块之外有残留文本 / 多余的 </pre> 未配对
+   长度门槛按块自身 lang：shell 非空白 ≥10，其余合法 lang 非空白 ≥20；每块都必须闭合、内部不得含未转义 '<'
+   ★ 本函数与 tools/audit-tail.js 里的 answerPres / answerShape 是刻意的同源副本
+     （audit-tail 不 require verify.js，两个脚本各自独立运行），改判定必须两处同步。 */
+function answerShape(body) {
+  const PRE_OPEN = '<pre class="tb-ans-code"';
+  const raw = String(body == null ? '' : body);
+  const issues = [];
+  const openCount = raw.split(PRE_OPEN).length - 1;
+  const closeCount = raw.split('</pre>').length - 1;
+  const extraClose = closeCount - openCount;
+  if (extraClose > 0) {
+    issues.push('多出 ' + extraClose + ' 个 </pre>（未配对：<pre class="tb-ans-code" ' + openCount + ' 个，</pre> ' + closeCount + ' 个）');
+  }
+  // 多出来的闭合标签先剔除，后面的残留文本与 gap 分析只针对真实块结构
+  let src = raw;
+  for (let k = 0; k < extraClose; k++) {
+    const j = src.lastIndexOf('</pre>');
+    if (j < 0) break;
+    src = src.slice(0, j) + src.slice(j + 6);
+  }
+  const pres = answerPres(src);
+  const langOf = function (p) { const l = String(p.lang == null ? '' : p.lang).trim(); return l || 'java'; };
+  const shape = pres.length ? pres.map(langOf).join(' + ') : '三段式';
+  if (!pres.length) return { code: false, shape: shape, pres: pres, issues: issues, openTags: openCount, closeTags: closeCount };
+  if (pres.length > 3) {
+    issues.push('答案出现 ' + pres.length + ' 个代码块（形态「' + shape + '」），最多 3 块');
+  }
+  for (let i = 1; i < pres.length; i++) {
+    if (!pres[i - 1].closed) continue;
+    const gap = src.slice(pres[i - 1].end + 6, pres[i].open);
+    if (gap.replace(/\s/g, '') !== '') {
+      issues.push('第 ' + i + ' 块与第 ' + (i + 1) + ' 块之间只能有空白字符（形态「' + shape + '」），实为「' + gap.replace(/\s+/g, ' ').trim().slice(0, 40) + '」');
+    }
+  }
+  const seen = {};
+  pres.forEach(function (p, i) {
+    const l = langOf(p);
+    if (seen[l] != null) issues.push('第 ' + (seen[l] + 1) + ' 块与第 ' + (i + 1) + ' 块的 lang 都是「' + l + '」（形态「' + shape + '」），各块 lang 必须两两不同');
+    else seen[l] = i;
+  });
+  pres.forEach(function (p, i) {
+    if (langOf(p) === 'shell' && i !== pres.length - 1) {
+      issues.push('shell 代码块必须是最后一块（形态「' + shape + '」）：第 ' + (i + 1) + ' 块是 shell，后面还有 ' + (pres.length - i - 1) + ' 块');
+    }
+  });
+  pres.forEach(function (p) {
+    const name = langOf(p);
+    const min = name === 'shell' ? 10 : 20;
+    if (!p.closed) { issues.push(name + ' 代码块未闭合（形态「' + shape + '」）'); return; }
+    const inner = src.slice(p.start, p.end);
+    const n = inner.replace(/\s/g, '').length;
+    if (n < min) issues.push(name + ' 代码块内容过短（非空白字符 ' + n + '，要求 ≥' + min + '，形态「' + shape + '」）');
+    if (inner.indexOf('<') >= 0) issues.push(name + ' 代码块含未转义的 <（应写 &lt;，形态「' + shape + '」）');
+  });
+  const excerpt = function (s) {
+    const t = s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    return (t || s.replace(/\s+/g, ' ').trim()).slice(0, 40);
+  };
+  const head = src.slice(0, pres[0].open);
+  if (head.replace(/\s/g, '') !== '') {
+    issues.push('代码块之外有残留文本「' + excerpt(head) + '」（在第一个代码块之前）');
+  }
+  const tail = src.slice(pres[pres.length - 1].end + 6);
+  if (tail.replace(/\s/g, '') !== '' && !/^\s*<b>要点<\/b>/.test(tail)) {
+    issues.push('代码块之外有残留文本「' + excerpt(tail) + '」（在最后一个代码块之后）');
+  }
+  return { code: true, shape: shape, pres: pres, issues: issues, openTags: openCount, closeTags: closeCount };
 }
 
 /* 首个「非空非注释行」；shell 用 # 注释，java 用 // * 注释；反斜杠续行合并到同一行 */
@@ -713,6 +806,16 @@ function meaningfulLine(code, commentRe) {
     return t;
   }
   return '';
+}
+
+/* 路径形态首词视为合法命令（可执行文件按路径直接调用，不需要在命令表里）：
+     /usr/libexec/java_home -V、./gradlew build、../script.sh、~/bin/tool、
+     C:\tools\jdk\bin\java、.\gradlew.bat、$JAVA_HOME/bin/java、${JAVA_HOME}/bin/java */
+function isPathCmd(word) {
+  /* 去掉成对引号后再判形态："$J21/bin/java" -cp out Hello 是命令，不是输出 */
+  var qw = String(word).replace(/^["']|["']$/g, "");
+  if (/^(\/|\.{1,2}[\\/]|~\/|[A-Za-z]:[\\/]|\\\\)/.test(qw)) return true;
+  return /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?[\\/]/.test(qw);
 }
 
 /* shell 块首行判定：返回 '' 合规，否则返回原因 */
@@ -741,7 +844,9 @@ function shellHead(line) {
   }
   const w = /^[^\s;|&<>]+/.exec(s);
   if (!w) return '首行取不到命令：「' + short(line, 40) + '」';
-  if (LANG_CMDS.indexOf(w[0]) < 0) return '首行首个命令「' + w[0] + '」不在命令表内';
+  if (LANG_CMDS.indexOf(w[0]) < 0 && SHELL_WORDS.indexOf(w[0]) < 0 && !isPathCmd(w[0])) {
+    return '首行首个命令「' + w[0] + '」不在命令表内';
+  }
   return '';
 }
 

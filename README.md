@@ -248,9 +248,9 @@ java-learning-lab/
 - 84 章正文纯汉字 5025~7731（口径同 `tools/audit-sections.js`：正文段落、列表、提示与表格文字，含章尾问答与题面，不含代码块与运行结果；最低 `sql-jdbc`、最高 `hashmap`，84 章全部 ≥4500）。2026-10 的 P1/P2 两轮又给 24 章补了依赖坐标、前置参数与实测口径，这条区间随之从 3390~6078 上移。
 - 84 章章内结构：小节 1197 个、其中只有 1 个正文块的「占位小节」仅剩章尾三节（章尾之外的占位小节为 0）；`code` 块 548 个、紧跟 `out` 的 343 个（62.6%）、`flow` 块 88 个无丢失。这一轮做的是章内重排与同主题合并：小节数从 1473 降到 1197，正文汉字只下降 0.2%，没有靠删代码块或砍知识点瘦身。
 - 84 章章尾两节格式统一：倒数第二节「常见追问」一律为 1 个 3~6 条的问答列表（共 450 条，每条「问：…／答：…」，答案 50~320 汉字）；末节「自测与练习」一律为 1 个 3~9 题的列表（共 413 题），每题用原生 `<details class="tb-ans">` 折叠参考答案。
-- 折叠答案分两种形态，按题目语义选：**要产出一份能直接复制执行的东西**（写方法/类/枚举/record、写 SQL、写 `javac`/`jcmd`/`jmap`/`mvn`/`gradle`/`docker`/`curl` 命令、写 `pom.xml`/`@Bean`/`yml`/`Dockerfile` 片段，含「故意制造编译错误或运行异常来观察」）→ `<pre class="tb-ans-code">` 给代码，后面最多跟一句「要点」讲坑位，**不再写「预期现象」**；纯解释、原理、取舍、画图类 → 保留「预期现象 / 为什么 / 要点」三段式（80~190 汉字，中位数 111）。实测 413 题 = 代码形态 **374 题** + 三段式 **39 题**，代码块 6~91 行（中位 23 行）、374 条全部带「要点」、无一处残留「预期现象」。样式是 `css/style.css` 里的 `.tb-ans > .ans-body pre.tb-ans-code`（恒暗底、等宽、独立横向滚动）。这两条格式已固化成 `tools/verify.js` 的规则 13、14（规则 14 双形态都校验：代码块须闭合、非空白字符 ≥20、内部不得有未转义 `<`；三段式三要素齐全），改坏会直接 FAIL。
+- 折叠答案分两种形态，按题目语义选：**要产出一份能直接复制执行的东西**（写方法/类/枚举/record、写 SQL、写 `javac`/`jcmd`/`jmap`/`mvn`/`gradle`/`docker`/`curl` 命令、写 `pom.xml`/`@Bean`/`yml`/`Dockerfile` 片段，含「故意制造编译错误或运行异常来观察」）→ `<pre class="tb-ans-code">` 给代码，后面最多跟一句「要点」讲坑位，**不再写「预期现象」**；纯解释、原理、取舍、画图类 → 保留「预期现象 / 为什么 / 要点」三段式（80~190 汉字，中位数 111）。实测 413 题 = 代码形态 **374 题** + 三段式 **39 题**，代码块 6~91 行（中位 23 行）、374 条全部带「要点」、无一处残留「预期现象」。样式是 `css/style.css` 里的 `.tb-ans > .ans-body pre.tb-ans-code`（恒暗底、等宽、独立横向滚动）。这两条格式已固化成 `tools/verify.js` 的规则 13、14（规则 14 形态化校验：① 单个代码块 ② 代码 + 紧邻命令块 ③ 纯命令块（题库里 11 题本来就是纯命令答案）；最多 3 块、每块语言两两不同、命令块必须在最后、两块之间只允许空白，并且「代码块之外不得有残留文本」「pre 开闭必须配平」（实测开 436 / 闭 436）；代码块须闭合、java 侧非空白 ≥20 字符、内部不得有未转义 `<`；三段式三要素齐全），改坏会直接 FAIL。
 - 三处代码容器（教材 `code` 块 / 折叠答案代码块 / 代码练习）已收敛成同一个 `.cb` 组件：头部三圆点 + 语言标签（Java / 命令 / SQL / XML / 配置 / HTTP / Dockerfile / 文本）+ 常显复制按钮。复制的是纯内容——命令块剥掉 `$ ` 提示符、答案块只复制代码不复制「要点」，点击后按钮显示「已复制」1.4 秒复原。旧的三套类名（`.tb-code*`、`.code-block`/`.copy-btn`、答案块独立样式）已全部拆除，只留 `.cb` 一套；顺带修掉一个旧缺陷：一页多块时，代码练习的复制按钮以前总是复制整课代码。
-- 548 个教材 `code` 块与 374 条答案代码块**全部显式声明语言**，不做内容嗅探（嗅探会把 `abstract class Employee {` 误判成非 Java）：教材 java 459 / sql 25 / props 21 / shell 16 / xml 18 / text 4 / http 3 / docker 2，答案 java 333 / sql 16 / shell 10 / xml 7 / props 5 / docker 2 / http 1，缺标注 0、非法值 0。目录树这类非代码块用 `text`（不套提示符也不高亮），Gradle/ini/yaml 统一归 `props`。已固化为 `tools/verify.js` 规则 15，另有 `node tools/tag-audit.js` 做全量普查（当前疑似错标 0）。
+- 548 个教材 `code` 块与 436 条答案代码块**全部显式声明语言**，不做内容嗅探（嗅探会把 `abstract class Employee {` 误判成非 Java）：教材 java 459 / sql 25 / props 21 / shell 16 / xml 18 / text 4 / http 3 / docker 2，答案 436 块：java 329 / shell 69 / sql 16 / xml 10 / props 9 / http 1 / docker 2，缺标注 0、非法值 0。目录树这类非代码块用 `text`（不套提示符也不高亮），Gradle/ini/yaml 统一归 `props`。已固化为 `tools/verify.js` 规则 15，另有 `node tools/tag-audit.js` 做全量普查（当前疑似错标 0）。
 **2026 实用性整改（P1）**：
 - 8 章补齐第三方依赖坐标：com.mysql:mysql-connector-j、jakarta.servlet:jakarta.servlet-api（provided）、spring-retry + @EnableKafka、redis.clients:jedis（含 JedisPool 借还与非线程安全提示）、org.testcontainers:testcontainers-bom、org.springframework.ai:spring-ai-bom、org.mybatis.spring.boot:mybatis-spring-boot-starter、com.tngtech.archunit:archunit-junit5 与 io.rest-assured:rest-assured。版本号一律写「以官方 BOM / 发布说明为准，本机未实测」，不编造精确号。
 - 版本标尺统一：Java 侧全站 Java 25（--release 25、eclipse-temurin:25-jre、maven:3.9-eclipse-temurin-25），21 只作存量口径；Spring 侧「Boot 4.0.x（2025-11-20 GA，Framework 7 / Jakarta EE 11）是新项目目标，3.x 只作存量」；并写明下一个 LTS 是 Java 29（2027-09），26/27/28 都不是 LTS。
@@ -258,7 +258,7 @@ java-learning-lab/
 - 7 章补上静态流程图（变量、运算符、封装、抽象类与接口、枚举 record、包与 JavaBean、SQL 基础），全站 88 张、84 章全部有图。
 - meta 文案改为渲染期重算：字数、建议分钟、题量、是否有流程图之外，「N 段代码 / N 张表(格)」也由引擎按实际块数改写（84 章逐章校验「渲染值 == 实际块数」全一致、同章连渲三次幂等、缺该段的 meta 不会被凭空追加）。
 - 搜索同一课最多占 2 条名额：搜 HashMap 的 8 条命中从「6 条同一小节」变成覆盖 6 个知识点（HashMap×2 + collections-advanced / optional / concurrent-collections / encapsulation / modern-java）。
-- 新增可选闸门 node tools/run-blocks.js：按 index.html 顺序加载数据，每块独立临时目录 javac --release 25 真编、真跑，stdout 与紧跟的 out 逐行比对；全量样本 792、送编 503、编译通过 427、编译失败 76（其中 74 条是「引用前文块的类」这类逐段演进风格）、可直跑 368、输出全对 170、OUT-DIFF 34。默认退出码 0，只有 --strict 才把编译失败与 OUT-DIFF 当失败。
+- 新增可选闸门 node tools/run-blocks.js：按 index.html 顺序加载数据，每块独立临时目录 javac --release 25 真编、真跑，stdout 与紧跟的 out 逐行比对；全量样本 792、跳过 248（其中「混入命令行」已降到 0）、送编 540、编译通过 453、编译失败 87（多数是「引用前文块的类」这类逐段演进风格）、可直跑 389、输出全对 170、OUT-DIFF 34。默认退出码 0，只有 --strict 才把编译失败与 OUT-DIFF 当失败。
 **2026 精度层整改（P2）**：
 - 逐个跑通 792 个代码块的 `tools/run-blocks.js` 先修了自己：`tools/run-blocks.js:458` 在 stdout 已带尾换行时又拼一个 `\n`，凭空插进空行，让「stdout+stderr 才对得上」的块恒判失配。修完全量 OUT-DIFF 从 48 降到 **34**、输出全对从 155 升到 **170**。
 - 34 条差异逐块归因后 **0 条真错**：外部前提 14 条（要 `--add-opens`、要输入文件、要外部服务、要第三方 jar、要 `javap` 输出、要 `-Xmx` 限堆）、时序与耗时数值 19 条、教材有意截断 1 条。这类块的做法是保留 out、紧跟一个 note 把「复现前提」或「为什么会变」讲清，而不是把 out 改成某台机器的快照。
@@ -268,7 +268,13 @@ java-learning-lab/
 - 另修一个只在渲染时才暴露的 P0 缺陷：正文与习题解析是 innerHTML 直插，`List<String>` 这种裸尖括号会被当未知标签吞掉，数据层扫描出 **21 处**（正文 7、表格单元格 2、习题解析/选项 12），全部改为 `&lt;` 转义后复扫归零。
 
 
-- 命令行块逐行判定：带 `$ ` 前缀、首词命中命令词表（`java` `javac` `mvn` `gradle` `docker` `curl` `jcmd` `jdeps` `echo` 等）、`VAR=` 赋值、`::` 注释行才按命令渲染并补 `$ ` 提示符；程序输出与 `#`/`//` 注释压暗；**反斜杠续行按「同一条命令的后续行」渲染**（不加第二个提示符、不压暗）。全站 16 个 shell 块，提示符与反斜杠续行全部识别，复制出的文本与原代码逐字节一致。已固化为规则 16。
+- 命令行块逐行判定：带 `$ ` 前缀、首词命中命令词表（`java` `javac` `mvn` `gradle` `docker` `curl` `jcmd` `jdeps` `echo` 等）、`VAR=` 赋值、`::` 注释行才按命令渲染并补 `$ ` 提示符；程序输出与 `#`/`//` 注释压暗；**反斜杠续行按「同一条命令的后续行」渲染**（不加第二个提示符、不压暗）。命令词表含 shell 关键字（for / while / if / case / do / done / esac / time…）、路径形态首词（`/…` `./…` `~/…` `C:\…` `$VAR/bin/…`）、以及去掉引号后的 `"$VAR/bin/java" -cp out Hello`；`pay:` / `plugins {` / `maximum-pool-size: 10` 这类配置行仍判为非命令。教材 16 个 shell 块与答案里的 69 个命令块走同一套判定（答案块此前根本不进判定路径、整块退化成纯文本，P3 才接通），提示符、续行与复制出的文本逐字节一致。已固化为规则 16。
+
+**2026 代码块语言纯度整改（P3）**：
+- 「Java 与命令混在同一个代码块」的答案拆成 `java` + 紧邻 `shell` 两块，共 43 块（26 块被 `tools/run-blocks.js` 判为「混入命令行」，另 17 块把命令写成以 `#` 开头的注释段落而被归到「游离语句」）；另修 5 处整块语言误标。拆完后 run-blocks 的「混入命令行」26→**0**、跳过总数 289→**248**，OUT-DIFF 仍 34 条且章分布与上一轮基线逐章一致（拆块零回归）。
+- 三种形态都合法、且都被规则拦住：单个 java 代码块、代码 + 紧邻命令块、纯命令块（题库里 11 题本来就只该给命令，不许为了凑形态编造 Java）。答案里现在 单块 314 题 / 双块 58 题 / 三块 2 题。
+- 答案命令块接上了渲染：`js/engine.js` 的 `decorateCodeBlocks` 以前只对 `lang === 'java'` 重写 innerHTML，非 java 一律保留纯文本——命令块因此在页面上既没有 `$` 提示符也不压暗。补上 shell 分支后，六章实测 `cb-prompt`：setup 9→19、deploy 1→16、boot4-migration 0→10、mvc-flow 0→10；436 个答案块复制出的文本与改动前逐字节相同。
+- 顺手补掉拆块中途产生的事故：4 行把命令段复制到了 `</pre>` 外面还多留一个孤儿 `</pre>`（`js/textbook-db-1.js:713`/`:714`、`js/textbook-modern-2.js:343`/`:344`），已删重复段，并让规则 14 以后能拦住这类残留。
 - 完整走通「勾选 → 答题 → 100 分 → 写入 localStorage → 刷新恢复」。
 - 日间/夜间/跟随系统三种主题均实测，系统深浅色切换与刷新记忆正常。
 - 桌面（1440 宽）与手机（430 宽）布局均已截图检查。

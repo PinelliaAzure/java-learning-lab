@@ -141,12 +141,54 @@
     props: '配置', http: 'HTTP', docker: 'Dockerfile', text: '文本'
   };
 
-  /* 命令表：只有首词命中这些命令的行才加 "$ " 提示符，其余行按程序输出显示 */
+  /* 命令表：只有首词命中这些命令的行才加 "$ " 提示符，其余行按程序输出显示。
+     与 tools/verify.js 的 LANG_CMDS + isPathCmd 同源：教材里真实出现的命令必须两边都认，
+     否则会出现「校验说合规、页面却压暗」的自相矛盾（tag-audit.js 有同类副本，改这里要同步）。 */
   var CB_CMDS = {};
   ('javac java javap jdeps jps jcmd jmap jstack jstat jfr jshell jar mvn mvnw gradle gradlew git docker curl npm npx ' +
     'openssl keytool mysql psql redis-cli ss netstat lsof kill export cd ls mkdir rm cp mv source which readlink unzip tar grep ' +
-    'sed awk chmod ulimit sysctl top ps wrk ab jq ' +
-    'echo type where set setx chcp cls del copy start').split(' ').forEach(function (w) { CB_CMDS[w] = 1; });
+    'sed awk chmod ulimit sysctl top ps wrk ab jq cat cut kubectl ollama ' +
+    'echo type where set setx chcp cls del copy start ' +
+    /* shell 关键字：多行 for/if/case 结构的首行（for …; do）与收尾行（done / fi / esac）都不是程序输出 */
+    'for while until if then else elif fi case esac do done select function time').split(' ').forEach(function (w) { CB_CMDS[w] = 1; });
+
+  /* 路径形态首词视为命令（可执行文件按路径直接调用，不必进命令表）：
+     /usr/libexec/java_home -V、./gradlew build、../tool.sh、~/bin/tool、
+     C:\tools\jdk\bin\java、.\gradlew.bat、\\server\share，
+     以及 $JAVA_HOME/bin/java、${JAVA_HOME}/bin/java 这类变量拼出的路径 */
+  function cbPathCmd(word) {
+    /* 去掉成对引号后再判形态："$J21/bin/java" -cp out Hello 是命令，不是输出 */
+    var qw = String(word).replace(/^["']|["']$/g, "");
+    if (/^(\/|\.{1,2}[\\/]|~\/|[A-Za-z]:[\\/]|\\\\)/.test(qw)) return true;
+    return /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?[\\/]/.test(qw);
+  }
+
+  /* 剥离行首的 VAR=值 赋值（值可为 $(...)、反引号或单个词），返回剩下的部分。
+     反引号在源码里写作 \x60，避免与转义混淆。 */
+  function cbStripAssign(body) {
+    var s = body;
+    for (var guard = 0; guard < 8; guard++) {
+      var m = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(s);
+      if (!m) break;
+      var rest = s.slice(m[0].length);
+      if (rest.slice(0, 2) === '$(' || rest.charAt(0) === '\x60') {
+        var open = rest.charAt(0) === '\x60' ? '\x60' : '(';
+        var close = open === '\x60' ? '\x60' : ')';
+        var depth = 0; var j = 0;
+        for (; j < rest.length; j++) {
+          var c = rest.charAt(j);
+          if (c === open) depth++;
+          else if (c === close) { depth--; if (!depth) { j++; break; } }
+        }
+        rest = rest.slice(j);
+      } else {
+        rest = rest.slice(/^\S*/.exec(rest)[0].length);
+      }
+      s = rest.replace(/^\s+/, '');
+      if (!s) break;
+    }
+    return s;
+  }
 
   /* 未知或缺省的语言按纯文本处理（不做高亮、不加提示符） */
   function cbLang(lang) {
@@ -155,31 +197,35 @@
   }
 
   /* 命令块单行：命令行给 "$ " 提示符（数据里自带的 "$ " 不重复显示），程序输出 / 注释行包一层 .cb-out */
-  function cbShellLine(line) {
+  function cbShellLine(line, keepIndent) {
     if (!/\S/.test(line)) return '';                  /* 空行照旧，不加提示符也不包 .cb-out */
+    var lead = keepIndent ? (/^\s*/.exec(line) || [''])[0] : '';   /* 答案块保留缩进：提示符占行首，其后原样跟全文，复制剥 "$ " 后可逐字还原 */
     var body = line.replace(/^\s+/, '');
     var isCmd = false;
     if (body.charAt(0) === '$') {
       body = body.slice(1).replace(/^ /, '');           /* 数据里自带 "$ " 的去重，避免显示成 "$ $ " */
       isCmd = true;
-    } else if (/^::/.test(body) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(body)) {
-      isCmd = true;                                   /* Windows cmd 注释 / VAR=值 开头的环境变量行 */
-    } else if (CB_CMDS[body.split(/\s+/)[0]]) {
-      isCmd = true;
+    } else if (/^::/.test(body)) {
+      isCmd = true;                                   /* Windows cmd 注释行 */
+    } else if (cbStripAssign(body) !== body) {
+      isCmd = true;                                   /* 行首有 VAR=值：纯赋值，或赋值+命令 */
+    } else {
+      var w = /^[^\s;|&<>]+/.exec(body);
+      if (w && (CB_CMDS[w[0]] || cbPathCmd(w[0]))) isCmd = true;   /* 首词命中命令表 / 路径形态 / shell 关键字 */
     }
-    if (isCmd) return '<span class="cb-prompt">$</span> ' + esc(body);
+    if (isCmd) return '<span class="cb-prompt">$</span> ' + esc(lead + body);
     return '<span class="cb-out">' + esc(line) + '</span>';   /* 程序输出 / 注释：不加提示符，压暗显示 */
   }
 
   /* 命令块整块：逐行带状态——上一行（去尾空白）以 \ 结尾时，本行是命令的续行，
      不加第二个提示符也不压暗，只包 .cb-cont 让断言与样式能区分 */
-  function cbShellBlock(text) {
+  function cbShellBlock(text, keepIndent) {
     var prevCont = false;
     return text.split('\n').map(function (line) {
       var isCont = prevCont;
       prevCont = /\\$/.test(line.replace(/\s+$/, ''));
       if (isCont) return '<span class="cb-cont">' + esc(line) + '</span>';
-      return cbShellLine(line);
+      return cbShellLine(line, keepIndent);
     }).join('\n');
   }
 
@@ -255,6 +301,9 @@
       pre.classList.add('cb-pre');
       if (lang === 'java') {
         pre.innerHTML = raw.split('\n').map(function (line) { return highlightLine(line); }).join('\n');
+      } else if (lang === 'shell') {
+        /* 与教材命令块同一套逐行判定；此前只有 java 重写 innerHTML，shell 答案退化成纯文本（既无 $ 提示符也不压暗） */
+        pre.innerHTML = cbShellBlock(raw, true);
       }
       done++;
     });

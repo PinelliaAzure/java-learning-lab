@@ -583,6 +583,7 @@ function main() {
       skipped: skip,
       skippedTotal: skip['no-type'] + skip['stray'] + skip['mixed-cli'] + skip['multi-public'] +
                    skip['third-party'] + skip['placeholder'] + skip['intentional-error'],
+      skippedSamples: samples.filter(function (x) { return x.skip; }).map(function (x) { return { label: x.label, chapter: x.chapter, kind: x.kind, skip: x.skip }; }),
       submitted: toCompile.length,
       overLimit: overLimit,
       counts: counts,
