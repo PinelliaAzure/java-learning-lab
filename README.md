@@ -1,6 +1,5 @@
 # 本项目为一套体验DeepSeek-V4.1-Flash编程能力的项目，教程实用性不做保证
-在线体验地址：[
-](https://pinelliaazure.github.io/java-learning-lab/)
+在线体验地址：<https://pinelliaazure.github.io/java-learning-lab/>
 
 ## Java 学习地图
 
