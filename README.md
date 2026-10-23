@@ -1,4 +1,8 @@
-# Java 学习地图
+# 本项目为一套体验DeepSeek-V4.1-Flash编程能力的项目，教程实用性不做保证
+在线体验地址：[
+](https://pinelliaazure.github.io/java-learning-lab/)
+
+## Java 学习地图
 
 一套**零依赖的 Java 全栈学习网站**：20 个模块、84 章教材、1197 个小节，从装 JDK 一路讲到 Spring Boot 4、虚拟线程与 AI 工程。全部由静态 HTML / CSS / JS 组成，**双击 `index.html` 就能学**——不需要安装、不需要联网、不需要构建。
 
